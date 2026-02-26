@@ -115,7 +115,7 @@ export default function Index({ items, packages, schemaReady = true }) {
   };
 
   return (
-    <AuthenticatedLayout title="Package Setup" backUrl="/dashboard">
+    <AuthenticatedLayout title="Package Setup" backUrl="__back__">
       <Head title="Package Setup" />
 
       <div className="space-y-6">

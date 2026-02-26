@@ -59,7 +59,7 @@ export default function Index({ items }) {
   };
 
   return (
-    <AuthenticatedLayout title="Inventory Stock" backUrl="/dashboard">
+    <AuthenticatedLayout title="Inventory Stock" backUrl="__back__">
       <Head title="Inventory" />
 
       <div className="space-y-6">
@@ -118,6 +118,7 @@ export default function Index({ items }) {
                 >
                   <option value="pcs">pcs</option>
                   <option value="set">set</option>
+                  <option value="roll">roll</option>
                 </select>
               </div>
             </div>
@@ -131,51 +132,19 @@ export default function Index({ items }) {
             </button>
 
             <Link
-              href="/items/stock"
+              href="/items/stocks"
+              className="block w-full text-center bg-slate-50 border border-slate-200 text-slate-700 py-3 rounded-2xl text-sm font-bold hover:bg-slate-100 transition-colors"
+            >
+              Open Inventory Stock List
+            </Link>
+
+            <Link
+              href="/items/stock/in"
               className="block w-full text-center bg-emerald-50 border border-emerald-200 text-emerald-700 py-3 rounded-2xl text-sm font-bold hover:bg-emerald-100 transition-colors"
             >
               Update Stock by SKU
             </Link>
           </form>
-        </div>
-
-        {/* List Section */}
-        <div className="pt-2">
-          <h3 className="text-sm font-bold text-slate-800 mb-4 px-2">Current Inventory ({inventory.length})</h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {inventory.map(item => (
-              <div key={item.id} className="bg-white p-5 rounded-[2rem] shadow-sm border border-slate-100 flex flex-col space-y-4">
-                <div className="flex justify-between items-start">
-                  <div>
-                    <h4 className="font-bold text-slate-900 leading-tight">{item.name}</h4>
-                    <p className="text-xs text-slate-400 font-bold uppercase tracking-wider mt-1">{item.sku}</p>
-                  </div>
-                  <span className="px-3 py-1 bg-slate-100 rounded-full text-[10px] font-black text-slate-500 uppercase tracking-widest border border-slate-200">
-                    {item.unit}
-                  </span>
-                </div>
-
-                <div className="grid grid-cols-1 gap-2">
-                  {item.variants.map(v => (
-                    <div key={v.id} className="flex justify-between items-center bg-slate-50/50 px-4 py-2.5 rounded-xl border border-slate-50">
-                      <span className="text-xs font-bold text-slate-600">{v.color || 'Standard'}</span>
-                      <div className="flex items-center space-x-2">
-                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-tighter">Stock:</span>
-                        <span className={`text-sm font-black ${v.stock_current > 0 ? 'text-arabina-green' : 'text-red-500'}`}>
-                          {v.stock_current}
-                        </span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-
-                <div className="pt-2 flex justify-between items-center text-[10px] font-bold text-slate-300 uppercase tracking-widest">
-                  <span>{item.length_m ? `${item.length_m}m` : 'N/A Length'}</span>
-                  <span>Updated {new Date(item.updated_at).toLocaleDateString()}</span>
-                </div>
-              </div>
-            ))}
-          </div>
         </div>
       </div>
     </AuthenticatedLayout>

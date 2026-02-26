@@ -102,7 +102,7 @@ export default function Edit({ user }) {
   };
 
   return (
-    <AuthenticatedLayout title="My Profile" backUrl="/dashboard">
+    <AuthenticatedLayout title="My Profile" backUrl="__back__">
       <Head title="Profile" />
 
       <div className="space-y-6">

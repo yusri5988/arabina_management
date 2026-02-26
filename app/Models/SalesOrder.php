@@ -39,4 +39,9 @@ class SalesOrder extends Model
     {
         return $this->belongsToMany(ProcurementOrder::class, 'procurement_order_sales_order');
     }
+
+    public function inventoryTransactions(): HasMany
+    {
+        return $this->hasMany(InventoryTransaction::class, 'sales_order_id');
+    }
 }

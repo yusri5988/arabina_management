@@ -1,4 +1,4 @@
-import { Head } from '@inertiajs/react';
+import { Head, Link } from '@inertiajs/react';
 import { useState } from 'react';
 import AuthenticatedLayout from '../../Layouts/AuthenticatedLayout';
 import { apiFetchJson } from '../../lib/http';
@@ -61,7 +61,7 @@ export default function Orders({ packages = [], orders = [], databaseReady = tru
   };
 
   return (
-    <AuthenticatedLayout title="Sales Orders" backUrl="/dashboard">
+    <AuthenticatedLayout title="Sales Orders" backUrl="__back__">
       <Head title="Sales Orders" />
 
       <div className="space-y-6">
@@ -78,7 +78,16 @@ export default function Orders({ packages = [], orders = [], databaseReady = tru
         )}
 
         <div className="bg-white rounded-[2rem] shadow-sm border border-slate-100 p-6 md:p-8">
-          <h2 className="text-lg font-bold text-slate-800 border-b border-slate-100 pb-4">Submit Sales Order</h2>
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-lg font-bold text-slate-800">Submit Sales Order</h2>
+            <Link
+              href="/orders/history"
+              className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-bold text-slate-700 hover:bg-slate-100"
+            >
+              Delivery History
+            </Link>
+          </div>
+          <div className="border-b border-slate-100 pb-1" />
 
           {!canCreate && (
             <p className="mt-4 text-sm text-slate-500">
@@ -194,7 +203,7 @@ export default function Orders({ packages = [], orders = [], databaseReady = tru
                         ? 'bg-amber-100 text-amber-700'
                         : 'bg-blue-100 text-blue-700'
                   }`}>
-                    {order.status}
+                    {order.status === 'fulfilled' ? 'Shipped' : order.status}
                   </span>
                 </div>
                 <p className="text-sm text-slate-700 mt-1">{order.customer_name}</p>

@@ -24,11 +24,15 @@ class AuthController extends Controller
             'password' => 'required',
         ]);
 
+        \Illuminate\Support\Facades\Log::info('Login attempt', ['email' => $credentials['email']]);
+
         if (Auth::attempt($credentials)) {
+            \Illuminate\Support\Facades\Log::info('Login success', ['email' => $credentials['email']]);
             $request->session()->regenerate();
             return redirect()->intended('/dashboard');
         }
 
+        \Illuminate\Support\Facades\Log::warning('Login failed', ['email' => $credentials['email']]);
         return back()->withErrors([
             'email' => 'The provided credentials do not match our records.',
         ]);

@@ -134,6 +134,7 @@ Allow `store_keeper` (and admin) to register base items first, then run stock mo
 ### Entry Points
 
 - Page: `GET /items`
+- Page: `GET /items/stocks` (Dedicated inventory stock list)
 - API: `POST /items` (Register base item only)
 - Page: `GET /items/stock` (Query `?type=in` or `?type=out`)
 - API: `POST /items/stock/in` (Stock in: `mode=package|alacarte`)
@@ -142,6 +143,7 @@ Allow `store_keeper` (and admin) to register base items first, then run stock mo
 ### UI Files
 
 - `resources/js/Pages/Inventory/Index.jsx`
+- `resources/js/Pages/Inventory/StockList.jsx`
 - `resources/js/Pages/Inventory/Stock.jsx`
 - `resources/js/Pages/Dashboard.jsx` (Quick action buttons for + / -)
 - `resources/js/Layouts/AuthenticatedLayout.jsx` (Bottom navigation updated)
@@ -312,11 +314,13 @@ Allow sales team to submit customer order by package, to be used as reference fo
 ### Entry Points
 
 - Page: `GET /orders`
+- Page: `GET /orders/history` (Delivered order history)
 - API: `POST /orders` (Create sales order)
 
 ### UI Files
 
 - `resources/js/Pages/Sales/Orders.jsx`
+- `resources/js/Pages/Sales/History.jsx`
 - `resources/js/Layouts/AuthenticatedLayout.jsx` (existing `Order` navigation path)
 
 ### Backend Files
@@ -341,12 +345,13 @@ Table: `sales_order_lines`
 3. `SalesOrderController@store` validates payload and creates `sales_orders` + `sales_order_lines` in DB transaction.
 4. System auto-generates order code format `SO-YYYYMMDD-XXXX`.
 5. Newly created order appears in recent list without reload.
-6. Open and partial sales orders are available in stock out page as optional tag source.
-7. When stock out is submitted in `package` mode with selected `sales_order_id`, line `shipped_quantity` is incremented.
+6. Open and partial sales orders are available in Delivery Order (`/items/stock/out`) as source list.
+7. When Delivery Order is submitted in `alacarte` mode with selected `sales_order_id`, all order lines are finalized as delivered.
 8. Sales order status auto-updates:
    - `open`: no line shipped
    - `partial`: some shipped, not complete
    - `fulfilled`: all lines shipped `>= package_quantity`
+9. Fulfilled sales orders are removed from Delivery Order source dropdown and shown in `/orders/history`.
 
 ---
 
@@ -357,7 +362,7 @@ Table: `sales_order_lines`
 Allow procurement/store operations to:
 - auto-calculate shortage from open sales orders vs current stock
 - generate procurement draft in package + SKU format
-- record supplier receiving and auto-calculate rejected quantity
+- record supplier receiving via warehouse checklist with accepted/rejected split
 
 ### Access Control
 
@@ -369,12 +374,17 @@ Allow procurement/store operations to:
 
 - Page: `GET /procurement`
 - API: `POST /procurement/orders` (Create draft from suggestion)
+- Export: `GET /procurement/orders/{order}/pdf` (Printable bulk procurement order form)
+- API: `POST /procurement/orders/{order}/lines` (Add SKU line into draft)
 - API: `PUT /procurement/orders/{order}/receive` (Record received/rejected)
 - API: `DELETE /procurement/orders/{order}` (Delete draft)
+- Page: `GET /warehouse/crn` (Procurement arrival checklist by PO)
+- API: `POST /warehouse/crn/procurement/{order}/receive` (Submit checklist, auto stock-in + rejected)
 
 ### UI Files
 
 - `resources/js/Pages/Procurement/Index.jsx`
+- `resources/views/procurement/order-pdf.blade.php`
 - `resources/js/Layouts/AuthenticatedLayout.jsx` (navigation link)
 - `resources/js/Pages/Dashboard.jsx` (quick action card)
 
@@ -385,6 +395,7 @@ Allow procurement/store operations to:
 - `app/Models/ProcurementOrder.php`
 - `app/Models/ProcurementOrderLine.php`
 - `app/Models/ProcurementOrderPackageLine.php`
+- `routes/web.php`
 
 ### Data Model Used
 
@@ -415,10 +426,12 @@ Table: `procurement_order_sales_order`
 6. System also shows source sales orders (`open` + `partial`) for audit.
 6. Procurement clicks `Generate Procurement Draft`.
 7. System stores header + package lines + SKU lines + source sales order links.
-8. When supplier stock arrives, store keeper enters received qty per SKU.
-9. System auto-calculates rejected qty (`ordered - received`).
-10. Received qty is added to inventory (`stock_initial` and `stock_current`).
+8. When supplier stock arrives, store keeper opens `/warehouse/crn`, then opens one pending PO checklist.
+9. Per SKU, user can mark `Safe` (full receive) or split into received/rejected quantities with reason.
+10. On checklist submit, system creates transferred CRN log, adds received qty to inventory (`stock_initial` and `stock_current`), and stores rejected qty for rejected audit.
 11. Draft procurement order can be deleted by `procurement` or `super_admin`.
+12. Any procurement order can be downloaded directly as PDF from `Download PDF` action.
+13. In draft procurement order card, users can search SKU lines and add ala carte SKU to the same draft form.
 
 ---
 

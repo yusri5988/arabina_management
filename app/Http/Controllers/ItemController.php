@@ -20,9 +20,17 @@ class ItemController extends Controller
 {
     public function index(): Response
     {
-        $items = Item::with('variants')->latest()->get();
         return Inertia::render('Inventory/Index', [
-            'items' => $items
+            'items' => []
+        ]);
+    }
+
+    public function stockList(): Response
+    {
+        $items = Item::with('variants')->latest()->get();
+
+        return Inertia::render('Inventory/StockList', [
+            'items' => $items,
         ]);
     }
 
@@ -49,15 +57,23 @@ class ItemController extends Controller
         ], 201);
     }
 
-    public function stockForm(Request $request): Response
+    public function stockInForm(): Response
     {
-        $type = $request->query('type', 'in');
-        if (! in_array($type, ['in', 'out'], true)) {
-            $type = 'in';
-        }
+        return $this->stockForm('in');
+    }
+
+    public function stockOutForm(): Response
+    {
+        return $this->stockForm('out');
+    }
+
+    private function stockForm(string $type): Response
+    {
+        $type = $type === 'out' ? 'out' : 'in';
 
         $items = Item::query()
             ->select(['id', 'sku', 'name', 'unit'])
+            ->withSum('variants as stock_current_total', 'stock_current')
             ->orderBy('sku')
             ->get();
 
@@ -73,6 +89,17 @@ class ItemController extends Controller
         $salesOrders = collect();
         if ($type === 'out' && Schema::hasTable('sales_orders')) {
             $salesOrders = SalesOrder::query()
+                ->whereDoesntHave('inventoryTransactions', function ($query) {
+                    $query->where('type', 'out');
+                })
+                ->with([
+                    'lines' => function ($query) {
+                        $query->with([
+                            'package:id,code,name',
+                            'package.packageItems.item:id,sku,name,unit',
+                        ])->orderBy('id');
+                    },
+                ])
                 ->whereIn('status', ['open', 'partial'])
                 ->orderByDesc('order_date')
                 ->orderByDesc('id')
@@ -242,6 +269,8 @@ class ItemController extends Controller
                     (int) $validated['package_id'],
                     (int) $validated['package_quantity']
                 );
+            } elseif ($salesOrder && $validated['mode'] === 'alacarte') {
+                $this->finalizeSalesOrderDelivery($salesOrder->id);
             }
 
             return $transaction;
@@ -351,5 +380,25 @@ class ItemController extends Controller
         }
 
         $salesOrder->update(['status' => $status]);
+    }
+
+    private function finalizeSalesOrderDelivery(int $salesOrderId): void
+    {
+        $salesOrder = SalesOrder::query()
+            ->with('lines')
+            ->lockForUpdate()
+            ->find($salesOrderId);
+
+        if (! $salesOrder) {
+            return;
+        }
+
+        foreach ($salesOrder->lines as $line) {
+            $line->update([
+                'shipped_quantity' => (int) $line->package_quantity,
+            ]);
+        }
+
+        $salesOrder->update(['status' => 'fulfilled']);
     }
 }

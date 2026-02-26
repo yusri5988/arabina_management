@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Package;
 use App\Models\SalesOrder;
+use App\Models\InventoryTransaction;
 use App\Models\User;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -94,6 +95,40 @@ class SalesOrderController extends Controller
                 ->with(['lines.package:id,code,name'])
                 ->find($order->id),
         ], 201);
+    }
+
+    public function history(): Response
+    {
+        $orders = SalesOrder::query()
+            ->with(['lines.package:id,code,name'])
+            ->where('status', 'fulfilled')
+            ->latest('id')
+            ->limit(50)
+            ->get(['id', 'code', 'customer_name', 'order_date', 'status', 'notes', 'created_at'])
+            ->map(function ($order) {
+                $lastDeliveryAt = InventoryTransaction::query()
+                    ->where('type', 'out')
+                    ->where('sales_order_id', $order->id)
+                    ->latest('id')
+                    ->value('created_at');
+
+                return [
+                    'id' => $order->id,
+                    'code' => $order->code,
+                    'customer_name' => $order->customer_name,
+                    'order_date' => optional($order->order_date)->toDateString(),
+                    'status' => $order->status,
+                    'notes' => $order->notes,
+                    'created_at' => optional($order->created_at)->toDateTimeString(),
+                    'last_delivery_at' => $lastDeliveryAt,
+                    'lines' => $order->lines,
+                ];
+            })
+            ->values();
+
+        return Inertia::render('Sales/History', [
+            'orders' => $orders,
+        ]);
     }
 
     private function generateCode(): string

@@ -3,13 +3,20 @@ import { useState } from 'react';
 import AuthenticatedLayout from '../../Layouts/AuthenticatedLayout';
 import { apiFetchJson } from '../../lib/http';
 
-export default function ProcurementIndex({ databaseReady = true, canManage = false, canReceive = false, suggestion, orders = [] }) {
+export default function ProcurementIndex({ databaseReady = true, canManage = false, canReceive = false, suggestion, orders = [], items = [] }) {
+  const initialSuggestion = suggestion ?? { package_lines: [], sku_lines: [], source_orders: [] };
+
   const [notification, setNotification] = useState(null);
   const [processingCreate, setProcessingCreate] = useState(false);
   const [processingReceiveId, setProcessingReceiveId] = useState(null);
   const [processingDeleteId, setProcessingDeleteId] = useState(null);
+  const [processingAddSkuId, setProcessingAddSkuId] = useState(null);
   const [list, setList] = useState(orders);
+  const [suggestionData, setSuggestionData] = useState(initialSuggestion);
   const [receiveForms, setReceiveForms] = useState({});
+  const [draftSearchForms, setDraftSearchForms] = useState({});
+  const [draftAddForms, setDraftAddForms] = useState({});
+  const [expandedReceiveForms, setExpandedReceiveForms] = useState({});
 
   const setReceiveValue = (orderId, lineId, value) => {
     setReceiveForms((prev) => ({
@@ -21,6 +28,32 @@ export default function ProcurementIndex({ databaseReady = true, canManage = fal
     }));
   };
 
+  const setDraftSearchValue = (orderId, value) => {
+    setDraftSearchForms((prev) => ({
+      ...prev,
+      [orderId]: value,
+    }));
+  };
+
+  const setDraftAddValue = (orderId, field, value) => {
+    setDraftAddForms((prev) => ({
+      ...prev,
+      [orderId]: {
+        item_id: '',
+        quantity: '',
+        ...(prev[orderId] ?? {}),
+        [field]: value,
+      },
+    }));
+  };
+
+  const toggleReceiveForm = (orderId) => {
+    setExpandedReceiveForms((prev) => ({
+      ...prev,
+      [orderId]: !prev?.[orderId],
+    }));
+  };
+
   const createDraft = async () => {
     setNotification(null);
     setProcessingCreate(true);
@@ -29,18 +62,19 @@ export default function ProcurementIndex({ databaseReady = true, canManage = fal
       const { response, payload } = await apiFetchJson('/procurement/orders', {
         method: 'POST',
         body: JSON.stringify({
-          package_lines: suggestion?.package_lines ?? [],
-          sku_lines: (suggestion?.sku_lines ?? []).map((line) => ({
+          package_lines: suggestionData?.package_lines ?? [],
+          sku_lines: (suggestionData?.sku_lines ?? []).map((line) => ({
             item_id: line.item_id,
             quantity: line.quantity,
           })),
-          source_order_ids: (suggestion?.source_orders ?? []).map((x) => x.id),
+          source_order_ids: (suggestionData?.source_orders ?? []).map((x) => x.id),
         }),
       });
 
       if (response.ok) {
         setNotification({ type: 'success', message: payload.message ?? 'Draft created.' });
         setList((prev) => [payload.data, ...prev]);
+        setSuggestionData({ package_lines: [], sku_lines: [], source_orders: [] });
       } else {
         setNotification({ type: 'error', message: payload.message ?? 'Failed to create draft.' });
       }
@@ -55,10 +89,17 @@ export default function ProcurementIndex({ databaseReady = true, canManage = fal
     setNotification(null);
     setProcessingReceiveId(order.id);
 
-    const payloadLines = order.lines.map((line) => ({
-      line_id: line.id,
-      received_quantity: Number(receiveForms?.[order.id]?.[line.id] ?? line.received_quantity ?? 0),
-    }));
+    const payloadLines = order.lines.map((line) => {
+      const rawValue = receiveForms?.[order.id]?.[line.id];
+      const receivedQuantity = rawValue === '' || rawValue === null || rawValue === undefined
+        ? Number(line.ordered_quantity ?? 0)
+        : Number(rawValue);
+
+      return {
+        line_id: line.id,
+        received_quantity: receivedQuantity,
+      };
+    });
 
     try {
       const { response, payload } = await apiFetchJson(`/procurement/orders/${order.id}/receive`, {
@@ -68,7 +109,8 @@ export default function ProcurementIndex({ databaseReady = true, canManage = fal
 
       if (response.ok) {
         setNotification({ type: 'success', message: payload.message ?? 'Receiving saved.' });
-        setList((prev) => prev.map((x) => (x.id === order.id ? payload.data : x)));
+        setList((prev) => prev.filter((x) => x.id !== order.id));
+        setSuggestionData({ package_lines: [], sku_lines: [], source_orders: [] });
       } else {
         setNotification({ type: 'error', message: payload.message ?? 'Failed to submit receiving.' });
       }
@@ -77,20 +119,6 @@ export default function ProcurementIndex({ databaseReady = true, canManage = fal
     } finally {
       setProcessingReceiveId(null);
     }
-  };
-
-  const copySuggestedToReceive = (order) => {
-    const values = {};
-    (order.lines ?? []).forEach((line) => {
-      values[line.id] = line.ordered_quantity ?? line.suggested_quantity ?? 0;
-    });
-
-    setReceiveForms((prev) => ({
-      ...prev,
-      [order.id]: values,
-    }));
-
-    setNotification({ type: 'success', message: `Suggested quantities copied for ${order.code}.` });
   };
 
   const deleteDraft = async (order) => {
@@ -119,8 +147,48 @@ export default function ProcurementIndex({ databaseReady = true, canManage = fal
     }
   };
 
+  const addSkuToDraft = async (order) => {
+    const form = draftAddForms?.[order.id] ?? {};
+    const itemId = Number(form.item_id || 0);
+    const quantity = Number(form.quantity || 0);
+
+    if (!itemId || quantity < 1) {
+      setNotification({ type: 'error', message: 'Please choose SKU and valid quantity.' });
+      return;
+    }
+
+    setNotification(null);
+    setProcessingAddSkuId(order.id);
+
+    try {
+      const { response, payload } = await apiFetchJson(`/procurement/orders/${order.id}/lines`, {
+        method: 'POST',
+        body: JSON.stringify({ item_id: itemId, quantity }),
+      });
+
+      if (response.ok) {
+        setNotification({ type: 'success', message: payload.message ?? 'SKU added.' });
+        setList((prev) => prev.map((x) => (x.id === order.id ? payload.data : x)));
+        setDraftAddForms((prev) => ({
+          ...prev,
+          [order.id]: {
+            ...(prev[order.id] ?? {}),
+            item_id: '',
+            quantity: '',
+          },
+        }));
+      } else {
+        setNotification({ type: 'error', message: payload.message ?? 'Failed to add SKU.' });
+      }
+    } catch (_) {
+      setNotification({ type: 'error', message: 'Network error. Please try again.' });
+    } finally {
+      setProcessingAddSkuId(null);
+    }
+  };
+
   return (
-    <AuthenticatedLayout title="Procurement" backUrl="/dashboard">
+    <AuthenticatedLayout title="Procurement" backUrl="__back__">
       <Head title="Procurement" />
 
       <div className="space-y-6">
@@ -157,10 +225,10 @@ export default function ProcurementIndex({ databaseReady = true, canManage = fal
                       SKU Shortage (Order to Supplier)
                     </h3>
                     <span className="text-[10px] font-bold bg-emerald-100 text-emerald-700 px-2 py-1 rounded-md uppercase">
-                      {(suggestion?.sku_lines ?? []).length} Items
+                      {(suggestionData?.sku_lines ?? []).length} Items
                     </span>
                   </div>
-                  
+
                   <div className="overflow-hidden rounded-2xl border border-slate-100 shadow-sm">
                     <table className="min-w-full divide-y divide-slate-100">
                       <thead className="bg-slate-50">
@@ -172,7 +240,7 @@ export default function ProcurementIndex({ databaseReady = true, canManage = fal
                         </tr>
                       </thead>
                       <tbody className="bg-white divide-y divide-slate-50">
-                        {(suggestion?.sku_lines ?? []).map((line) => (
+                        {(suggestionData?.sku_lines ?? []).map((line) => (
                           <tr key={line.item_id} className="hover:bg-slate-50 transition-colors">
                             <td className="px-4 py-3.5">
                               <p className="text-sm font-bold text-slate-800">{line.sku}</p>
@@ -187,7 +255,7 @@ export default function ProcurementIndex({ databaseReady = true, canManage = fal
                             </td>
                           </tr>
                         ))}
-                        {(suggestion?.sku_lines ?? []).length === 0 && (
+                        {(suggestionData?.sku_lines ?? []).length === 0 && (
                           <tr>
                             <td colSpan="4" className="px-4 py-12 text-center">
                               <div className="flex flex-col items-center">
@@ -215,7 +283,7 @@ export default function ProcurementIndex({ databaseReady = true, canManage = fal
                     </h3>
                   </div>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                    {(suggestion?.package_lines ?? []).map((line) => (
+                    {(suggestionData?.package_lines ?? []).map((line) => (
                       <div key={line.package_id} className="flex items-center justify-between rounded-xl border border-slate-100 bg-white p-4 shadow-sm group hover:border-blue-200 transition-all">
                         <div className="flex items-center gap-3">
                           <div className="w-10 h-10 rounded-lg bg-blue-50 flex items-center justify-center text-blue-600 font-bold group-hover:bg-blue-600 group-hover:text-white transition-colors">
@@ -231,7 +299,7 @@ export default function ProcurementIndex({ databaseReady = true, canManage = fal
                         </svg>
                       </div>
                     ))}
-                    {(suggestion?.package_lines ?? []).length === 0 && <p className="text-sm text-slate-500 italic px-2">No pending package demand.</p>}
+                    {(suggestionData?.package_lines ?? []).length === 0 && <p className="text-sm text-slate-500 italic px-2">No pending package demand.</p>}
                   </div>
                 </div>
               </div>
@@ -243,7 +311,7 @@ export default function ProcurementIndex({ databaseReady = true, canManage = fal
                     Sales Source
                   </h3>
                   <div className="space-y-3">
-                    {(suggestion?.source_orders ?? []).map((order) => (
+                    {(suggestionData?.source_orders ?? []).map((order) => (
                       <div key={order.id} className="relative pl-4 border-l-2 border-slate-200 py-1 hover:border-amber-400 transition-colors group">
                         <div className="absolute -left-[5px] top-2 w-2 h-2 rounded-full bg-slate-200 group-hover:bg-amber-400 transition-colors"></div>
                         <p className="text-xs font-bold text-slate-800">{order.code}</p>
@@ -254,7 +322,7 @@ export default function ProcurementIndex({ databaseReady = true, canManage = fal
                         </div>
                       </div>
                     ))}
-                    {(suggestion?.source_orders ?? []).length === 0 && <p className="text-sm text-slate-500 italic">No open sales order source.</p>}
+                    {(suggestionData?.source_orders ?? []).length === 0 && <p className="text-sm text-slate-500 italic">No open sales order source.</p>}
                   </div>
                 </div>
 
@@ -266,8 +334,8 @@ export default function ProcurementIndex({ databaseReady = true, canManage = fal
                       !databaseReady
                       || !canManage
                       || processingCreate
-                      || (suggestion?.sku_lines ?? []).length === 0
-                      || (suggestion?.source_orders ?? []).length === 0
+                      || (suggestionData?.sku_lines ?? []).length === 0
+                      || (suggestionData?.source_orders ?? []).length === 0
                     }
                     className="group relative w-full overflow-hidden rounded-2xl bg-[#1E3D1A] p-4 text-white shadow-lg transition-all hover:bg-emerald-900 disabled:opacity-50 disabled:hover:bg-[#1E3D1A]"
                   >
@@ -294,92 +362,167 @@ export default function ProcurementIndex({ databaseReady = true, canManage = fal
         <div className="bg-white rounded-[2rem] shadow-sm border border-slate-100 p-6 md:p-8">
           <h2 className="text-lg font-bold text-slate-800 border-b border-slate-100 pb-4">Procurement Orders ({list.length})</h2>
           <div className="mt-5 space-y-4">
-            {list.map((order) => (
-              <div key={order.id} className="rounded-2xl border border-slate-200 p-4">
-                <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
-                  <p className="text-sm font-bold text-slate-800">{order.code}</p>
-                  <span className="text-[11px] font-bold uppercase tracking-wider px-2.5 py-1 rounded-full bg-blue-100 text-blue-700">
-                    {order.status}
-                  </span>
-                </div>
+            {list.map((order) => {
+              const isReceived = order.status === 'received';
+              const isReceiveFormOpen = Boolean(expandedReceiveForms?.[order.id]);
+              const draftSearch = (draftSearchForms?.[order.id] ?? '').trim().toLowerCase();
+              const filteredOrderLines = (order.lines ?? []).filter((line) => {
+                if (draftSearch === '') {
+                  return true;
+                }
 
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                  <div>
-                    <h4 className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-2">Package</h4>
-                    <div className="space-y-1">
-                      {(order.package_lines ?? []).map((line) => (
-                        <p key={line.id} className="text-xs text-slate-600">
-                          {line.package?.code} - {line.package?.name} x {line.quantity}
-                        </p>
-                      ))}
-                      {(order.package_lines ?? []).length === 0 && <p className="text-xs text-slate-500">No package lines.</p>}
-                    </div>
+                return line.item?.sku?.toLowerCase().includes(draftSearch)
+                  || line.item?.name?.toLowerCase().includes(draftSearch);
+              });
 
-                    <h4 className="text-xs font-bold uppercase tracking-wider text-slate-500 mt-3 mb-2">Source Sales Orders</h4>
-                    <div className="space-y-1">
-                      {(order.sales_orders ?? []).map((salesOrder) => (
-                        <p key={salesOrder.id} className="text-xs text-slate-600">
-                          {salesOrder.code} - {salesOrder.customer_name} ({salesOrder.order_date})
-                        </p>
-                      ))}
-                      {(order.sales_orders ?? []).length === 0 && <p className="text-xs text-slate-500">No linked sales source.</p>}
-                    </div>
+              const existingItemIds = new Set((order.lines ?? []).map((line) => line.item_id));
+              const addOptions = items.filter((item) => !existingItemIds.has(item.id));
+
+              return (
+                <div key={order.id} className="rounded-2xl border border-slate-200 p-4">
+                  <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+                    <p className="text-sm font-bold text-slate-800">{order.code}</p>
+                    <span className="text-[11px] font-bold uppercase tracking-wider px-2.5 py-1 rounded-full bg-blue-100 text-blue-700">
+                      {order.status}
+                    </span>
                   </div>
 
-                  <div>
-                    <h4 className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-2">SKU Receive Form</h4>
-                    <div className="space-y-2">
-                      {(order.lines ?? []).map((line) => (
-                        <div key={line.id} className="grid grid-cols-12 gap-2 items-center rounded-xl bg-slate-50 border border-slate-200 px-2 py-2">
-                          <div className="col-span-8 text-xs text-slate-700">
-                            {line.item?.sku} x {line.ordered_quantity}
-                          </div>
-                          <div className="col-span-4">
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                    <div>
+                      <h4 className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-2">Package</h4>
+                      <div className="space-y-1">
+                        {(order.package_lines ?? []).map((line) => (
+                          <p key={line.id} className="text-xs text-slate-600">
+                            {line.package?.code} - {line.package?.name} x {line.quantity}
+                          </p>
+                        ))}
+                        {(order.package_lines ?? []).length === 0 && <p className="text-xs text-slate-500">No package lines.</p>}
+                      </div>
+
+                    </div>
+
+                    <div>
+                      <button
+                        type="button"
+                        onClick={() => toggleReceiveForm(order.id)}
+                        className="w-full mb-2 flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 hover:bg-slate-100 transition-colors"
+                      >
+                        <span className="text-xs font-bold uppercase tracking-wider text-slate-600">SKU Receive Form ({(order.lines ?? []).length})</span>
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className={`w-4 h-4 text-slate-500 transition-transform ${isReceiveFormOpen ? 'rotate-180' : ''}`}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" />
+                        </svg>
+                      </button>
+
+                      {isReceiveFormOpen && (
+                        <>
+                          <div className="mb-2">
                             <input
-                              type="number"
-                              min="0"
-                              max={line.ordered_quantity}
-                              value={receiveForms?.[order.id]?.[line.id] ?? line.received_quantity}
-                              onChange={(e) => setReceiveValue(order.id, line.id, e.target.value)}
-                              className="w-full rounded-lg border border-slate-200 px-2 py-1.5 text-xs text-right bg-white focus:ring-2 focus:ring-arabina-accent focus:outline-none"
+                              type="text"
+                              placeholder="Search SKU / item name in this draft"
+                              value={draftSearchForms?.[order.id] ?? ''}
+                              onChange={(e) => setDraftSearchValue(order.id, e.target.value)}
+                              className="w-full rounded-lg border border-slate-200 px-2 py-1.5 text-xs bg-white focus:ring-2 focus:ring-emerald-500/20 focus:outline-none"
                             />
                           </div>
-                        </div>
-                      ))}
+
+                          <div className="space-y-2">
+                        {filteredOrderLines.map((line) => (
+                          <div key={line.id} className="grid grid-cols-12 gap-2 items-center rounded-xl bg-slate-50 border border-slate-200 px-2 py-2">
+                            <div className="col-span-8 text-xs text-slate-700">
+                              {line.item?.sku}
+                            </div>
+                            <div className="col-span-4">
+                              <input
+                                type="number"
+                                min="0"
+                                max={line.ordered_quantity}
+                                value={receiveForms?.[order.id]?.[line.id] ?? line.ordered_quantity ?? 0}
+                                onChange={(e) => setReceiveValue(order.id, line.id, e.target.value)}
+                                disabled={isReceived}
+                                className="w-full rounded-lg border border-slate-200 px-2 py-1.5 text-xs text-right bg-white focus:ring-2 focus:ring-arabina-accent focus:outline-none"
+                              />
+                            </div>
+                          </div>
+                        ))}
+
+                        {filteredOrderLines.length === 0 && (
+                          <p className="text-xs text-slate-500 italic px-1 py-2">No SKU match for this draft search.</p>
+                        )}
+                          </div>
+
+                          {(canManage && order.status === 'draft') && (
+                            <div className="mt-2 rounded-xl border border-emerald-100 bg-emerald-50/40 p-3 space-y-2">
+                              <p className="text-[11px] font-bold uppercase tracking-wider text-emerald-700">Add Ala Carte SKU</p>
+                              <div className="grid grid-cols-12 gap-2">
+                            <div className="col-span-12 md:col-span-10">
+                              <select
+                                value={draftAddForms?.[order.id]?.item_id ?? ''}
+                                onChange={(e) => setDraftAddValue(order.id, 'item_id', e.target.value)}
+                                className="w-full rounded-lg border border-slate-200 px-2 py-1.5 text-xs bg-white focus:ring-2 focus:ring-emerald-500/20 focus:outline-none"
+                              >
+                                <option value="">Select SKU</option>
+                                {addOptions.map((item) => (
+                                  <option key={item.id} value={item.id}>
+                                    {item.sku} - {item.name}
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+                            <div className="col-span-8 md:col-span-1">
+                              <input
+                                type="text"
+                                inputMode="numeric"
+                                pattern="[0-9]*"
+                                value={draftAddForms?.[order.id]?.quantity ?? ''}
+                                onChange={(e) => {
+                                  const clean = e.target.value.replace(/[^0-9]/g, '');
+                                  setDraftAddValue(order.id, 'quantity', clean === '' ? '' : Number(clean));
+                                }}
+                                placeholder="Qty"
+                                className="w-full rounded-lg border border-slate-200 px-2 py-1.5 text-xs text-right bg-white focus:ring-2 focus:ring-emerald-500/20 focus:outline-none"
+                              />
+                            </div>
+                            <div className="col-span-4 md:col-span-1">
+                              <button
+                                type="button"
+                                onClick={() => addSkuToDraft(order)}
+                                disabled={processingAddSkuId === order.id}
+                                className="w-full rounded-lg bg-emerald-600 text-white text-xs font-bold py-1.5 hover:bg-emerald-700 disabled:opacity-50"
+                              >
+                                {processingAddSkuId === order.id ? '...' : '+'}
+                              </button>
+                            </div>
+                              </div>
+                            </div>
+                          )}
+                        </>
+                      )}
                     </div>
                   </div>
-                </div>
 
-                <button
-                  type="button"
-                  onClick={() => copySuggestedToReceive(order)}
-                  disabled={(order.lines ?? []).length === 0}
-                  className="mt-3 w-full bg-slate-100 border border-slate-200 text-slate-700 py-2.5 rounded-xl text-sm font-bold disabled:opacity-50 hover:bg-slate-200 transition-colors"
-                >
-                  Copy Suggested Qty
-                </button>
+                  {(canManage && order.status === 'draft') && (
+                    <button
+                      type="button"
+                      onClick={() => deleteDraft(order)}
+                      disabled={processingDeleteId === order.id}
+                      className="mt-2 w-full bg-white border border-red-200 text-red-600 py-2.5 rounded-xl text-sm font-bold disabled:opacity-50 hover:bg-red-50 transition-colors"
+                    >
+                      {processingDeleteId === order.id ? 'Deleting...' : 'Delete Draft'}
+                    </button>
+                  )}
 
-                <button
-                  type="button"
-                  onClick={() => submitReceive(order)}
-                  disabled={!canReceive || processingReceiveId === order.id}
-                  className="mt-2 w-full bg-red-600 text-white py-2.5 rounded-xl text-sm font-bold disabled:opacity-50 hover:bg-red-700 transition-colors"
-                >
-                  {processingReceiveId === order.id ? 'Saving...' : 'Submit Receiving'}
-                </button>
-
-                {(canManage && order.status === 'draft') && (
-                  <button
-                    type="button"
-                    onClick={() => deleteDraft(order)}
-                    disabled={processingDeleteId === order.id}
-                    className="mt-2 w-full bg-white border border-red-200 text-red-600 py-2.5 rounded-xl text-sm font-bold disabled:opacity-50 hover:bg-red-50 transition-colors"
+                  <a
+                    href={`/procurement/orders/${order.id}/pdf`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="mt-2 block w-full bg-white border border-emerald-200 text-emerald-700 py-2.5 rounded-xl text-sm font-bold text-center hover:bg-emerald-50 transition-colors"
                   >
-                    {processingDeleteId === order.id ? 'Deleting...' : 'Delete Draft'}
-                  </button>
-                )}
-              </div>
-            ))}
+                    Download PDF
+                  </a>
+
+                </div>
+              );
+            })}
 
             {list.length === 0 && <p className="text-sm text-slate-500">No procurement order yet.</p>}
           </div>

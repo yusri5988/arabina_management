@@ -174,7 +174,7 @@ export default function UserManagement({ users }) {
   };
 
   return (
-    <AuthenticatedLayout title="User Management" backUrl="/dashboard">
+    <AuthenticatedLayout title="User Management" backUrl="__back__">
       <Head title="User Management" />
 
       <div className="space-y-6">

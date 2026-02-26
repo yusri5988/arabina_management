@@ -29,9 +29,19 @@ export default function AuthenticatedLayout({ children, title, showWelcome = fal
     return false;
   };
 
+  const handleBack = () => {
+    if (typeof window !== 'undefined' && window.history.length > 1) {
+      window.history.back();
+      return;
+    }
+
+    router.visit('/dashboard');
+  };
+
   const navLinks = [
     { name: 'Dashboard', path: '/dashboard', icon: HomeIcon },
     { name: 'Items', path: '/items', icon: ArchiveBoxIcon },
+    { name: 'Stock List', path: '/items/stocks', icon: ArchiveBoxIcon },
     { name: 'Order', path: '/orders', icon: ShoppingCartIcon },
     ...(auth?.user?.role === 'procurement' || auth?.user?.role === 'store_keeper' || auth?.user?.role === 'super_admin'
       ? [{ name: 'Procurement', path: '/procurement', icon: TruckIcon }]
@@ -123,9 +133,15 @@ export default function AuthenticatedLayout({ children, title, showWelcome = fal
                 <Bars3Icon className="w-6 h-6" />
               </button>
               {backUrl && (
-                <Link href={backUrl} className="p-2 -ml-2 text-slate-400 hover:bg-slate-100 hover:text-slate-700 rounded-xl transition-colors">
-                  <ChevronLeftIcon className="w-5 h-5" strokeWidth={2.5} />
-                </Link>
+                backUrl === '__back__' ? (
+                  <button type="button" onClick={handleBack} className="p-2 -ml-2 text-slate-400 hover:bg-slate-100 hover:text-slate-700 rounded-xl transition-colors">
+                    <ChevronLeftIcon className="w-5 h-5" strokeWidth={2.5} />
+                  </button>
+                ) : (
+                  <Link href={backUrl} className="p-2 -ml-2 text-slate-400 hover:bg-slate-100 hover:text-slate-700 rounded-xl transition-colors">
+                    <ChevronLeftIcon className="w-5 h-5" strokeWidth={2.5} />
+                  </Link>
+                )
               )}
               <h1 className="text-xl font-black text-slate-800 tracking-tight">{title || 'Dashboard'}</h1>
             </div>
