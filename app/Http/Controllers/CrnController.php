@@ -3,7 +3,6 @@
 namespace App\Http\Controllers;
 
 use App\Models\ContenaReceivingNote;
-use App\Models\CrnItem;
 use App\Models\InventoryTransaction;
 use App\Models\Item;
 use App\Models\ItemVariant;
@@ -12,14 +11,17 @@ use App\Models\ProcurementOrderLine;
 use App\Models\User;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Validation\ValidationException;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
 
 class CrnController extends Controller
 {
+    private const OPEN_PROCUREMENT_STATUSES = ['draft', 'submitted', 'partial'];
+
     public function index(Request $request): Response
     {
         $notes = ContenaReceivingNote::query()
@@ -27,58 +29,16 @@ class CrnController extends Controller
             ->latest()
             ->get();
 
-        $pendingProcurements = ProcurementOrder::query()
-            ->whereIn('status', ['draft', 'submitted', 'partial'])
-            ->with([
-                'lines.item:id,sku,name,unit',
-            ])
-            ->latest('id')
-            ->get(['id', 'code', 'status', 'created_at'])
-            ->map(function ($order) {
-                $lines = $order->lines
-                    ->map(function ($line) {
-                        $remaining = max((int) $line->ordered_quantity - (int) $line->received_quantity - (int) $line->rejected_quantity, 0);
-                        if ($remaining <= 0 || ! $line->item) {
-                            return null;
-                        }
-
-                        return [
-                            'line_id' => $line->id,
-                            'item_id' => $line->item_id,
-                            'sku' => $line->item->sku,
-                            'name' => $line->item->name,
-                            'unit' => $line->item->unit,
-                            'remaining_qty' => $remaining,
-                        ];
-                    })
-                    ->filter()
-                    ->values();
-
-                return [
-                    'id' => $order->id,
-                    'code' => $order->code,
-                    'status' => $order->status,
-                    'created_at' => optional($order->created_at)->toDateString(),
-                    'lines' => $lines,
-                ];
-            })
-            ->filter(fn ($order) => $order['lines']->isNotEmpty())
-            ->values();
-
         return Inertia::render('Warehouse/Crn/Index', [
             'notes' => $notes,
-            'pendingProcurements' => $pendingProcurements,
+            'pendingProcurements' => $this->buildPendingProcurementPayload(),
             'canManage' => in_array($request->user()->role, [User::ROLE_STORE_KEEPER, User::ROLE_SUPER_ADMIN], true),
         ]);
     }
 
     public function receiveProcurement(Request $request, ProcurementOrder $order): JsonResponse
     {
-        if (! in_array($request->user()->role, [User::ROLE_STORE_KEEPER, User::ROLE_SUPER_ADMIN], true)) {
-            abort(403, 'Unauthorized role.');
-        }
-
-        if (! in_array($order->status, ['draft', 'submitted', 'partial'], true)) {
+        if (! in_array($order->status, self::OPEN_PROCUREMENT_STATUSES, true)) {
             return response()->json([
                 'message' => 'Procurement order is already processed.',
             ], 422);
@@ -93,17 +53,15 @@ class CrnController extends Controller
             'lines.*.rejection_reason' => 'nullable|string|max:255',
         ]);
 
-        $lineInput = collect($validated['lines'])->keyBy(fn ($line) => (int) $line['line_id']);
+        $lineInput = collect($validated['lines'])->keyBy(fn (array $line) => (int) $line['line_id']);
 
         $order->load('lines.item');
 
         DB::transaction(function () use ($request, $order, $lineInput, $validated) {
-            $transaction = InventoryTransaction::create([
-                'type' => 'in',
-                'mode' => 'alacarte',
-                'created_by' => $request->user()->id,
-                'notes' => "Direct receive from PO: {$order->code}",
-            ]);
+            $transaction = $this->createInventoryTransaction(
+                $request->user()->id,
+                "Direct receive from PO: {$order->code}"
+            );
 
             $crn = ContenaReceivingNote::create([
                 'crn_number' => $this->generateCrnNumber(),
@@ -120,7 +78,7 @@ class CrnController extends Controller
                     continue;
                 }
 
-                $remaining = max((int) $line->ordered_quantity - (int) $line->received_quantity - (int) $line->rejected_quantity, 0);
+                $remaining = $this->remainingQuantity($line);
                 if ($remaining <= 0) {
                     continue;
                 }
@@ -144,16 +102,7 @@ class CrnController extends Controller
                     'rejection_reason' => $input['rejection_reason'] ?? null,
                 ]);
 
-                if ($receivedQty > 0) {
-                    $transaction->lines()->create([
-                        'item_id' => $line->item_id,
-                        'item_variant_id' => $variant->id,
-                        'quantity' => $receivedQty,
-                    ]);
-
-                    $variant->increment('stock_initial', $receivedQty);
-                    $variant->increment('stock_current', $receivedQty);
-                }
+                $this->applyReceivedStock($transaction, $variant, (int) $line->item_id, $receivedQty);
 
                 $line->increment('received_quantity', $receivedQty);
                 $line->increment('rejected_quantity', $rejectedQty);
@@ -169,23 +118,19 @@ class CrnController extends Controller
 
     public function safeProcurementLine(Request $request, ProcurementOrder $order, ProcurementOrderLine $line): JsonResponse
     {
-        if (! in_array($request->user()->role, [User::ROLE_STORE_KEEPER, User::ROLE_SUPER_ADMIN], true)) {
-            abort(403, 'Unauthorized role.');
-        }
-
         if ((int) $line->procurement_order_id !== (int) $order->id) {
             return response()->json([
                 'message' => 'Line does not belong to this procurement order.',
             ], 422);
         }
 
-        if (! in_array($order->status, ['draft', 'submitted', 'partial'], true)) {
+        if (! in_array($order->status, self::OPEN_PROCUREMENT_STATUSES, true)) {
             return response()->json([
                 'message' => 'Procurement order is already processed.',
             ], 422);
         }
 
-        $remaining = max((int) $line->ordered_quantity - (int) $line->received_quantity - (int) $line->rejected_quantity, 0);
+        $remaining = $this->remainingQuantity($line);
         if ($remaining <= 0) {
             return response()->json([
                 'message' => 'This SKU line is already processed.',
@@ -194,22 +139,12 @@ class CrnController extends Controller
 
         DB::transaction(function () use ($request, $order, $line, $remaining) {
             $variant = $this->findOrCreateDefaultVariant((int) $line->item_id);
+            $transaction = $this->createInventoryTransaction(
+                $request->user()->id,
+                "Safe receive from PO: {$order->code}"
+            );
 
-            $transaction = InventoryTransaction::create([
-                'type' => 'in',
-                'mode' => 'alacarte',
-                'created_by' => $request->user()->id,
-                'notes' => "Safe receive from PO: {$order->code}",
-            ]);
-
-            $transaction->lines()->create([
-                'item_id' => $line->item_id,
-                'item_variant_id' => $variant->id,
-                'quantity' => $remaining,
-            ]);
-
-            $variant->increment('stock_initial', $remaining);
-            $variant->increment('stock_current', $remaining);
+            $this->applyReceivedStock($transaction, $variant, (int) $line->item_id, $remaining);
 
             $line->increment('received_quantity', $remaining);
 
@@ -231,12 +166,10 @@ class CrnController extends Controller
             ->get(['id', 'sku', 'name', 'unit']);
 
         $defaultVariantByItemId = $items
-            ->mapWithKeys(function ($item) {
-                return [$item->id => $item->variants->first()?->id];
-            });
+            ->mapWithKeys(fn ($item) => [$item->id => $item->variants->first()?->id]);
 
         $procurementOrders = ProcurementOrder::query()
-            ->whereIn('status', ['draft', 'submitted', 'partial'])
+            ->whereIn('status', self::OPEN_PROCUREMENT_STATUSES)
             ->with([
                 'lines' => function ($query) {
                     $query->with([
@@ -245,13 +178,10 @@ class CrnController extends Controller
                 },
             ])
             ->get(['id', 'code'])
-            ->map(function ($order) {
+            ->map(function ($order) use ($defaultVariantByItemId) {
                 $lines = $order->lines
-                    ->map(function ($line) {
-                        $remaining = max(
-                            (int) $line->ordered_quantity - (int) $line->received_quantity - (int) $line->rejected_quantity,
-                            0
-                        );
+                    ->map(function ($line) use ($defaultVariantByItemId) {
+                        $remaining = $this->remainingQuantity($line);
 
                         if ($remaining <= 0 || ! $line->item) {
                             return null;
@@ -276,7 +206,7 @@ class CrnController extends Controller
                     'lines' => $lines,
                 ];
             })
-            ->filter(fn ($order) => $order['lines']->isNotEmpty())
+            ->filter(fn (array $order) => $order['lines']->isNotEmpty())
             ->values();
 
         return Inertia::render('Warehouse/Crn/Create', [
@@ -299,12 +229,20 @@ class CrnController extends Controller
             'items.*.rejection_reason' => 'nullable|string',
         ]);
 
+        foreach ($validated['items'] as $index => $item) {
+            if (((int) $item['received_qty'] + (int) $item['rejected_qty']) > (int) $item['expected_qty']) {
+                throw ValidationException::withMessages([
+                    "items.$index.received_qty" => 'Received and rejected quantities cannot exceed expected quantity.',
+                ]);
+            }
+        }
+
         $crn = DB::transaction(function () use ($request, $validated) {
             $crn = ContenaReceivingNote::create([
                 'crn_number' => $this->generateCrnNumber(),
-                'procurement_order_id' => $validated['procurement_order_id'],
+                'procurement_order_id' => $validated['procurement_order_id'] ?? null,
                 'received_at' => $validated['received_at'],
-                'remarks' => $validated['remarks'],
+                'remarks' => $validated['remarks'] ?? null,
                 'created_by' => $request->user()->id,
                 'status' => 'draft',
             ]);
@@ -322,9 +260,9 @@ class CrnController extends Controller
         ], 201);
     }
 
-    public function transfer(Request $request, $crn): JsonResponse
+    public function transfer(Request $request, ContenaReceivingNote|int $crn): JsonResponse
     {
-        if (!($crn instanceof ContenaReceivingNote)) {
+        if (! $crn instanceof ContenaReceivingNote) {
             $crn = ContenaReceivingNote::findOrFail($crn);
         }
 
@@ -333,44 +271,40 @@ class CrnController extends Controller
         }
 
         DB::transaction(function () use ($request, $crn) {
-            $transaction = InventoryTransaction::create([
-                'type' => 'in',
-                'mode' => 'alacarte',
-                'created_by' => $request->user()->id,
-                'notes' => "Transfer from CRN: {$crn->crn_number}",
-            ]);
+            $transaction = $this->createInventoryTransaction(
+                $request->user()->id,
+                "Transfer from CRN: {$crn->crn_number}"
+            );
 
             $crn->load('items.itemVariant');
 
             foreach ($crn->items as $item) {
-                if ($item->received_qty > 0) {
-                    $transaction->lines()->create([
-                        'item_id' => $item->itemVariant->item_id,
-                        'item_variant_id' => $item->item_variant_id,
-                        'quantity' => $item->received_qty,
-                    ]);
-
-                    // Update stock
-                    $item->itemVariant->increment('stock_initial', $item->received_qty);
-                    $item->itemVariant->increment('stock_current', $item->received_qty);
+                if (! $item->itemVariant) {
+                    continue;
                 }
 
-                // If linked to PO, update PO lines
+                $this->applyReceivedStock(
+                    $transaction,
+                    $item->itemVariant,
+                    (int) $item->itemVariant->item_id,
+                    (int) $item->received_qty
+                );
+
                 if ($crn->procurement_order_id) {
-                    $poLine = ProcurementOrderLine::where('procurement_order_id', $crn->procurement_order_id)
+                    $poLine = ProcurementOrderLine::query()
+                        ->where('procurement_order_id', $crn->procurement_order_id)
                         ->where('item_id', $item->itemVariant->item_id)
                         ->first();
 
                     if ($poLine) {
-                        $poLine->increment('received_quantity', $item->received_qty);
-                        $poLine->increment('rejected_quantity', $item->rejected_qty);
+                        $poLine->increment('received_quantity', (int) $item->received_qty);
+                        $poLine->increment('rejected_quantity', (int) $item->rejected_qty);
                     }
                 }
             }
 
             $crn->update(['status' => 'transferred']);
 
-            // Update PO status if linked
             if ($crn->procurement_order_id) {
                 $this->updateProcurementOrderStatus($crn->procurement_order_id);
             }
@@ -381,9 +315,90 @@ class CrnController extends Controller
         ]);
     }
 
+    private function buildPendingProcurementPayload(): Collection
+    {
+        return ProcurementOrder::query()
+            ->whereIn('status', self::OPEN_PROCUREMENT_STATUSES)
+            ->with([
+                'lines.item:id,sku,name,unit',
+            ])
+            ->latest('id')
+            ->get(['id', 'code', 'status', 'created_at'])
+            ->map(function ($order) {
+                $lines = $order->lines
+                    ->map(function ($line) {
+                        $remaining = $this->remainingQuantity($line);
+
+                        if ($remaining <= 0 || ! $line->item) {
+                            return null;
+                        }
+
+                        return [
+                            'line_id' => $line->id,
+                            'item_id' => $line->item_id,
+                            'sku' => $line->item->sku,
+                            'name' => $line->item->name,
+                            'unit' => $line->item->unit,
+                            'remaining_qty' => $remaining,
+                        ];
+                    })
+                    ->filter()
+                    ->values();
+
+                return [
+                    'id' => $order->id,
+                    'code' => $order->code,
+                    'status' => $order->status,
+                    'created_at' => optional($order->created_at)->toDateString(),
+                    'lines' => $lines,
+                ];
+            })
+            ->filter(fn (array $order) => $order['lines']->isNotEmpty())
+            ->values();
+    }
+
+    private function createInventoryTransaction(int $userId, string $notes): InventoryTransaction
+    {
+        return InventoryTransaction::create([
+            'type' => 'in',
+            'mode' => 'alacarte',
+            'created_by' => $userId,
+            'notes' => $notes,
+        ]);
+    }
+
+    private function applyReceivedStock(
+        InventoryTransaction $transaction,
+        ItemVariant $variant,
+        int $itemId,
+        int $receivedQty
+    ): void {
+        if ($receivedQty <= 0) {
+            return;
+        }
+
+        $transaction->lines()->create([
+            'item_id' => $itemId,
+            'item_variant_id' => $variant->id,
+            'quantity' => $receivedQty,
+        ]);
+
+        $variant->increment('stock_initial', $receivedQty);
+        $variant->increment('stock_current', $receivedQty);
+    }
+
+    private function remainingQuantity(ProcurementOrderLine $line): int
+    {
+        return max(
+            (int) $line->ordered_quantity - (int) $line->received_quantity - (int) $line->rejected_quantity,
+            0
+        );
+    }
+
     private function generateCrnNumber(): string
     {
         $prefix = 'CRN-' . now()->format('Ymd');
+
         do {
             $number = $prefix . '-' . Str::upper(Str::random(4));
         } while (ContenaReceivingNote::where('crn_number', $number)->exists());
@@ -394,30 +409,16 @@ class CrnController extends Controller
     private function updateProcurementOrderStatus(int $poId): void
     {
         $po = ProcurementOrder::with('lines')->find($poId);
-        if (!$po) return;
-
-        $status = 'received';
-        foreach ($po->lines as $line) {
-            if ($line->received_quantity === 0 && $line->ordered_quantity > 0) {
-                $status = 'partial'; // Or keep as is if no items received at all
-            }
-            if ($line->received_quantity < $line->ordered_quantity) {
-                $status = 'partial';
-            }
+        if (! $po) {
+            return;
         }
 
-        // Check if all lines are fully received or rejected
-        $allProcessed = true;
-        foreach ($po->lines as $line) {
-            if (($line->received_quantity + $line->rejected_quantity) < $line->ordered_quantity) {
-                $allProcessed = false;
-                break;
-            }
-        }
+        $lines = $po->lines;
+        $allProcessed = $lines->every(function ($line) {
+            return ((int) $line->received_quantity + (int) $line->rejected_quantity) >= (int) $line->ordered_quantity;
+        });
 
-        if ($allProcessed) {
-            $status = 'received';
-        }
+        $status = $allProcessed ? 'received' : 'partial';
 
         $po->update(['status' => $status]);
     }

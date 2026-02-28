@@ -62,10 +62,13 @@ Route::middleware('auth')->group(function () {
     Route::prefix('warehouse')->group(function () {
         Route::get('/crn', [CrnController::class, 'index'])->name('warehouse.crn.index');
         Route::get('/crn/create', [CrnController::class, 'create'])->name('warehouse.crn.create');
-        Route::post('/crn', [CrnController::class, 'store'])->name('warehouse.crn.store');
-        Route::post('/crn/procurement/{order}/receive', [CrnController::class, 'receiveProcurement'])->name('warehouse.crn.procurement.receive');
-        Route::post('/crn/procurement/{order}/lines/{line}/safe', [CrnController::class, 'safeProcurementLine'])->name('warehouse.crn.procurement.lines.safe');
-        Route::post('/crn/{crn}/transfer', [CrnController::class, 'transfer'])->name('warehouse.crn.transfer');
+
+        Route::middleware('role:store_keeper,super_admin')->group(function () {
+            Route::post('/crn', [CrnController::class, 'store'])->name('warehouse.crn.store');
+            Route::post('/crn/procurement/{order}/receive', [CrnController::class, 'receiveProcurement'])->name('warehouse.crn.procurement.receive');
+            Route::post('/crn/procurement/{order}/lines/{line}/safe', [CrnController::class, 'safeProcurementLine'])->name('warehouse.crn.procurement.lines.safe');
+            Route::post('/crn/{crn}/transfer', [CrnController::class, 'transfer'])->name('warehouse.crn.transfer');
+        });
     });
 
     Route::middleware('role:super_admin')->group(function () {

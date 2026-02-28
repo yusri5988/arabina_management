@@ -2,7 +2,7 @@ import { Head } from '@inertiajs/react';
 import { useState } from 'react';
 import AuthenticatedLayout from '../../../Layouts/AuthenticatedLayout';
 import { apiFetchJson } from '../../../lib/http';
-import { ChevronDownIcon } from '@heroicons/react/24/outline/index.js';
+import { ChevronDownIcon, PlusIcon, MinusIcon } from '@heroicons/react/24/outline/index.js';
 
 export default function CrnIndex({ pendingProcurements = [], notes = [], canManage = false }) {
   const [notification, setNotification] = useState(null);
@@ -46,13 +46,13 @@ export default function CrnIndex({ pendingProcurements = [], notes = [], canMana
       let next = { ...existing, [field]: value };
 
       if (field === 'received_qty') {
-        const received = Math.max(Number(value || 0), 0);
+        const received = Math.min(Math.max(Number(value || 0), 0), Number(remainingQty || 0));
         next.received_qty = received;
         next.rejected_qty = Math.max(Number(remainingQty ?? 0) - received, 0);
       }
 
       if (field === 'rejected_qty') {
-        const rejected = Math.max(Number(value || 0), 0);
+        const rejected = Math.min(Math.max(Number(value || 0), 0), Number(remainingQty || 0));
         next.rejected_qty = rejected;
         next.received_qty = Math.max(Number(remainingQty ?? 0) - rejected, 0);
       }
@@ -172,25 +172,57 @@ export default function CrnIndex({ pendingProcurements = [], notes = [], canMana
                             </div>
                             <div>
                               <label className="text-[10px] font-bold text-slate-400 uppercase">Received</label>
-                              <input
-                                type="number"
-                                min="0"
-                                max={line.remaining_qty}
-                                value={current.received_qty}
-                                onChange={(e) => setLineValue(order.id, line.line_id, 'received_qty', e.target.value, line.remaining_qty)}
-                                className="w-full rounded-lg border border-slate-200 px-2 py-1.5 text-xs text-right bg-white"
-                              />
+                              <div className="flex items-center border border-slate-200 rounded-lg bg-white overflow-hidden h-[34px]">
+                                <button
+                                  type="button"
+                                  onClick={() => setLineValue(order.id, line.line_id, 'received_qty', Number(current.received_qty) - 1, line.remaining_qty)}
+                                  className="px-2 h-full flex items-center justify-center bg-slate-50 border-r border-slate-200 hover:bg-slate-100 text-slate-500"
+                                >
+                                  <MinusIcon className="w-3.5 h-3.5" strokeWidth={3} />
+                                </button>
+                                <input
+                                  type="number"
+                                  min="0"
+                                  max={line.remaining_qty}
+                                  value={current.received_qty}
+                                  onChange={(e) => setLineValue(order.id, line.line_id, 'received_qty', e.target.value, line.remaining_qty)}
+                                  className="w-full border-none text-center text-xs font-bold text-slate-700 focus:ring-0 p-0 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() => setLineValue(order.id, line.line_id, 'received_qty', Number(current.received_qty) + 1, line.remaining_qty)}
+                                  className="px-2 h-full flex items-center justify-center bg-slate-50 border-l border-slate-200 hover:bg-slate-100 text-slate-500"
+                                >
+                                  <PlusIcon className="w-3.5 h-3.5" strokeWidth={3} />
+                                </button>
+                              </div>
                             </div>
                             <div>
                               <label className="text-[10px] font-bold text-slate-400 uppercase">Rejected</label>
-                              <input
-                                type="number"
-                                min="0"
-                                max={line.remaining_qty}
-                                value={current.rejected_qty}
-                                onChange={(e) => setLineValue(order.id, line.line_id, 'rejected_qty', e.target.value, line.remaining_qty)}
-                                className="w-full rounded-lg border border-slate-200 px-2 py-1.5 text-xs text-right bg-white"
-                              />
+                              <div className="flex items-center border border-slate-200 rounded-lg bg-white overflow-hidden h-[34px]">
+                                <button
+                                  type="button"
+                                  onClick={() => setLineValue(order.id, line.line_id, 'rejected_qty', Number(current.rejected_qty) - 1, line.remaining_qty)}
+                                  className="px-2 h-full flex items-center justify-center bg-slate-50 border-r border-slate-200 hover:bg-slate-100 text-slate-500"
+                                >
+                                  <MinusIcon className="w-3.5 h-3.5" strokeWidth={3} />
+                                </button>
+                                <input
+                                  type="number"
+                                  min="0"
+                                  max={line.remaining_qty}
+                                  value={current.rejected_qty}
+                                  onChange={(e) => setLineValue(order.id, line.line_id, 'rejected_qty', e.target.value, line.remaining_qty)}
+                                  className="w-full border-none text-center text-xs font-bold text-slate-700 focus:ring-0 p-0 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() => setLineValue(order.id, line.line_id, 'rejected_qty', Number(current.rejected_qty) + 1, line.remaining_qty)}
+                                  className="px-2 h-full flex items-center justify-center bg-slate-50 border-l border-slate-200 hover:bg-slate-100 text-slate-500"
+                                >
+                                  <PlusIcon className="w-3.5 h-3.5" strokeWidth={3} />
+                                </button>
+                              </div>
                             </div>
                             <div>
                               <label className="text-[10px] font-bold text-slate-400 uppercase">Reason</label>

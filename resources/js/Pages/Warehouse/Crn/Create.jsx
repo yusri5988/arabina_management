@@ -2,7 +2,7 @@ import { Head, router } from '@inertiajs/react';
 import { useMemo, useState } from 'react';
 import AuthenticatedLayout from '../../../Layouts/AuthenticatedLayout';
 import { apiFetchJson } from '../../../lib/http';
-import { TrashIcon, PlusIcon, ArrowPathIcon } from '@heroicons/react/24/outline/index.js';
+import { TrashIcon, PlusIcon, ArrowPathIcon, MinusIcon } from '@heroicons/react/24/outline/index.js';
 
 export default function CrnCreate({ procurementOrders = [], items = [] }) {
   const [processing, setProcessing] = useState(false);
@@ -224,36 +224,84 @@ export default function CrnCreate({ procurementOrders = [], items = [] }) {
                 <div className="grid grid-cols-3 gap-4">
                   <div className="space-y-1.5">
                     <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Expected Qty</label>
-                    <input
-                      type="number"
-                      min="1"
-                      required
-                      value={item.expected_qty}
-                      onChange={(e) => updateItem(index, 'expected_qty', e.target.value)}
-                      className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all outline-none bg-white"
-                    />
+                    <div className="flex items-center border border-slate-200 rounded-xl bg-white overflow-hidden h-[38px] focus-within:ring-2 focus-within:ring-emerald-500/20 focus-within:border-emerald-500 transition-all">
+                      <button
+                        type="button"
+                        onClick={() => updateItem(index, 'expected_qty', Math.max(1, Number(item.expected_qty) - 1))}
+                        className="px-2 h-full flex items-center justify-center bg-slate-50 border-r border-slate-200 hover:bg-slate-100 text-slate-500"
+                      >
+                        <MinusIcon className="w-4 h-4" strokeWidth={2.5} />
+                      </button>
+                      <input
+                        type="number"
+                        min="1"
+                        required
+                        value={item.expected_qty}
+                        onChange={(e) => updateItem(index, 'expected_qty', e.target.value)}
+                        className="w-full border-none text-center text-sm font-bold text-slate-700 focus:ring-0 p-0 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => updateItem(index, 'expected_qty', Number(item.expected_qty) + 1)}
+                        className="px-2 h-full flex items-center justify-center bg-slate-50 border-l border-slate-200 hover:bg-slate-100 text-slate-500"
+                      >
+                        <PlusIcon className="w-4 h-4" strokeWidth={2.5} />
+                      </button>
+                    </div>
                   </div>
                   <div className="space-y-1.5">
                     <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Received Qty</label>
-                    <input
-                      type="number"
-                      min="0"
-                      required
-                      value={item.received_qty}
-                      onChange={(e) => updateItem(index, 'received_qty', e.target.value)}
-                      className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all outline-none bg-white"
-                    />
+                    <div className="flex items-center border border-slate-200 rounded-xl bg-white overflow-hidden h-[38px] focus-within:ring-2 focus-within:ring-emerald-500/20 focus-within:border-emerald-500 transition-all">
+                      <button
+                        type="button"
+                        onClick={() => updateItem(index, 'received_qty', Math.max(0, Number(item.received_qty) - 1))}
+                        className="px-2 h-full flex items-center justify-center bg-slate-50 border-r border-slate-200 hover:bg-slate-100 text-slate-500"
+                      >
+                        <MinusIcon className="w-4 h-4" strokeWidth={2.5} />
+                      </button>
+                      <input
+                        type="number"
+                        min="0"
+                        required
+                        value={item.received_qty}
+                        onChange={(e) => updateItem(index, 'received_qty', e.target.value)}
+                        className="w-full border-none text-center text-sm font-bold text-slate-700 focus:ring-0 p-0 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => updateItem(index, 'received_qty', Number(item.received_qty) + 1)}
+                        className="px-2 h-full flex items-center justify-center bg-slate-50 border-l border-slate-200 hover:bg-slate-100 text-slate-500"
+                      >
+                        <PlusIcon className="w-4 h-4" strokeWidth={2.5} />
+                      </button>
+                    </div>
                   </div>
                   <div className="space-y-1.5">
                     <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Rejected Qty</label>
-                    <input
-                      type="number"
-                      min="0"
-                      required
-                      value={item.rejected_qty}
-                      onChange={(e) => updateItem(index, 'rejected_qty', e.target.value)}
-                      className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all outline-none bg-white"
-                    />
+                    <div className="flex items-center border border-slate-200 rounded-xl bg-white overflow-hidden h-[38px] focus-within:ring-2 focus-within:ring-emerald-500/20 focus-within:border-emerald-500 transition-all">
+                      <button
+                        type="button"
+                        onClick={() => updateItem(index, 'rejected_qty', Math.max(0, Number(item.rejected_qty) - 1))}
+                        className="px-2 h-full flex items-center justify-center bg-slate-50 border-r border-slate-200 hover:bg-slate-100 text-slate-500"
+                      >
+                        <MinusIcon className="w-4 h-4" strokeWidth={2.5} />
+                      </button>
+                      <input
+                        type="number"
+                        min="0"
+                        required
+                        value={item.rejected_qty}
+                        onChange={(e) => updateItem(index, 'rejected_qty', e.target.value)}
+                        className="w-full border-none text-center text-sm font-bold text-slate-700 focus:ring-0 p-0 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => updateItem(index, 'rejected_qty', Number(item.rejected_qty) + 1)}
+                        className="px-2 h-full flex items-center justify-center bg-slate-50 border-l border-slate-200 hover:bg-slate-100 text-slate-500"
+                      >
+                        <PlusIcon className="w-4 h-4" strokeWidth={2.5} />
+                      </button>
+                    </div>
                   </div>
                 </div>
 
