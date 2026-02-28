@@ -3,7 +3,7 @@ import { useState } from 'react';
 import AuthenticatedLayout from '../../Layouts/AuthenticatedLayout';
 import { apiFetchJson } from '../../lib/http';
 
-export default function ProcurementIndex({ databaseReady = true, canManage = false, canReceive = false, suggestion, orders = [], items = [] }) {
+export default function ProcurementIndex({ databaseReady = true, canManage = false, canReceive = false, suggestion, orders = [], items = [], packages = [] }) {
   const initialSuggestion = suggestion ?? { package_lines: [], sku_lines: [], source_orders: [] };
 
   const [notification, setNotification] = useState(null);
@@ -11,11 +11,14 @@ export default function ProcurementIndex({ databaseReady = true, canManage = fal
   const [processingReceiveId, setProcessingReceiveId] = useState(null);
   const [processingDeleteId, setProcessingDeleteId] = useState(null);
   const [processingAddSkuId, setProcessingAddSkuId] = useState(null);
+  const [processingAddPackageId, setProcessingAddPackageId] = useState(null);
+  const [processingSubmitId, setProcessingSubmitId] = useState(null);
   const [list, setList] = useState(orders);
   const [suggestionData, setSuggestionData] = useState(initialSuggestion);
   const [receiveForms, setReceiveForms] = useState({});
   const [draftSearchForms, setDraftSearchForms] = useState({});
   const [draftAddForms, setDraftAddForms] = useState({});
+  const [draftAddPackageForms, setDraftAddPackageForms] = useState({});
   const [expandedReceiveForms, setExpandedReceiveForms] = useState({});
 
   const setReceiveValue = (orderId, lineId, value) => {
@@ -40,6 +43,18 @@ export default function ProcurementIndex({ databaseReady = true, canManage = fal
       ...prev,
       [orderId]: {
         item_id: '',
+        quantity: '',
+        ...(prev[orderId] ?? {}),
+        [field]: value,
+      },
+    }));
+  };
+
+  const setDraftAddPackageValue = (orderId, field, value) => {
+    setDraftAddPackageForms((prev) => ({
+      ...prev,
+      [orderId]: {
+        package_id: '',
         quantity: '',
         ...(prev[orderId] ?? {}),
         [field]: value,
@@ -184,6 +199,72 @@ export default function ProcurementIndex({ databaseReady = true, canManage = fal
       setNotification({ type: 'error', message: 'Network error. Please try again.' });
     } finally {
       setProcessingAddSkuId(null);
+    }
+  };
+
+  const addPackageToDraft = async (order) => {
+    const form = draftAddPackageForms?.[order.id] ?? {};
+    const packageId = Number(form.package_id || 0);
+    const quantity = Number(form.quantity || 0);
+
+    if (!packageId || quantity < 1) {
+      setNotification({ type: 'error', message: 'Please choose package and valid quantity.' });
+      return;
+    }
+
+    setNotification(null);
+    setProcessingAddPackageId(order.id);
+
+    try {
+      const { response, payload } = await apiFetchJson(`/procurement/orders/${order.id}/packages`, {
+        method: 'POST',
+        body: JSON.stringify({ package_id: packageId, quantity }),
+      });
+
+      if (response.ok) {
+        setNotification({ type: 'success', message: payload.message ?? 'Package added.' });
+        setList((prev) => prev.map((x) => (x.id === order.id ? payload.data : x)));
+        setDraftAddPackageForms((prev) => ({
+          ...prev,
+          [order.id]: {
+            ...(prev[order.id] ?? {}),
+            package_id: '',
+            quantity: '',
+          },
+        }));
+      } else {
+        setNotification({ type: 'error', message: payload.message ?? 'Failed to add package.' });
+      }
+    } catch (_) {
+      setNotification({ type: 'error', message: 'Network error. Please try again.' });
+    } finally {
+      setProcessingAddPackageId(null);
+    }
+  };
+
+  const submitOrder = async (order) => {
+    if (!window.confirm(`Submit procurement order ${order.code}?`)) {
+      return;
+    }
+
+    setNotification(null);
+    setProcessingSubmitId(order.id);
+
+    try {
+      const { response, payload } = await apiFetchJson(`/procurement/orders/${order.id}/submit`, {
+        method: 'PUT',
+      });
+
+      if (response.ok) {
+        setNotification({ type: 'success', message: payload.message ?? 'Order submitted.' });
+        setList((prev) => prev.map((x) => (x.id === order.id ? payload.data : x)));
+      } else {
+        setNotification({ type: 'error', message: payload.message ?? 'Failed to submit order.' });
+      }
+    } catch (_) {
+      setNotification({ type: 'error', message: 'Network error. Please try again.' });
+    } finally {
+      setProcessingSubmitId(null);
     }
   };
 
@@ -399,6 +480,62 @@ export default function ProcurementIndex({ databaseReady = true, canManage = fal
                         {(order.package_lines ?? []).length === 0 && <p className="text-xs text-slate-500">No package lines.</p>}
                       </div>
 
+                      {(canManage && order.status === 'draft') && (
+                        <div className="mt-3 rounded-xl border border-blue-100 bg-blue-50/40 p-3 space-y-2">
+                          <p className="text-[11px] font-bold uppercase tracking-wider text-blue-700">Add Another Package</p>
+                          <div className="grid grid-cols-12 gap-2">
+                            <div className="col-span-12 md:col-span-10">
+                              <select
+                                value={draftAddPackageForms?.[order.id]?.package_id ?? ''}
+                                onChange={(e) => setDraftAddPackageValue(order.id, 'package_id', e.target.value)}
+                                className="w-full rounded-lg border border-slate-200 px-2 py-1.5 text-xs bg-white focus:ring-2 focus:ring-blue-500/20 focus:outline-none"
+                              >
+                                <option value="">Select Package</option>
+                                {packages.map((pkg) => (
+                                  <option key={pkg.id} value={pkg.id}>
+                                    {pkg.code} - {pkg.name}
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+                            <div className="col-span-8 md:col-span-1">
+                              <input
+                                type="text"
+                                inputMode="numeric"
+                                pattern="[0-9]*"
+                                value={draftAddPackageForms?.[order.id]?.quantity ?? ''}
+                                onChange={(e) => {
+                                  const clean = e.target.value.replace(/[^0-9]/g, '');
+                                  setDraftAddPackageValue(order.id, 'quantity', clean === '' ? '' : Number(clean));
+                                }}
+                                placeholder="Qty"
+                                className="w-full rounded-lg border border-slate-200 px-2 py-1.5 text-xs text-right bg-white focus:ring-2 focus:ring-blue-500/20 focus:outline-none"
+                              />
+                            </div>
+                            <div className="col-span-4 md:col-span-1">
+                              <button
+                                type="button"
+                                onClick={() => addPackageToDraft(order)}
+                                disabled={processingAddPackageId === order.id}
+                                className="w-full rounded-lg bg-blue-600 text-white text-xs font-bold py-1.5 hover:bg-blue-700 disabled:opacity-50"
+                              >
+                                {processingAddPackageId === order.id ? '...' : '+'}
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      {(canManage && order.status === 'draft') && (
+                        <button
+                          type="button"
+                          onClick={() => submitOrder(order)}
+                          disabled={processingSubmitId === order.id}
+                          className="mt-3 w-full bg-emerald-600 text-white py-2.5 rounded-xl text-sm font-bold disabled:opacity-50 hover:bg-emerald-700 transition-colors"
+                        >
+                          {processingSubmitId === order.id ? 'Submitting...' : 'Submit Order'}
+                        </button>
+                      )}
                     </div>
 
                     <div>

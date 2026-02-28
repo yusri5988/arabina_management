@@ -28,7 +28,7 @@ class CrnController extends Controller
             ->get();
 
         $pendingProcurements = ProcurementOrder::query()
-            ->whereIn('status', ['draft', 'partial'])
+            ->whereIn('status', ['draft', 'submitted', 'partial'])
             ->with([
                 'lines.item:id,sku,name,unit',
             ])
@@ -78,7 +78,7 @@ class CrnController extends Controller
             abort(403, 'Unauthorized role.');
         }
 
-        if (! in_array($order->status, ['draft', 'partial'], true)) {
+        if (! in_array($order->status, ['draft', 'submitted', 'partial'], true)) {
             return response()->json([
                 'message' => 'Procurement order is already processed.',
             ], 422);
@@ -179,7 +179,7 @@ class CrnController extends Controller
             ], 422);
         }
 
-        if (! in_array($order->status, ['draft', 'partial'], true)) {
+        if (! in_array($order->status, ['draft', 'submitted', 'partial'], true)) {
             return response()->json([
                 'message' => 'Procurement order is already processed.',
             ], 422);
@@ -236,7 +236,7 @@ class CrnController extends Controller
             });
 
         $procurementOrders = ProcurementOrder::query()
-            ->whereIn('status', ['draft', 'partial'])
+            ->whereIn('status', ['draft', 'submitted', 'partial'])
             ->with([
                 'lines' => function ($query) {
                     $query->with([

@@ -53,6 +53,8 @@ Route::middleware('auth')->group(function () {
     Route::post('/procurement/orders', [ProcurementController::class, 'store'])->name('procurement.orders.store');
     Route::get('/procurement/orders/{order}/pdf', [ProcurementController::class, 'pdf'])->name('procurement.orders.pdf');
     Route::post('/procurement/orders/{order}/lines', [ProcurementController::class, 'addLine'])->name('procurement.orders.lines.store');
+    Route::post('/procurement/orders/{order}/packages', [ProcurementController::class, 'addPackageLine'])->name('procurement.orders.packages.store');
+    Route::put('/procurement/orders/{order}/submit', [ProcurementController::class, 'submit'])->name('procurement.orders.submit');
     Route::put('/procurement/orders/{order}/receive', [ProcurementController::class, 'receive'])->name('procurement.orders.receive');
     Route::delete('/procurement/orders/{order}', [ProcurementController::class, 'destroy'])->name('procurement.orders.destroy');
     Route::get('/rejections', [ProcurementController::class, 'rejectedList'])->name('rejections.index');

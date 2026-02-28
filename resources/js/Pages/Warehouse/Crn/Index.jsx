@@ -10,7 +10,6 @@ export default function CrnIndex({ pendingProcurements = [], notes = [], canMana
   const [openOrderId, setOpenOrderId] = useState(null);
   const [pendingList, setPendingList] = useState(pendingProcurements);
   const [forms, setForms] = useState({});
-  const [processingSafeKey, setProcessingSafeKey] = useState(null);
 
   const toggleOrder = (order) => {
     setOpenOrderId((prev) => (prev === order.id ? null : order.id));
@@ -68,59 +67,23 @@ export default function CrnIndex({ pendingProcurements = [], notes = [], canMana
     });
   };
 
-  const markSafe = async (order, line) => {
-    const key = `${order.id}-${line.line_id}`;
-    setProcessingSafeKey(key);
-    setNotification(null);
+  const submitSingleLine = async (order, line) => {
+    const current = forms?.[order.id]?.[line.line_id] ?? {
+      received_qty: Number(line.remaining_qty ?? 0),
+      rejected_qty: 0,
+      rejection_reason: '',
+    };
 
-    try {
-      const { response, payload } = await apiFetchJson(`/warehouse/crn/procurement/${order.id}/lines/${line.line_id}/safe`, {
-        method: 'POST',
-      });
-
-      if (response.ok) {
-        setNotification({ type: 'success', message: payload.message ?? 'Safe line received.' });
-        setPendingList((prev) => prev
-          .map((po) => {
-            if (po.id !== order.id) {
-              return po;
-            }
-
-            return {
-              ...po,
-              lines: (po.lines ?? []).filter((x) => x.line_id !== line.line_id),
-            };
-          })
-          .filter((po) => (po.lines ?? []).length > 0));
-      } else {
-        setNotification({ type: 'error', message: payload.message ?? 'Safe action failed.' });
-      }
-    } catch (_) {
-      setNotification({ type: 'error', message: 'Network error. Please try again.' });
-    } finally {
-      setProcessingSafeKey(null);
-    }
-  };
-
-  const submitChecklist = async (order) => {
-    const lineForms = forms?.[order.id] ?? {};
-    const linesPayload = (order.lines ?? []).map((line) => {
-      const current = lineForms?.[line.line_id] ?? {
-        received_qty: Number(line.remaining_qty ?? 0),
-        rejected_qty: 0,
-        rejection_reason: '',
-      };
-
-      return {
-        line_id: line.line_id,
-        received_qty: Number(current.received_qty || 0),
-        rejected_qty: Number(current.rejected_qty || 0),
-        rejection_reason: current.rejection_reason || null,
-      };
-    });
+    const linesPayload = [{
+      line_id: line.line_id,
+      received_qty: Number(current.received_qty || 0),
+      rejected_qty: Number(current.rejected_qty || 0),
+      rejection_reason: current.rejection_reason || null,
+    }];
 
     setNotification(null);
-    setProcessingId(order.id);
+    const procKey = `line-${order.id}-${line.line_id}`;
+    setProcessingId(procKey);
 
     try {
       const { response, payload } = await apiFetchJson(`/warehouse/crn/procurement/${order.id}/receive`, {
@@ -129,9 +92,17 @@ export default function CrnIndex({ pendingProcurements = [], notes = [], canMana
       });
 
       if (response.ok) {
-        setNotification({ type: 'success', message: payload.message ?? 'Checklist submitted.' });
-        setPendingList((prev) => prev.filter((x) => x.id !== order.id));
-        setOpenOrderId(null);
+        setNotification({ type: 'success', message: payload.message ?? 'SKU submitted.' });
+        setPendingList((prev) => prev
+          .map((po) => {
+            if (po.id !== order.id) return po;
+            return {
+              ...po,
+              lines: (po.lines ?? []).filter((x) => x.line_id !== line.line_id),
+            };
+          })
+          .filter((po) => po.lines.length > 0)
+        );
       } else {
         setNotification({ type: 'error', message: payload.message ?? 'Submit failed.' });
       }
@@ -192,23 +163,9 @@ export default function CrnIndex({ pendingProcurements = [], notes = [], canMana
                         <div key={line.line_id} className="rounded-xl border border-slate-200 bg-slate-50 p-3">
                           <div className="flex items-center justify-between gap-3 mb-2">
                             <p className="text-xs font-bold text-slate-700">{line.sku}</p>
-                            <label className="inline-flex items-center gap-2 rounded-xl bg-emerald-50 border border-emerald-200 px-3 py-2 text-sm font-extrabold text-emerald-700">
-                              <input
-                                type="checkbox"
-                                checked={false}
-                                onChange={(e) => {
-                                  if (e.target.checked) {
-                                    markSafe(order, line);
-                                  }
-                                }}
-                                disabled={processingSafeKey === `${order.id}-${line.line_id}` || !canManage}
-                                className="h-5 w-5 rounded border-emerald-300 text-emerald-600 focus:ring-emerald-500"
-                              />
-                              {processingSafeKey === `${order.id}-${line.line_id}` ? 'Saving...' : 'Safe'}
-                            </label>
                           </div>
 
-                          <div className="grid grid-cols-1 md:grid-cols-4 gap-2 items-end">
+                          <div className="grid grid-cols-1 md:grid-cols-5 gap-2 items-end">
                             <div>
                               <p className="text-[10px] font-bold text-slate-400 uppercase">Expected</p>
                               <p className="text-sm font-bold text-slate-700">{line.remaining_qty}</p>
@@ -245,19 +202,20 @@ export default function CrnIndex({ pendingProcurements = [], notes = [], canMana
                                 className="w-full rounded-lg border border-slate-200 px-2 py-1.5 text-xs bg-white"
                               />
                             </div>
+                            <div>
+                              <button
+                                type="button"
+                                onClick={() => submitSingleLine(order, line)}
+                                disabled={!canManage || processingId === `line-${order.id}-${line.line_id}`}
+                                className="w-full rounded-lg bg-emerald-600 text-white text-xs font-bold py-2 hover:bg-emerald-700 disabled:opacity-50"
+                              >
+                                {processingId === `line-${order.id}-${line.line_id}` ? '...' : 'Submit'}
+                              </button>
+                            </div>
                           </div>
                         </div>
                       );
                     })}
-
-                    <button
-                      type="button"
-                      onClick={() => submitChecklist(order)}
-                      disabled={!canManage || processingId === order.id}
-                      className="w-full rounded-2xl bg-[#1E3D1A] text-white py-4 text-base font-extrabold tracking-wide hover:bg-emerald-900 disabled:opacity-50"
-                    >
-                      {processingId === order.id ? 'Submitting...' : 'Submit Checklist'}
-                    </button>
                   </div>
                 )}
               </div>

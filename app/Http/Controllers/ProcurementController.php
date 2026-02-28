@@ -60,6 +60,14 @@ class ProcurementController extends Controller
                     ->orderBy('sku')
                     ->get(['id', 'sku', 'name', 'unit']);
             }
+
+            if (Schema::hasTable('packages')) {
+                $packages = Package::query()
+                    ->orderBy('code')
+                    ->get(['id', 'code', 'name']);
+            } else {
+                $packages = collect();
+            }
         }
 
         return Inertia::render('Procurement/Index', [
@@ -69,6 +77,7 @@ class ProcurementController extends Controller
             'suggestion' => $suggestion,
             'orders' => $orders,
             'items' => $items,
+            'packages' => $packages ?? collect(),
         ]);
     }
 
@@ -218,6 +227,120 @@ class ProcurementController extends Controller
         return response()->json([
             'message' => 'SKU line added to procurement draft.',
             'data' => $this->findOrderWithRelations($order->id),
+        ]);
+    }
+
+    public function addPackageLine(Request $request, ProcurementOrder $order): JsonResponse
+    {
+        $this->authorizeRole($request, [User::ROLE_PROCUREMENT, User::ROLE_SUPER_ADMIN]);
+
+        if ($order->status !== 'draft') {
+            return response()->json([
+                'message' => 'Package can only be added to draft procurement order.',
+            ], 422);
+        }
+
+        $validated = $request->validate([
+            'package_id' => 'required|integer|exists:packages,id',
+            'quantity' => 'required|integer|min:1',
+        ]);
+
+        DB::transaction(function () use ($order, $validated) {
+            $packageId = (int) $validated['package_id'];
+            $packageQuantity = (int) $validated['quantity'];
+
+            $order->packageLines()->create([
+                'package_id' => $packageId,
+                'quantity' => $packageQuantity,
+            ]);
+
+            $package = Package::with('packageItems')->find($packageId);
+            if (! $package || ! $package->packageItems) {
+                return;
+            }
+
+            foreach ($package->packageItems as $packageItem) {
+                $itemId = (int) $packageItem->item_id;
+                $totalQty = $packageQuantity * (int) $packageItem->quantity;
+
+                $line = $order->lines()
+                    ->where('item_id', $itemId)
+                    ->first();
+
+                if ($line) {
+                    $line->update([
+                        'suggested_quantity' => (int) ($line->suggested_quantity ?? 0) + $totalQty,
+                        'ordered_quantity' => (int) ($line->ordered_quantity ?? 0) + $totalQty,
+                    ]);
+                } else {
+                    $order->lines()->create([
+                        'item_id' => $itemId,
+                        'suggested_quantity' => $totalQty,
+                        'ordered_quantity' => $totalQty,
+                        'received_quantity' => 0,
+                        'rejected_quantity' => 0,
+                    ]);
+                }
+            }
+        });
+
+        return response()->json([
+            'message' => 'Package line added to procurement draft with all item lines.',
+            'data' => $this->findOrderWithRelations($order->id),
+        ]);
+    }
+
+    public function submit(Request $request, ProcurementOrder $order): JsonResponse
+    {
+        $this->authorizeRole($request, [User::ROLE_PROCUREMENT, User::ROLE_SUPER_ADMIN]);
+
+        if ($order->status !== 'draft') {
+            return response()->json([
+                'message' => 'Only draft procurement order can be submitted.',
+            ], 422);
+        }
+
+        if ($order->lines()->count() === 0) {
+            return response()->json([
+                'message' => 'Cannot submit order without any SKU lines.',
+            ], 422);
+        }
+
+        $orderData = DB::transaction(function () use ($request, $order) {
+            $order->update(['status' => 'submitted']);
+
+            // Create CRN
+            $crnNumber = 'CRN-' . now()->format('Ymd') . '-' . Str::upper(Str::random(4));
+            while (ContenaReceivingNote::where('crn_number', $crnNumber)->exists()) {
+                $crnNumber = 'CRN-' . now()->format('Ymd') . '-' . Str::upper(Str::random(4));
+            }
+
+            $crn = ContenaReceivingNote::create([
+                'crn_number' => $crnNumber,
+                'procurement_order_id' => $order->id,
+                'status' => 'pending',
+                'created_by' => $request->user()->id,
+            ]);
+
+            // Copy lines to CRN items
+            foreach ($order->lines as $line) {
+                $variant = $this->findOrCreateDefaultVariant($line->item_id);
+                
+                CrnItem::create([
+                    'crn_id' => $crn->id,
+                    'item_variant_id' => $variant->id,
+                    'expected_qty' => $line->ordered_quantity,
+                    'received_qty' => 0,
+                    'rejected_qty' => 0,
+                ]);
+            }
+
+            return $this->findOrderWithRelations($order->id);
+        });
+
+        return response()->json([
+            'message' => 'Procurement order submitted and CRN generated.',
+            'data' => $orderData,
         ]);
     }
 
