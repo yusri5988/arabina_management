@@ -5,7 +5,7 @@ import { apiFetchJson } from '../../lib/http';
 
 const initialLine = { package_id: '', package_quantity: '' };
 
-export default function Orders({ packages = [], orders = [], databaseReady = true, canCreate = false }) {
+export default function Orders({ packages = [], orders = [], availability = [], databaseReady = true, canCreate = false }) {
   const [form, setForm] = useState({
     customer_name: '',
     order_date: new Date().toISOString().slice(0, 10),
@@ -76,6 +76,37 @@ export default function Orders({ packages = [], orders = [], databaseReady = tru
             {notification.message}
           </div>
         )}
+
+        {/* Package Availability Section */}
+        <div className="bg-white rounded-[2rem] shadow-sm border border-slate-100 overflow-hidden">
+          <div className="bg-[#1E3D1A] p-6 md:p-8">
+            <h2 className="text-xl font-bold text-white flex items-center gap-2">
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-6 h-6 text-emerald-400">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M20.25 7.5l-.625 10.632a2.25 2.25 0 01-2.247 2.118H6.622a2.25 2.25 0 01-2.247-2.118L3.75 7.5M10 11.25h4M3.375 7.5h17.25c.621 0 1.125-.504 1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125z" />
+              </svg>
+              Package Availability
+            </h2>
+            <p className="text-emerald-100/60 text-sm mt-1">Ready-to-ship sets based on current inventory.</p>
+          </div>
+          
+          <div className="p-6 md:p-8 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            {availability.map((pkg) => (
+              <div key={pkg.id} className="rounded-2xl border border-slate-100 p-4 bg-slate-50 flex flex-col justify-between group hover:border-emerald-200 transition-all">
+                <div>
+                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{pkg.code}</p>
+                  <p className="text-sm font-bold text-slate-800 line-clamp-1">{pkg.name}</p>
+                </div>
+                <div className="mt-4 flex items-end justify-between">
+                  <span className="text-xs text-slate-500 font-medium">Available</span>
+                  <span className={`text-2xl font-black ${pkg.available_qty > 0 ? 'text-emerald-600' : 'text-slate-300'}`}>
+                    {pkg.available_qty}
+                  </span>
+                </div>
+              </div>
+            ))}
+            {availability.length === 0 && <p className="text-sm text-slate-500 italic col-span-full">No packages defined.</p>}
+          </div>
+        </div>
 
         <div className="bg-white rounded-[2rem] shadow-sm border border-slate-100 p-6 md:p-8">
           <div className="flex items-center justify-between mb-4">

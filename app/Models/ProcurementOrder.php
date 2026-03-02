@@ -31,8 +31,4 @@ class ProcurementOrder extends Model
         return $this->belongsTo(User::class, 'created_by');
     }
 
-    public function salesOrders(): BelongsToMany
-    {
-        return $this->belongsToMany(SalesOrder::class, 'procurement_order_sales_order');
-    }
 }

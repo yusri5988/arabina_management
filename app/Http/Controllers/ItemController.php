@@ -29,8 +29,48 @@ class ItemController extends Controller
     {
         $items = Item::with('variants')->latest()->get();
 
+        $stockByItem = [];
+        foreach ($items as $item) {
+            $stockByItem[$item->id] = $item->variants->sum('stock_current');
+        }
+
+        $packagesData = [];
+        if (Schema::hasTable('packages')) {
+            $packages = Package::with('packageItems.item')->where('is_active', true)->orderBy('name')->get();
+            
+            $packagesData = $packages->map(function ($package) use ($stockByItem) {
+                $maxPossible = null;
+                $missingItems = [];
+
+                foreach ($package->packageItems as $pItem) {
+                    $requiredQty = $pItem->quantity;
+                    $currentStock = $stockByItem[$pItem->item_id] ?? 0;
+                    
+                    $possibleWithThisItem = floor($currentStock / $requiredQty);
+                    
+                    if ($maxPossible === null || $possibleWithThisItem < $maxPossible) {
+                        $maxPossible = $possibleWithThisItem;
+                    }
+
+                    if ($currentStock < $requiredQty) {
+                        $missingItems[] = $pItem->item ? $pItem->item->sku : 'Unknown SKU';
+                    }
+                }
+
+                return [
+                    'id' => $package->id,
+                    'code' => $package->code,
+                    'name' => $package->name,
+                    'available_qty' => $maxPossible ?? 0,
+                    'missing_items' => $missingItems,
+                    'lines_count' => $package->packageItems->count(),
+                ];
+            });
+        }
+
         return Inertia::render('Inventory/StockList', [
             'items' => $items,
+            'packages' => $packagesData,
         ]);
     }
 

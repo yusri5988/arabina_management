@@ -6,8 +6,10 @@ use App\Models\ItemVariant;
 use App\Models\Item;
 use App\Models\Package;
 use App\Models\ProcurementOrder;
+use App\Models\ProcurementOrderLine;
 use App\Models\ContenaReceivingNote;
 use App\Models\CrnItem;
+use App\Models\RejectedItem;
 use App\Models\SalesOrder;
 use App\Models\User;
 use Illuminate\Http\JsonResponse;
@@ -25,7 +27,6 @@ class ProcurementController extends Controller
     private const ORDER_RELATIONS = [
         'packageLines.package:id,code,name',
         'lines.item:id,sku,name,unit',
-        'salesOrders:id,code,customer_name,order_date,status',
     ];
 
     public function index(Request $request): Response
@@ -34,8 +35,7 @@ class ProcurementController extends Controller
             && Schema::hasTable('sales_order_lines')
             && Schema::hasTable('procurement_orders')
             && Schema::hasTable('procurement_order_lines')
-            && Schema::hasTable('procurement_order_package_lines')
-            && Schema::hasTable('procurement_order_sales_order');
+            && Schema::hasTable('procurement_order_package_lines');
 
         $suggestion = [
             'package_lines' => [],
@@ -47,8 +47,6 @@ class ProcurementController extends Controller
         $items = collect();
 
         if ($databaseReady) {
-            $suggestion = $this->buildShortageSuggestion();
-
             $orders = ProcurementOrder::query()
                 ->with(self::ORDER_RELATIONS)
                 ->latest()
@@ -89,44 +87,102 @@ class ProcurementController extends Controller
             'package_lines' => 'nullable|array',
             'package_lines.*.package_id' => 'required|integer|exists:packages,id|distinct',
             'package_lines.*.quantity' => 'required|integer|min:1',
-            'sku_lines' => 'required|array|min:1',
+            'sku_lines' => 'nullable|array',
             'sku_lines.*.item_id' => 'required|integer|exists:items,id|distinct',
             'sku_lines.*.quantity' => 'required|integer|min:1',
-            'source_order_ids' => 'required|array|min:1',
-            'source_order_ids.*' => 'required|integer|distinct|exists:sales_orders,id',
             'notes' => 'nullable|string|max:500',
         ]);
+
+        if (empty($validated['package_lines']) && empty($validated['sku_lines'])) {
+            return response()->json([
+                'message' => 'Please add at least one package or SKU to the order.',
+            ], 422);
+        }
 
         $order = DB::transaction(function () use ($request, $validated) {
             $order = ProcurementOrder::create([
                 'code' => $this->generateCode(),
-                'status' => 'draft',
+                'status' => 'submitted',
                 'created_by' => $request->user()->id,
                 'notes' => $validated['notes'] ?? null,
             ]);
 
-            foreach ($validated['package_lines'] ?? [] as $line) {
+            // Track total quantities per SKU to create consolidated order lines
+            $skuTotals = [];
+
+            // 1. Process Packages
+            foreach ($validated['package_lines'] ?? [] as $pLine) {
+                $packageId = (int) $pLine['package_id'];
+                $packageQty = (int) $pLine['quantity'];
+
                 $order->packageLines()->create([
-                    'package_id' => (int) $line['package_id'],
-                    'quantity' => (int) $line['quantity'],
+                    'package_id' => $packageId,
+                    'quantity' => $packageQty,
                 ]);
+
+                // Explode package into SKUs
+                $package = Package::with('packageItems')->find($packageId);
+                if ($package && $package->packageItems) {
+                    foreach ($package->packageItems as $pItem) {
+                        $itemId = (int) $pItem->item_id;
+                        $totalNeeded = $packageQty * (int) $pItem->quantity;
+                        $skuTotals[$itemId] = ($skuTotals[$itemId] ?? 0) + $totalNeeded;
+                    }
+                }
             }
 
-            foreach ($validated['sku_lines'] as $line) {
+            // 2. Process Individual SKUs
+            foreach ($validated['sku_lines'] ?? [] as $sLine) {
+                $itemId = (int) $sLine['item_id'];
+                $qty = (int) $sLine['quantity'];
+                $skuTotals[$itemId] = ($skuTotals[$itemId] ?? 0) + $qty;
+            }
+
+            // 3. Create consolidated order lines
+            foreach ($skuTotals as $itemId => $totalQty) {
                 $order->lines()->create([
-                    'item_id' => (int) $line['item_id'],
-                    'suggested_quantity' => (int) $line['quantity'],
-                    'ordered_quantity' => (int) $line['quantity'],
+                    'item_id' => $itemId,
+                    'suggested_quantity' => $totalQty,
+                    'ordered_quantity' => $totalQty,
+                    'received_quantity' => 0,
+                    'rejected_quantity' => 0,
                 ]);
             }
 
-            $order->salesOrders()->sync($validated['source_order_ids']);
+            // Create CRN immediately
+            $crnNumber = 'CRN-' . now()->format('Ymd') . '-' . Str::upper(Str::random(4));
+            while (ContenaReceivingNote::where('crn_number', $crnNumber)->exists()) {
+                $crnNumber = 'CRN-' . now()->format('Ymd') . '-' . Str::upper(Str::random(4));
+            }
+
+            $crn = ContenaReceivingNote::create([
+                'crn_number' => $crnNumber,
+                'procurement_order_id' => $order->id,
+                'status' => 'pending',
+                'created_by' => $request->user()->id,
+            ]);
+
+            // Refresh order lines to include all (package items + individual SKUs)
+            $order->load('lines');
+
+            // Copy all item lines to CRN items
+            foreach ($order->lines as $line) {
+                $variant = $this->findOrCreateDefaultVariant($line->item_id);
+                
+                CrnItem::create([
+                    'crn_id' => $crn->id,
+                    'item_variant_id' => $variant->id,
+                    'expected_qty' => $line->ordered_quantity,
+                    'received_qty' => 0,
+                    'rejected_qty' => 0,
+                ]);
+            }
 
             return $order;
         });
 
         return response()->json([
-            'message' => 'Procurement order draft created.',
+            'message' => 'Procurement order created and submitted to CRN.',
             'data' => $this->findOrderWithRelations($order->id),
         ], 201);
     }
@@ -373,185 +429,98 @@ class ProcurementController extends Controller
 
     public function rejectedList(Request $request): Response
     {
-        $poLines = ProcurementOrder::query()
+        $canView = in_array($request->user()->role, [User::ROLE_STORE_KEEPER, User::ROLE_PROCUREMENT, User::ROLE_SUPER_ADMIN], true);
+
+        if (! $canView) {
+            return Inertia::render('Rejections/Index', [
+                'linesByOrder' => [],
+                'canView' => false,
+            ]);
+        }
+
+        $allRejections = RejectedItem::query()
             ->with([
-                'lines' => function ($query) {
-                    $query->where('rejected_quantity', '>', 0)
-                        ->with('item:id,sku,name,unit')
-                        ->orderByDesc('updated_at');
-                },
+                'item:id,sku,name,unit',
+                'procurementOrder:id,code,status,created_at',
+                'crn:id,crn_number,status,created_at',
+                'rejectable',
             ])
+            ->orderByDesc('rejected_at')
             ->orderByDesc('id')
-            ->get(['id', 'code', 'status', 'created_at'])
-            ->map(function ($order) {
+            ->get()
+            ->groupBy(function (RejectedItem $rejection) {
+                if ($rejection->procurementOrder) {
+                    return 'po:' . $rejection->procurementOrder->id;
+                }
+
+                if ($rejection->crn) {
+                    return 'crn:' . $rejection->crn->id;
+                }
+
+                return $rejection->rejectable_type . ':' . $rejection->rejectable_id;
+            })
+            ->map(function ($group) {
+                $sortedGroup = $group->sortByDesc(function (RejectedItem $rejection) {
+                    return optional($rejection->rejected_at)->timestamp
+                        ?? optional($rejection->created_at)->timestamp
+                        ?? 0;
+                });
+
+                $latest = $sortedGroup->first();
+                $procurementOrder = $latest?->procurementOrder;
+                $crn = $latest?->crn;
+
                 return [
-                    'source' => 'Procurement Order',
-                    'id' => $order->id,
-                    'code' => $order->code,
-                    'status' => $order->status,
-                    'created_at' => optional($order->created_at)->toDateTimeString(),
-                    'lines' => $order->lines->map(function ($line) {
-                        return [
-                            'id' => $line->id,
-                            'item_id' => $line->item_id,
-                            'sku' => $line->item?->sku,
-                            'name' => $line->item?->name,
-                            'unit' => $line->item?->unit,
-                            'ordered_quantity' => $line->ordered_quantity,
-                            'received_quantity' => $line->received_quantity,
-                            'rejected_quantity' => $line->rejected_quantity,
-                            'updated_at' => optional($line->updated_at)->toDateTimeString(),
-                        ];
-                    })->values(),
+                    'source' => $procurementOrder ? 'Procurement Order' : 'CRN',
+                    'id' => $procurementOrder?->id ?? $crn?->id ?? $latest?->id,
+                    'code' => $procurementOrder?->code ?? $crn?->crn_number ?? '-',
+                    'status' => $procurementOrder?->status ?? $crn?->status ?? '-',
+                    'created_at' => optional($latest?->rejected_at ?? $latest?->created_at)->toDateTimeString(),
+                    'lines' => $sortedGroup
+                        ->map(function (RejectedItem $rejection) {
+                            [$orderedQuantity, $receivedQuantity] = $this->resolveRejectedLineQuantities($rejection);
+
+                            return [
+                                'id' => $rejection->id,
+                                'item_id' => $rejection->item_id,
+                                'sku' => $rejection->item?->sku,
+                                'name' => $rejection->item?->name,
+                                'unit' => $rejection->item?->unit,
+                                'ordered_quantity' => $orderedQuantity,
+                                'received_quantity' => $receivedQuantity,
+                                'rejected_quantity' => $rejection->quantity,
+                                'rejection_reason' => $rejection->reason,
+                                'updated_at' => optional($rejection->rejected_at ?? $rejection->created_at)->toDateTimeString(),
+                            ];
+                        })
+                        ->values(),
                 ];
             })
-            ->filter(fn ($order) => $order['lines']->isNotEmpty());
-
-        $crnLines = ContenaReceivingNote::query()
-            ->whereNull('procurement_order_id')
-            ->with([
-                'items' => function ($query) {
-                    $query->where('rejected_qty', '>', 0)
-                        ->with('itemVariant.item:id,sku,name,unit')
-                        ->orderByDesc('updated_at');
-                },
-            ])
-            ->orderByDesc('id')
-            ->get(['id', 'crn_number', 'status', 'created_at'])
-            ->map(function ($crn) {
-                return [
-                    'source' => 'CRN',
-                    'id' => $crn->id,
-                    'code' => $crn->crn_number,
-                    'status' => $crn->status,
-                    'created_at' => optional($crn->created_at)->toDateTimeString(),
-                    'lines' => $crn->items->map(function ($item) {
-                        return [
-                            'id' => $item->id,
-                            'item_id' => $item->itemVariant->item_id,
-                            'sku' => $item->itemVariant?->item?->sku,
-                            'name' => $item->itemVariant?->item?->name,
-                            'unit' => $item->itemVariant?->item?->unit,
-                            'ordered_quantity' => $item->expected_qty,
-                            'received_quantity' => $item->received_qty,
-                            'rejected_quantity' => $item->rejected_qty,
-                            'updated_at' => optional($item->updated_at)->toDateTimeString(),
-                        ];
-                    })->values(),
-                ];
-            })
-            ->filter(fn ($crn) => $crn['lines']->isNotEmpty());
-
-        $allRejections = $poLines->concat($crnLines)->sortByDesc('created_at')->values();
+            ->sortByDesc('created_at')
+            ->values();
 
         return Inertia::render('Rejections/Index', [
             'linesByOrder' => $allRejections,
-            'canView' => in_array($request->user()->role, [User::ROLE_STORE_KEEPER, User::ROLE_PROCUREMENT, User::ROLE_SUPER_ADMIN], true),
+            'canView' => $canView,
         ]);
     }
 
-    private function buildShortageSuggestion(): array
+    private function resolveRejectedLineQuantities(RejectedItem $rejection): array
     {
-        $orders = SalesOrder::query()
-            ->with(['lines.package.packageItems'])
-            ->whereIn('status', ['open', 'partial'])
-            ->whereDoesntHave('procurementOrders')
-            ->get();
+        $rejectable = $rejection->rejectable;
 
-        $packageDemand = [];
-        $itemDemand = [];
-
-        foreach ($orders as $order) {
-            foreach ($order->lines as $line) {
-                $remainingPackageQty = max((int) $line->package_quantity - (int) ($line->shipped_quantity ?? 0), 0);
-                if ($remainingPackageQty <= 0) {
-                    continue;
-                }
-
-                $packageId = $line->package_id;
-                $packageDemand[$packageId] = ($packageDemand[$packageId] ?? 0) + $remainingPackageQty;
-
-                if (! $line->package || ! $line->package->packageItems) {
-                    continue;
-                }
-
-                foreach ($line->package->packageItems as $packageItem) {
-                    $itemId = $packageItem->item_id;
-                    $itemDemand[$itemId] = ($itemDemand[$itemId] ?? 0) + ($remainingPackageQty * $packageItem->quantity);
-                }
-            }
+        if ($rejectable instanceof ProcurementOrderLine) {
+            return [(int) $rejectable->ordered_quantity, (int) $rejectable->received_quantity];
         }
 
-        $stockByItemId = ItemVariant::query()
-            ->selectRaw('item_id, COALESCE(SUM(stock_current), 0) as stock_total')
-            ->groupBy('item_id')
-            ->pluck('stock_total', 'item_id');
+        if ($rejectable instanceof CrnItem) {
+            return [(int) $rejectable->expected_qty, (int) $rejectable->received_qty];
+        }
 
-        $packageModels = Package::query()->get(['id', 'code', 'name'])->keyBy('id');
-        $itemModels = Item::query()->get(['id', 'sku', 'name', 'unit'])->keyBy('id');
-
-        $packageLines = collect($packageDemand)
-            ->map(function ($quantity, $packageId) use ($packageModels) {
-                $package = $packageModels->get((int) $packageId);
-                if (! $package || $quantity <= 0) {
-                    return null;
-                }
-
-                return [
-                    'package_id' => (int) $packageId,
-                    'package_code' => $package->code,
-                    'package_name' => $package->name,
-                    'quantity' => (int) $quantity,
-                ];
-            })
-            ->filter()
-            ->values()
-            ->all();
-
-        $skuLines = collect($itemDemand)
-            ->map(function ($demand, $itemId) use ($stockByItemId, $itemModels) {
-                $stock = (int) ($stockByItemId[$itemId] ?? 0);
-                $shortage = max((int) $demand - $stock, 0);
-                if ($shortage <= 0) {
-                    return null;
-                }
-
-                $item = $itemModels->get((int) $itemId);
-                if (! $item) {
-                    return null;
-                }
-
-                return [
-                    'item_id' => (int) $itemId,
-                    'sku' => $item->sku,
-                    'name' => $item->name,
-                    'unit' => $item->unit,
-                    'demand_quantity' => (int) $demand,
-                    'stock_quantity' => $stock,
-                    'quantity' => $shortage,
-                ];
-            })
-            ->filter()
-            ->values()
-            ->all();
-
-        return [
-            'package_lines' => $packageLines,
-            'sku_lines' => $skuLines,
-            'source_orders' => $orders
-                ->map(function ($order) {
-                    return [
-                        'id' => $order->id,
-                        'code' => $order->code,
-                        'customer_name' => $order->customer_name,
-                        'order_date' => optional($order->order_date)->toDateString() ?? (string) $order->order_date,
-                        'status' => $order->status,
-                    ];
-                })
-                ->values()
-                ->all(),
-        ];
+        return [0, 0];
     }
+
+
 
     private function generateCode(): string
     {

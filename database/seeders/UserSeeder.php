@@ -21,15 +21,5 @@ class UserSeeder extends Seeder
             'role' => User::ROLE_SUPER_ADMIN,
             'email_verified_at' => now(),
         ]);
-
-        User::updateOrCreate([
-            'email' => 'user@arabina.com',
-        ], [
-            'name' => 'Store Keeper User',
-            'password' => \Illuminate\Support\Facades\Hash::make('password123'),
-            'role' => User::ROLE_STORE_KEEPER,
-            'created_by' => $superAdmin->id,
-            'email_verified_at' => now(),
-        ]);
     }
 }

@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\MorphMany;
 
 class CrnItem extends Model
 {
@@ -24,5 +25,10 @@ class CrnItem extends Model
     public function itemVariant(): BelongsTo
     {
         return $this->belongsTo(ItemVariant::class);
+    }
+
+    public function rejectedItems(): MorphMany
+    {
+        return $this->morphMany(RejectedItem::class, 'rejectable');
     }
 }

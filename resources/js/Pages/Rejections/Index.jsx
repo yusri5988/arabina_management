@@ -14,7 +14,7 @@ export default function RejectionIndex({ linesByOrder = [], canView = false }) {
         )}
 
         <div className="bg-white rounded-[2rem] shadow-sm border border-slate-100 p-6 md:p-8">
-          <h2 className="text-lg font-bold text-slate-800 border-b border-slate-100 pb-4">Rejected by Procurement Order</h2>
+          <h2 className="text-lg font-bold text-slate-800 border-b border-slate-100 pb-4">Rejected Records</h2>
 
           <div className="mt-5 space-y-4">
             {linesByOrder.map((order, idx) => (
@@ -41,6 +41,9 @@ export default function RejectionIndex({ linesByOrder = [], canView = false }) {
                       <div className="col-span-2 text-xs text-slate-500 text-right">Ord {line.ordered_quantity}</div>
                       <div className="col-span-2 text-xs text-slate-500 text-right">Rec {line.received_quantity}</div>
                       <div className="col-span-1 text-xs font-bold text-red-600 text-right">{line.rejected_quantity}</div>
+                      {line.rejection_reason && (
+                        <div className="col-span-12 text-[10px] font-medium text-rose-600">Reason: {line.rejection_reason}</div>
+                      )}
                     </div>
                   ))}
                 </div>

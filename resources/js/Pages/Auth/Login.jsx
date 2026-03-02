@@ -39,6 +39,19 @@ export default function Login() {
               <div className="h-1.5 w-12 bg-[#10b981] mx-auto mt-3 rounded-full"></div>
             </div>
 
+            {Object.keys(errors).length > 0 && (
+              <div className="mb-6 p-4 rounded-2xl bg-red-50 border border-red-100 flex items-center gap-3 animate-shake">
+                <div className="w-8 h-8 rounded-full bg-red-500 flex items-center justify-center text-white shrink-0 shadow-lg shadow-red-200">
+                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor" className="w-5 h-5">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m9-.75a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9 3.75h.008v.008H12v-.008Z" />
+                  </svg>
+                </div>
+                <p className="text-xs font-bold text-red-600 leading-relaxed">
+                  {errors.email || errors.password || "Invalid credentials. Please check your email and password."}
+                </p>
+              </div>
+            )}
+
             <form onSubmit={submit} className="space-y-6">
               <div>
                 <label htmlFor="email" className="block text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-2 ml-2">Email Address</label>
@@ -58,7 +71,6 @@ export default function Login() {
                     required
                   />
                 </div>
-                {errors.email && <p className="text-xs text-red-500 mt-2 px-2 font-bold">{errors.email}</p>}
               </div>
 
               <div>
@@ -79,7 +91,6 @@ export default function Login() {
                     required
                   />
                 </div>
-                {errors.password && <p className="text-xs text-red-500 mt-2 px-2 font-bold">{errors.password}</p>}
               </div>
 
               <button

@@ -24,6 +24,7 @@ class SalesOrderController extends Controller
 
         $packages = collect();
         $orders = collect();
+        $availability = collect();
 
         if ($databaseReady) {
             $packages = Package::query()
@@ -36,6 +37,31 @@ class SalesOrderController extends Controller
                 ->latest()
                 ->limit(30)
                 ->get(['id', 'code', 'customer_name', 'order_date', 'status', 'notes', 'created_at']);
+
+            // Calculate Availability
+            $stockByItem = \App\Models\ItemVariant::query()
+                ->selectRaw('item_id, SUM(stock_current) as total_stock')
+                ->groupBy('item_id')
+                ->pluck('total_stock', 'item_id');
+
+            $allPackages = Package::with('packageItems')->where('is_active', true)->get();
+            $availability = $allPackages->map(function ($package) use ($stockByItem) {
+                $maxPossible = null;
+                foreach ($package->packageItems as $pItem) {
+                    $requiredQty = $pItem->quantity;
+                    $currentStock = $stockByItem[$pItem->item_id] ?? 0;
+                    $possibleWithThisItem = floor($currentStock / $requiredQty);
+                    if ($maxPossible === null || $possibleWithThisItem < $maxPossible) {
+                        $maxPossible = $possibleWithThisItem;
+                    }
+                }
+                return [
+                    'id' => $package->id,
+                    'code' => $package->code,
+                    'name' => $package->name,
+                    'available_qty' => (int) ($maxPossible ?? 0),
+                ];
+            })->sortBy('name')->values();
         }
 
         return Inertia::render('Sales/Orders', [
@@ -43,6 +69,7 @@ class SalesOrderController extends Controller
             'canCreate' => in_array($request->user()->role, [User::ROLE_SALES, User::ROLE_SUPER_ADMIN], true),
             'packages' => $packages,
             'orders' => $orders,
+            'availability' => $availability,
         ]);
     }
 

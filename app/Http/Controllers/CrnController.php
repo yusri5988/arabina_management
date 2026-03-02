@@ -3,11 +3,13 @@
 namespace App\Http\Controllers;
 
 use App\Models\ContenaReceivingNote;
+use App\Models\CrnItem;
 use App\Models\InventoryTransaction;
 use App\Models\Item;
 use App\Models\ItemVariant;
 use App\Models\ProcurementOrder;
 use App\Models\ProcurementOrderLine;
+use App\Models\RejectedItem;
 use App\Models\User;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -94,13 +96,20 @@ class CrnController extends Controller
 
                 $variant = $this->findOrCreateDefaultVariant((int) $line->item_id);
 
-                $crn->items()->create([
+                $crnItem = $crn->items()->create([
                     'item_variant_id' => $variant->id,
                     'expected_qty' => $remaining,
                     'received_qty' => $receivedQty,
                     'rejected_qty' => $rejectedQty,
                     'rejection_reason' => $input['rejection_reason'] ?? null,
                 ]);
+
+                $this->recordRejectionFromCrnItem(
+                    $crnItem,
+                    $crn,
+                    (int) $line->item_id,
+                    $request->user()->id
+                );
 
                 $this->applyReceivedStock($transaction, $variant, (int) $line->item_id, $receivedQty);
 
@@ -238,6 +247,10 @@ class CrnController extends Controller
         }
 
         $crn = DB::transaction(function () use ($request, $validated) {
+            $variantItemIds = ItemVariant::query()
+                ->whereIn('id', collect($validated['items'])->pluck('item_variant_id')->unique()->values())
+                ->pluck('item_id', 'id');
+
             $crn = ContenaReceivingNote::create([
                 'crn_number' => $this->generateCrnNumber(),
                 'procurement_order_id' => $validated['procurement_order_id'] ?? null,
@@ -248,7 +261,17 @@ class CrnController extends Controller
             ]);
 
             foreach ($validated['items'] as $item) {
-                $crn->items()->create($item);
+                $crnItem = $crn->items()->create($item);
+
+                if (! $crn->procurement_order_id) {
+                    $itemId = (int) ($variantItemIds[$crnItem->item_variant_id] ?? 0);
+                    $this->recordRejectionFromCrnItem(
+                        $crnItem,
+                        $crn,
+                        $itemId,
+                        $request->user()->id
+                    );
+                }
             }
 
             return $crn;
@@ -288,6 +311,13 @@ class CrnController extends Controller
                     $item->itemVariant,
                     (int) $item->itemVariant->item_id,
                     (int) $item->received_qty
+                );
+
+                $this->recordRejectionFromCrnItem(
+                    $item,
+                    $crn,
+                    (int) $item->itemVariant->item_id,
+                    $request->user()->id
                 );
 
                 if ($crn->procurement_order_id) {
@@ -365,6 +395,34 @@ class CrnController extends Controller
             'created_by' => $userId,
             'notes' => $notes,
         ]);
+    }
+
+    private function recordRejectionFromCrnItem(
+        CrnItem $crnItem,
+        ContenaReceivingNote $crn,
+        int $itemId,
+        int $userId
+    ): void {
+        if ((int) $crnItem->rejected_qty <= 0 || $itemId <= 0) {
+            return;
+        }
+
+        RejectedItem::query()->firstOrCreate(
+            [
+                'rejectable_type' => CrnItem::class,
+                'rejectable_id' => $crnItem->id,
+            ],
+            [
+                'procurement_order_id' => $crn->procurement_order_id,
+                'crn_id' => $crn->id,
+                'item_id' => $itemId,
+                'item_variant_id' => $crnItem->item_variant_id,
+                'quantity' => (int) $crnItem->rejected_qty,
+                'reason' => $crnItem->rejection_reason,
+                'rejected_at' => $crn->received_at ?? $crnItem->updated_at ?? now(),
+                'created_by' => $userId,
+            ]
+        );
     }
 
     private function applyReceivedStock(
