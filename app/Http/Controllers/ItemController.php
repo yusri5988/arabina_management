@@ -129,9 +129,6 @@ class ItemController extends Controller
         $salesOrders = collect();
         if ($type === 'out' && Schema::hasTable('sales_orders')) {
             $salesOrders = SalesOrder::query()
-                ->whereDoesntHave('inventoryTransactions', function ($query) {
-                    $query->where('type', 'out');
-                })
                 ->with([
                     'lines' => function ($query) {
                         $query->with([
@@ -301,16 +298,20 @@ class ItemController extends Controller
                     'item_variant_id' => $variant->id,
                     'quantity' => $line['quantity'],
                 ]);
+
+                if ($salesOrder) {
+                    $this->incrementShippedQuantity($salesOrder, $line['item_id'], $line['quantity']);
+                }
             }
 
-            if ($salesOrder && $validated['mode'] === 'package') {
-                $this->markSalesOrderShipment(
-                    $salesOrder->id,
-                    (int) $validated['package_id'],
-                    (int) $validated['package_quantity']
-                );
-            } elseif ($salesOrder && $validated['mode'] === 'alacarte') {
-                $this->finalizeSalesOrderDelivery($salesOrder->id);
+            if ($salesOrder) {
+                if ($validated['mode'] === 'package') {
+                    $salesOrder->lines()
+                        ->where('package_id', $validated['package_id'])
+                        ->increment('shipped_quantity', (int)$validated['package_quantity']);
+                }
+                
+                $this->refreshSalesOrderStatus($salesOrder);
             }
 
             return $transaction;
@@ -320,6 +321,32 @@ class ItemController extends Controller
             'message' => 'Stock out recorded successfully.',
             'data' => $transaction->load('lines'),
         ]);
+    }
+
+    private function incrementShippedQuantity(SalesOrder $order, int $itemId, int $quantity): void
+    {
+        $item = Item::find($itemId);
+        if (!$item) return;
+
+        $line = $order->lines()->where('item_sku', $item->sku)->first();
+        if ($line) {
+            $line->increment('shipped_quantity', $quantity);
+        }
+    }
+
+    private function refreshSalesOrderStatus(SalesOrder $order): void
+    {
+        $order->load('lines');
+        
+        $allFulfilled = $order->lines->every(function ($line) {
+            $target = $line->package_id ? $line->package_quantity : $line->item_quantity;
+            return $line->shipped_quantity >= $target;
+        });
+
+        $anyShipped = $order->lines->contains(fn ($line) => $line->shipped_quantity > 0);
+
+        $status = $allFulfilled ? 'fulfilled' : ($anyShipped ? 'partial' : 'open');
+        $order->update(['status' => $status]);
     }
 
     private function resolvePackageLines(int $packageId, int $packageQuantity): array
@@ -376,69 +403,5 @@ class ItemController extends Controller
             'stock_initial' => 0,
             'stock_current' => 0,
         ]);
-    }
-
-    private function markSalesOrderShipment(int $salesOrderId, int $packageId, int $shippedQuantity): void
-    {
-        if ($shippedQuantity <= 0) {
-            return;
-        }
-
-        $salesOrder = SalesOrder::query()
-            ->with('lines')
-            ->lockForUpdate()
-            ->find($salesOrderId);
-
-        if (! $salesOrder) {
-            return;
-        }
-
-        $line = $salesOrder->lines->firstWhere('package_id', $packageId);
-        if (! $line) {
-            return;
-        }
-
-        $line->update([
-            'shipped_quantity' => $line->shipped_quantity + $shippedQuantity,
-        ]);
-
-        $salesOrder->refresh()->load('lines');
-
-        $allFulfilled = $salesOrder->lines->every(function ($salesLine) {
-            return $salesLine->shipped_quantity >= $salesLine->package_quantity;
-        });
-
-        $anyShipped = $salesOrder->lines->contains(function ($salesLine) {
-            return $salesLine->shipped_quantity > 0;
-        });
-
-        $status = 'open';
-        if ($allFulfilled) {
-            $status = 'fulfilled';
-        } elseif ($anyShipped) {
-            $status = 'partial';
-        }
-
-        $salesOrder->update(['status' => $status]);
-    }
-
-    private function finalizeSalesOrderDelivery(int $salesOrderId): void
-    {
-        $salesOrder = SalesOrder::query()
-            ->with('lines')
-            ->lockForUpdate()
-            ->find($salesOrderId);
-
-        if (! $salesOrder) {
-            return;
-        }
-
-        foreach ($salesOrder->lines as $line) {
-            $line->update([
-                'shipped_quantity' => (int) $line->package_quantity,
-            ]);
-        }
-
-        $salesOrder->update(['status' => 'fulfilled']);
     }
 }

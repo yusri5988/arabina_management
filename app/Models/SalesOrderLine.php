@@ -12,6 +12,8 @@ class SalesOrderLine extends Model
         'package_id',
         'package_quantity',
         'shipped_quantity',
+        'item_sku',
+        'item_quantity',
     ];
 
     public function salesOrder(): BelongsTo
@@ -22,5 +24,10 @@ class SalesOrderLine extends Model
     public function package(): BelongsTo
     {
         return $this->belongsTo(Package::class);
+    }
+
+    public function item(): BelongsTo
+    {
+        return $this->belongsTo(Item::class, 'item_sku', 'sku');
     }
 }

@@ -57,39 +57,64 @@ export default function Stock({ items, packages, salesOrders = [], type = 'in' }
     const skuMap = new Map();
 
     (selectedSalesOrder.lines ?? []).forEach((line) => {
-      const remainingQty = Math.max(Number(line.package_quantity ?? 0) - Number(line.shipped_quantity ?? 0), 0);
-      if (!line.package || remainingQty <= 0) {
-        return;
-      }
+      // 1. Process Package Lines
+      if (line.package_id) {
+        const remainingQty = Math.max(Number(line.package_quantity ?? 0) - Number(line.shipped_quantity ?? 0), 0);
+        if (remainingQty <= 0) return;
 
-      const packageItems = line.package.package_items ?? line.package.packageItems ?? [];
-      packageItems.forEach((pkgItem) => {
-        const item = pkgItem.item;
+        const packageItems = line.package?.package_items ?? line.package?.packageItems ?? [];
+        packageItems.forEach((pkgItem) => {
+          const item = pkgItem.item;
+          if (!item) return;
+
+          const key = String(item.id);
+          const qty = Number(pkgItem.quantity ?? 0) * remainingQty;
+          const availableStock = Number(itemStockById.get(key) ?? 0);
+          
+          const prev = skuMap.get(key) ?? {
+            item_id: item.id,
+            sku: item.sku,
+            name: item.name,
+            unit: item.unit,
+            required_quantity: 0,
+            available_stock: availableStock,
+          };
+
+          prev.required_quantity += qty;
+          skuMap.set(key, prev);
+        });
+      } 
+      // 2. Process Loose SKU Lines
+      else if (line.item_sku) {
+        const remainingQty = Math.max(Number(line.item_quantity ?? 0) - Number(line.shipped_quantity ?? 0), 0);
+        if (remainingQty <= 0) return;
+
+        // Find item in items array by SKU
+        const item = items.find(i => i.sku === line.item_sku);
         if (!item) return;
 
         const key = String(item.id);
-        const qty = Number(pkgItem.quantity ?? 0) * Number(remainingQty);
         const availableStock = Number(itemStockById.get(key) ?? 0);
+
         const prev = skuMap.get(key) ?? {
           item_id: item.id,
           sku: item.sku,
           name: item.name,
           unit: item.unit,
           required_quantity: 0,
-          deliverable_quantity: 0,
           available_stock: availableStock,
         };
 
-        prev.required_quantity += qty;
+        prev.required_quantity += remainingQty;
         skuMap.set(key, prev);
-      });
+      }
     });
 
     return Array.from(skuMap.values()).map((line) => ({
       ...line,
       deliverable_quantity: Math.min(Number(line.required_quantity), Number(line.available_stock)),
     }));
-  }, [isOut, selectedSalesOrder, itemStockById]);
+  }, [isOut, selectedSalesOrder, itemStockById, items]);
 
   useEffect(() => {
     if (!isOut || !selectedSalesOrder) {

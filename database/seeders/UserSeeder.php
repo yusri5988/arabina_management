@@ -17,7 +17,7 @@ class UserSeeder extends Seeder
             'email' => 'admin@arabina.com',
         ], [
             'name' => 'Super Admin',
-            'password' => \Illuminate\Support\Facades\Hash::make('password123'),
+            'password' => \Illuminate\Support\Facades\Hash::make('123456'),
             'role' => User::ROLE_SUPER_ADMIN,
             'email_verified_at' => now(),
         ]);

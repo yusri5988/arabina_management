@@ -1,23 +1,35 @@
 import { Head, Link } from '@inertiajs/react';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import AuthenticatedLayout from '../../Layouts/AuthenticatedLayout';
 import { apiFetchJson } from '../../lib/http';
 
-const initialLine = { package_id: '', package_quantity: '' };
+const initialLine = { type: 'package', package_id: '', package_quantity: '', item_sku: '', item_quantity: '' };
 
-export default function Orders({ packages = [], orders = [], availability = [], databaseReady = true, canCreate = false }) {
+export default function Orders({ packages = [], items = [], orders = [], availability = [], databaseReady = true, canCreate = false }) {
   const [form, setForm] = useState({
     customer_name: '',
     order_date: new Date().toISOString().slice(0, 10),
     notes: '',
   });
-  const [lines, setLines] = useState([{ ...initialLine, package_id: packages?.[0]?.id?.toString() ?? '' }]);
+  const [lines, setLines] = useState([initialLine]);
   const [errors, setErrors] = useState({});
   const [notification, setNotification] = useState(null);
   const [processing, setProcessing] = useState(false);
+
   const [list, setList] = useState(orders);
 
-  const addLine = () => setLines(prev => [...prev, { ...initialLine, package_id: packages?.[0]?.id?.toString() ?? '' }]);
+  // Default package_id if packages exist
+  useEffect(() => {
+    if (packages.length > 0 && lines.length === 1 && lines[0].package_id === '' && lines[0].type === 'package') {
+        setLines([{ ...initialLine, package_id: packages[0].id.toString() }]);
+    }
+  }, [packages]);
+
+  const addLine = (type = 'package') => {
+    const defaultPackageId = type === 'package' ? (packages?.[0]?.id?.toString() ?? '') : '';
+    setLines(prev => [...prev, { ...initialLine, type, package_id: defaultPackageId }]);
+  };
+
   const removeLine = (index) => setLines(prev => prev.filter((_, i) => i !== index));
   const updateLine = (index, field, value) => {
     setLines(prev => prev.map((line, i) => (i === index ? { ...line, [field]: value } : line)));
@@ -36,8 +48,11 @@ export default function Orders({ packages = [], orders = [], availability = [], 
           customer_name: form.customer_name,
           order_date: form.order_date,
           lines: lines.map((line) => ({
-            package_id: Number(line.package_id),
-            package_quantity: Number(line.package_quantity),
+            type: line.type,
+            package_id: line.type === 'package' ? Number(line.package_id) : null,
+            package_quantity: line.type === 'package' ? Number(line.package_quantity) : null,
+            item_sku: line.type === 'loose' ? line.item_sku : null,
+            item_quantity: line.type === 'loose' ? Number(line.item_quantity) : null,
           })),
           notes: form.notes || null,
         }),
@@ -61,7 +76,7 @@ export default function Orders({ packages = [], orders = [], availability = [], 
   };
 
   return (
-    <AuthenticatedLayout title="Sales Orders" backUrl="__back__">
+    <AuthenticatedLayout title="Sales Orders">
       <Head title="Sales Orders" />
 
       <div className="space-y-6">
@@ -126,7 +141,7 @@ export default function Orders({ packages = [], orders = [], availability = [], 
             </p>
           )}
 
-          <form onSubmit={submit} className="mt-5 space-y-5">
+          <form onSubmit={submit} className="mt-5 space-y-6">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5 ml-1">Customer Name</label>
@@ -152,52 +167,96 @@ export default function Orders({ packages = [], orders = [], availability = [], 
               </div>
             </div>
 
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <h3 className="text-sm font-bold text-slate-700">Package Lines</h3>
-                <button type="button" onClick={addLine} className="text-xs font-bold uppercase tracking-wider text-arabina-accent">
-                  Add Package
+            <div className="space-y-4">
+              <div className="flex flex-col sm:flex-row items-center gap-3">
+                <button 
+                    type="button" 
+                    onClick={() => addLine('package')} 
+                    className="flex-1 w-full bg-white border border-slate-200 hover:border-arabina-accent hover:text-arabina-accent rounded-2xl py-3 text-xs font-bold text-slate-700 transition-all flex items-center justify-center gap-2"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor" className="w-4 h-4">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+                  </svg>
+                  ADD PACKAGE
+                </button>
+                <button 
+                    type="button" 
+                    onClick={() => addLine('loose')} 
+                    className="flex-1 w-full bg-white border border-slate-200 hover:border-arabina-accent hover:text-arabina-accent rounded-2xl py-3 text-xs font-bold text-slate-700 transition-all flex items-center justify-center gap-2"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor" className="w-4 h-4">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+                  </svg>
+                  ADD LOOSE SKU
                 </button>
               </div>
 
-              {lines.map((line, index) => (
-                <div key={index} className="grid grid-cols-12 gap-3 bg-slate-50 rounded-2xl p-3 border border-slate-100">
-                  <div className="col-span-8">
-                    <select
-                      value={line.package_id}
-                      onChange={(e) => updateLine(index, 'package_id', e.target.value)}
-                      className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm bg-white focus:ring-2 focus:ring-arabina-accent focus:outline-none"
-                      required
-                    >
-                      {packages.length === 0 && <option value="">No package available</option>}
-                      {packages.map((pkg) => (
-                        <option key={pkg.id} value={pkg.id}>
-                          {pkg.code} - {pkg.name}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  <div className="col-span-3">
-                    <input
-                      type="number"
-                      min="1"
-                      value={line.package_quantity}
-                      onChange={(e) => updateLine(index, 'package_quantity', e.target.value)}
-                      className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm font-bold text-right bg-white focus:ring-2 focus:ring-arabina-accent focus:outline-none"
-                      placeholder="Qty"
-                      required
-                    />
-                  </div>
-                  <div className="col-span-1 flex items-center justify-end">
-                    {lines.length > 1 && (
-                      <button type="button" onClick={() => removeLine(index)} className="text-red-500 text-xs font-bold">
-                        X
+              <div className="space-y-3">
+                {lines.map((line, index) => (
+                  <div key={index} className="bg-slate-50 rounded-2xl p-4 border border-slate-100 transition-all hover:border-slate-200">
+                    <div className="flex items-center justify-between mb-3">
+                      <span className={`text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-md ${line.type === 'package' ? 'bg-emerald-100 text-emerald-700' : 'bg-blue-100 text-blue-700'}`}>
+                        {line.type === 'package' ? 'Package' : 'Loose SKU'}
+                      </span>
+                      <button type="button" onClick={() => removeLine(index)} className="text-slate-400 hover:text-red-500 transition-colors">
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-4 h-4">
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                        </svg>
                       </button>
-                    )}
+                    </div>
+
+                    <div className="grid grid-cols-12 gap-3">
+                      <div className="col-span-8">
+                          {line.type === 'package' ? (
+                              <select
+                                  value={line.package_id}
+                                  onChange={(e) => updateLine(index, 'package_id', e.target.value)}
+                                  className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm bg-white focus:ring-2 focus:ring-arabina-accent focus:outline-none"
+                                  required
+                              >
+                                  <option value="">Select Package</option>
+                                  {packages.map((pkg) => (
+                                      <option key={pkg.id} value={pkg.id}>
+                                          {pkg.code} - {pkg.name}
+                                      </option>
+                                  ))}
+                              </select>
+                          ) : (
+                              <select
+                                  value={line.item_sku}
+                                  onChange={(e) => updateLine(index, 'item_sku', e.target.value)}
+                                  className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm bg-white focus:ring-2 focus:ring-arabina-accent focus:outline-none"
+                                  required
+                              >
+                                  <option value="">Select SKU</option>
+                                  {items.map((item) => (
+                                      <option key={item.id} value={item.sku}>
+                                          {item.sku} - {item.name}
+                                      </option>
+                                  ))}
+                              </select>
+                          )}
+                      </div>
+                      <div className="col-span-4">
+                          <input
+                              type="number"
+                              min="1"
+                              value={line.type === 'package' ? line.package_quantity : line.item_quantity}
+                              onChange={(e) => updateLine(index, line.type === 'package' ? 'package_quantity' : 'item_quantity', e.target.value)}
+                              className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm font-bold text-right bg-white focus:ring-2 focus:ring-arabina-accent focus:outline-none"
+                              placeholder="Qty"
+                              required
+                          />
+                      </div>
+                    </div>
+                    {errors[`lines.${index}.package_id`] && <p className="text-[10px] text-red-500 mt-1">{errors[`lines.${index}.package_id`][0]}</p>}
+                    {errors[`lines.${index}.item_sku`] && <p className="text-[10px] text-red-500 mt-1">{errors[`lines.${index}.item_sku`][0]}</p>}
+                    {errors[`lines.${index}.package_quantity`] && <p className="text-[10px] text-red-500 mt-1">{errors[`lines.${index}.package_quantity`][0]}</p>}
+                    {errors[`lines.${index}.item_quantity`] && <p className="text-[10px] text-red-500 mt-1">{errors[`lines.${index}.item_quantity`][0]}</p>}
                   </div>
-                </div>
-              ))}
-              {(errors.lines || errors['lines.0.package_id']) && <p className="text-xs text-red-500">{errors.lines?.[0] ?? errors['lines.0.package_id']?.[0]}</p>}
+                ))}
+                {errors.lines && typeof errors.lines === 'string' && <p className="text-xs text-red-500">{errors.lines}</p>}
+              </div>
             </div>
 
             <div>
@@ -207,13 +266,14 @@ export default function Orders({ packages = [], orders = [], availability = [], 
                 value={form.notes}
                 onChange={(e) => setForm(prev => ({ ...prev, notes: e.target.value }))}
                 className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm bg-slate-50 focus:ring-2 focus:ring-arabina-accent focus:outline-none"
+                placeholder="Specific delivery instructions..."
               />
             </div>
 
             <button
               type="submit"
-              disabled={processing || !databaseReady || !canCreate || packages.length === 0}
-              className="w-full bg-[#1E3D1A] text-white py-4 rounded-2xl text-sm font-bold disabled:opacity-50 hover:bg-emerald-950 transition-colors"
+              disabled={processing || !databaseReady || !canCreate}
+              className="w-full bg-[#1E3D1A] text-white py-4 rounded-2xl text-sm font-bold disabled:opacity-50 hover:bg-emerald-950 transition-all shadow-lg shadow-emerald-900/10"
             >
               {processing ? 'Saving...' : 'Submit Sales Order'}
             </button>
@@ -221,13 +281,16 @@ export default function Orders({ packages = [], orders = [], availability = [], 
         </div>
 
         <div className="bg-white rounded-[2rem] shadow-sm border border-slate-100 p-6 md:p-8">
-          <h3 className="text-sm font-bold text-slate-800 mb-4">Recent Orders ({list.length})</h3>
+          <h3 className="text-sm font-bold text-slate-800 mb-4 flex items-center gap-2">
+            <div className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+            Recent Orders ({list.length})
+          </h3>
           <div className="space-y-3">
             {list.map((order) => (
-              <div key={order.id} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+              <div key={order.id} className="rounded-2xl border border-slate-200 bg-slate-50 p-4 transition-all hover:bg-white hover:shadow-md hover:border-slate-100">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <p className="text-sm font-bold text-slate-800">{order.code}</p>
-                  <span className={`text-[11px] font-bold uppercase tracking-wider px-2.5 py-1 rounded-full ${
+                  <span className={`text-[10px] font-bold uppercase tracking-wider px-2.5 py-1 rounded-full ${
                     order.status === 'fulfilled'
                       ? 'bg-emerald-100 text-emerald-700'
                       : order.status === 'partial'
@@ -237,18 +300,27 @@ export default function Orders({ packages = [], orders = [], availability = [], 
                     {order.status === 'fulfilled' ? 'Shipped' : order.status}
                   </span>
                 </div>
-                <p className="text-sm text-slate-700 mt-1">{order.customer_name}</p>
-                <p className="text-xs text-slate-500">Order Date: {order.order_date}</p>
-                <ul className="mt-2 space-y-1">
+                <p className="text-sm text-slate-700 mt-1 font-medium">{order.customer_name}</p>
+                <p className="text-[10px] text-slate-400 font-bold uppercase tracking-tighter mt-0.5">Order Date: {order.order_date}</p>
+                <ul className="mt-3 space-y-1.5 border-t border-slate-100 pt-3">
                   {order.lines?.map((line) => (
-                    <li key={line.id} className="text-xs text-slate-600">
-                      {line.package?.code} - {line.package?.name} | Ordered {line.package_quantity} | Shipped {line.shipped_quantity ?? 0}
+                    <li key={line.id} className="text-xs text-slate-600 flex items-center justify-between">
+                      <span className="flex items-center gap-2">
+                        <span className={`w-1 h-1 rounded-full ${line.package_id ? 'bg-emerald-400' : 'bg-blue-400'}`} />
+                        {line.package_id 
+                            ? <><span className="font-bold text-slate-700">{line.package?.code}</span> - {line.package?.name}</>
+                            : <><span className="font-bold text-slate-700">{line.item_sku}</span> (Loose)</>
+                        }
+                      </span>
+                      <span className="font-bold text-slate-500">
+                        x{line.package_id ? line.package_quantity : line.item_quantity}
+                      </span>
                     </li>
                   ))}
                 </ul>
               </div>
             ))}
-            {list.length === 0 && <p className="text-sm text-slate-500">No sales order yet.</p>}
+            {list.length === 0 && <p className="text-sm text-slate-500 italic px-2">No sales order recorded yet.</p>}
           </div>
         </div>
       </div>

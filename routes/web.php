@@ -48,6 +48,7 @@ Route::middleware('auth')->group(function () {
     Route::post('/items/stock/out', [ItemController::class, 'stockOutStore'])->name('items.stock.out');
     Route::get('/orders', [SalesOrderController::class, 'index'])->name('sales.orders.index');
     Route::get('/orders/history', [SalesOrderController::class, 'history'])->name('sales.orders.history');
+    Route::get('/orders/search-item', [SalesOrderController::class, 'searchItem'])->name('sales.orders.search.item');
     Route::post('/orders', [SalesOrderController::class, 'store'])->name('sales.orders.store');
     Route::get('/procurement', [ProcurementController::class, 'index'])->name('procurement.index');
     Route::post('/procurement/orders', [ProcurementController::class, 'store'])->name('procurement.orders.store');

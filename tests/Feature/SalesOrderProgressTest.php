@@ -99,4 +99,44 @@ class SalesOrderProgressTest extends TestCase
             'status' => 'fulfilled',
         ]);
     }
+
+    public function test_can_create_sales_order_with_loose_sku_lines(): void
+    {
+        $user = User::factory()->create([
+            'role' => User::ROLE_SUPER_ADMIN,
+        ]);
+
+        $item = Item::query()->create([
+            'sku' => 'LOOSE-SKU-001',
+            'name' => 'Loose Item',
+            'unit' => 'pcs',
+            'created_by' => $user->id,
+        ]);
+
+        $response = $this->actingAs($user)
+            ->postJson('/orders', [
+                'customer_name' => 'Loose Customer',
+                'order_date' => now()->toDateString(),
+                'notes' => 'Some notes',
+                'lines' => [
+                    [
+                        'type' => 'loose',
+                        'item_sku' => $item->sku,
+                        'item_quantity' => 5,
+                    ]
+                ],
+            ]);
+
+        $response->assertOk();
+        
+        $this->assertDatabaseHas('sales_orders', [
+            'customer_name' => 'Loose Customer',
+        ]);
+
+        $this->assertDatabaseHas('sales_order_lines', [
+            'item_sku' => 'LOOSE-SKU-001',
+            'item_quantity' => 5,
+            'package_id' => null,
+        ]);
+    }
 }

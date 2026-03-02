@@ -4,168 +4,88 @@ namespace App\Http\Controllers;
 
 use App\Models\Package;
 use App\Models\SalesOrder;
-use App\Models\InventoryTransaction;
-use App\Models\User;
+use App\Models\SalesOrderLine;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Schema;
-use Illuminate\Support\Str;
 use Inertia\Inertia;
 use Inertia\Response;
 
 class SalesOrderController extends Controller
 {
-    public function index(Request $request): Response
+    public function index(): Response
     {
-        $databaseReady = Schema::hasTable('sales_orders')
-            && Schema::hasTable('sales_order_lines')
-            && Schema::hasTable('packages');
-
-        $packages = collect();
-        $orders = collect();
-        $availability = collect();
-
-        if ($databaseReady) {
-            $packages = Package::query()
-                ->where('is_active', true)
-                ->orderBy('name')
-                ->get(['id', 'code', 'name']);
-
-            $orders = SalesOrder::query()
-                ->with(['lines.package:id,code,name'])
-                ->latest()
-                ->limit(30)
-                ->get(['id', 'code', 'customer_name', 'order_date', 'status', 'notes', 'created_at']);
-
-            // Calculate Availability
-            $stockByItem = \App\Models\ItemVariant::query()
-                ->selectRaw('item_id, SUM(stock_current) as total_stock')
-                ->groupBy('item_id')
-                ->pluck('total_stock', 'item_id');
-
-            $allPackages = Package::with('packageItems')->where('is_active', true)->get();
-            $availability = $allPackages->map(function ($package) use ($stockByItem) {
-                $maxPossible = null;
-                foreach ($package->packageItems as $pItem) {
-                    $requiredQty = $pItem->quantity;
-                    $currentStock = $stockByItem[$pItem->item_id] ?? 0;
-                    $possibleWithThisItem = floor($currentStock / $requiredQty);
-                    if ($maxPossible === null || $possibleWithThisItem < $maxPossible) {
-                        $maxPossible = $possibleWithThisItem;
-                    }
-                }
-                return [
-                    'id' => $package->id,
-                    'code' => $package->code,
-                    'name' => $package->name,
-                    'available_qty' => (int) ($maxPossible ?? 0),
-                ];
-            })->sortBy('name')->values();
-        }
-
         return Inertia::render('Sales/Orders', [
-            'databaseReady' => $databaseReady,
-            'canCreate' => in_array($request->user()->role, [User::ROLE_SALES, User::ROLE_SUPER_ADMIN], true),
-            'packages' => $packages,
-            'orders' => $orders,
-            'availability' => $availability,
+            'packages' => Package::query()->get(),
+            'items' => \App\Models\Item::query()->select(['id', 'sku', 'name'])->orderBy('sku')->get(),
+            'orders' => SalesOrder::with(['lines.package', 'lines.item'])->latest()->limit(10)->get(),
+            'canCreate' => auth()->user()->hasRole('sales', 'super_admin'),
+        ]);
+    }
+
+    public function history(): Response
+    {
+        return Inertia::render('Sales/History', [
+            'orders' => SalesOrder::with(['lines.package', 'lines.item'])->latest()->paginate(20),
         ]);
     }
 
     public function store(Request $request): JsonResponse
     {
-        abort_unless(
-            in_array($request->user()->role, [User::ROLE_SALES, User::ROLE_SUPER_ADMIN], true),
-            403,
-            'Unauthorized role.'
-        );
-
-        if (! Schema::hasTable('sales_orders') || ! Schema::hasTable('sales_order_lines') || ! Schema::hasTable('packages')) {
-            return response()->json([
-                'message' => 'Sales order table is not ready. Please run php artisan migrate.',
-            ], 409);
-        }
-
         $validated = $request->validate([
             'customer_name' => 'required|string|max:255',
             'order_date' => 'required|date',
+            'notes' => 'nullable|string',
             'lines' => 'required|array|min:1',
-            'lines.*.package_id' => 'required|integer|exists:packages,id|distinct',
-            'lines.*.package_quantity' => 'required|integer|min:1',
-            'notes' => 'nullable|string|max:500',
+            'lines.*.type' => 'required|in:package,loose',
+            'lines.*.package_id' => 'required_if:lines.*.type,package|nullable|exists:packages,id',
+            'lines.*.package_quantity' => 'required_if:lines.*.type,package|nullable|integer|min:1',
+            'lines.*.item_sku' => 'required_if:lines.*.type,loose|nullable|string|exists:items,sku',
+            'lines.*.item_quantity' => 'required_if:lines.*.type,loose|nullable|integer|min:1',
         ]);
 
-        $order = DB::transaction(function () use ($request, $validated) {
+        $order = DB::transaction(function () use ($validated) {
             $order = SalesOrder::create([
-                'code' => $this->generateCode(),
+                'code' => 'SO-' . strtoupper(uniqid()),
                 'customer_name' => $validated['customer_name'],
                 'order_date' => $validated['order_date'],
+                'notes' => $validated['notes'],
                 'status' => 'open',
-                'created_by' => $request->user()->id,
-                'notes' => $validated['notes'] ?? null,
+                'created_by' => auth()->id(),
             ]);
 
             foreach ($validated['lines'] as $line) {
-                $order->lines()->create([
-                    'package_id' => (int) $line['package_id'],
-                    'package_quantity' => (int) $line['package_quantity'],
+                SalesOrderLine::create([
+                    'sales_order_id' => $order->id,
+                    'package_id' => $line['type'] === 'package' ? $line['package_id'] : null,
+                    'package_quantity' => $line['type'] === 'package' ? $line['package_quantity'] : null,
+                    'item_sku' => $line['type'] === 'loose' ? $line['item_sku'] : null,
+                    'item_quantity' => $line['type'] === 'loose' ? $line['item_quantity'] : null,
                 ]);
             }
 
-            return $order;
+            return $order->load('lines.package', 'lines.item');
         });
 
         return response()->json([
-            'message' => 'Sales order submitted successfully.',
-            'data' => SalesOrder::query()
-                ->with(['lines.package:id,code,name'])
-                ->find($order->id),
-        ], 201);
-    }
-
-    public function history(): Response
-    {
-        $orders = SalesOrder::query()
-            ->with(['lines.package:id,code,name'])
-            ->where('status', 'fulfilled')
-            ->latest('id')
-            ->limit(50)
-            ->get(['id', 'code', 'customer_name', 'order_date', 'status', 'notes', 'created_at'])
-            ->map(function ($order) {
-                $lastDeliveryAt = InventoryTransaction::query()
-                    ->where('type', 'out')
-                    ->where('sales_order_id', $order->id)
-                    ->latest('id')
-                    ->value('created_at');
-
-                return [
-                    'id' => $order->id,
-                    'code' => $order->code,
-                    'customer_name' => $order->customer_name,
-                    'order_date' => optional($order->order_date)->toDateString(),
-                    'status' => $order->status,
-                    'notes' => $order->notes,
-                    'created_at' => optional($order->created_at)->toDateTimeString(),
-                    'last_delivery_at' => $lastDeliveryAt,
-                    'lines' => $order->lines,
-                ];
-            })
-            ->values();
-
-        return Inertia::render('Sales/History', [
-            'orders' => $orders,
+            'message' => 'Sales order created successfully.',
+            'data' => $order,
         ]);
     }
 
-    private function generateCode(): string
+    public function searchItem(Request $request): JsonResponse
     {
-        $datePrefix = now()->format('Ymd');
+        $query = $request->get('q');
+        if (!$query) {
+            return response()->json([]);
+        }
 
-        do {
-            $code = 'SO-'.$datePrefix.'-'.Str::upper(Str::random(4));
-        } while (SalesOrder::query()->where('code', $code)->exists());
+        $items = \App\Models\Item::query()
+            ->where('sku', 'like', "%{$query}%")
+            ->orWhere('name', 'like', "%{$query}%")
+            ->limit(10)
+            ->get(['sku', 'name']);
 
-        return $code;
+        return response()->json($items);
     }
 }

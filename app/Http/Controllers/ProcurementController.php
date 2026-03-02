@@ -45,27 +45,156 @@ class ProcurementController extends Controller
 
         $orders = collect();
         $items = collect();
+        $packages = collect();
 
         if ($databaseReady) {
             $orders = ProcurementOrder::query()
                 ->with(self::ORDER_RELATIONS)
+                ->where('status', '!=', 'received')
                 ->latest()
-                ->limit(30)
                 ->get(['id', 'code', 'status', 'notes', 'created_at']);
 
-            if (Schema::hasTable('items')) {
-                $items = Item::query()
-                    ->orderBy('sku')
-                    ->get(['id', 'sku', 'name', 'unit']);
+            // 1. Get Incoming Stock (Ordered but not yet received)
+            $incomingStock = ProcurementOrderLine::query()
+                ->whereHas('procurementOrder', function($q) {
+                    $q->whereIn('status', ['submitted', 'partial']);
+                })
+                ->selectRaw('item_id, SUM(ordered_quantity - received_quantity) as incoming_qty')
+                ->groupBy('item_id')
+                ->pluck('incoming_qty', 'item_id')
+                ->toArray();
+
+            // 2. Calculate Gross SKU Demand from all open Sales Orders
+            $openOrders = SalesOrder::query()
+                ->whereIn('status', ['open', 'partial'])
+                ->with(['lines.package.packageItems'])
+                ->get();
+
+            $totalSkuDemandMap = []; // [item_id => total_qty_needed]
+            $requestedPackagesMap = []; // [package_id => total_qty_requested]
+            $sourceOrders = [];
+
+            foreach ($openOrders as $so) {
+                $hasUncoveredDemand = false;
+                $soDetail = ['id' => $so->id, 'code' => $so->code, 'customer' => $so->customer_name, 'packages' => [], 'loose_skus' => []];
+                
+                foreach ($so->lines as $line) {
+                    if ($line->package_id) {
+                        $qty = max(0, (int)$line->package_quantity - (int)$line->shipped_quantity);
+                        if ($qty > 0) {
+                            $soDetail['packages'][] = ['code' => $line->package?->code, 'qty' => $qty];
+                            $requestedPackagesMap[$line->package_id] = ($requestedPackagesMap[$line->package_id] ?? 0) + $qty;
+                            
+                            if ($line->package && $line->package->packageItems) {
+                                foreach ($line->package->packageItems as $pItem) {
+                                    $itemId = $pItem->item_id;
+                                    $needed = $qty * (int)$pItem->quantity;
+                                    $totalSkuDemandMap[$itemId] = ($totalSkuDemandMap[$itemId] ?? 0) + $needed;
+                                }
+                            }
+                        }
+                    } elseif ($line->item_sku) {
+                        $item = Item::where('sku', $line->item_sku)->first();
+                        if ($item) {
+                            $qty = max(0, (int)$line->item_quantity - (int)$line->shipped_quantity);
+                            if ($qty > 0) {
+                                $totalSkuDemandMap[$item->id] = ($totalSkuDemandMap[$item->id] ?? 0) + $qty;
+                                $soDetail['loose_skus'][] = ['sku' => $line->item_sku, 'qty' => $qty];
+                            }
+                        }
+                    }
+                }
+
+                // Check if this SO has any items not covered by (Stock + Incoming)
+                foreach ($so->lines as $line) {
+                    if ($line->package_id && $line->package) {
+                        foreach ($line->package->packageItems as $pItem) {
+                            $itemId = $pItem->item_id;
+                            $stock = ItemVariant::where('item_id', $itemId)->whereNull('color')->first()?->stock_current ?? 0;
+                            $incoming = $incomingStock[$itemId] ?? 0;
+                            if (($stock + $incoming) < $totalSkuDemandMap[$itemId]) {
+                                $hasUncoveredDemand = true;
+                                break 2;
+                            }
+                        }
+                    } elseif ($line->item_sku) {
+                        $item = Item::where('sku', $line->item_sku)->first();
+                        if ($item) {
+                            $stock = ItemVariant::where('item_id', $item->id)->whereNull('color')->first()?->stock_current ?? 0;
+                            $incoming = $incomingStock[$item->id] ?? 0;
+                            if (($stock + $incoming) < $totalSkuDemandMap[$item->id]) {
+                                $hasUncoveredDemand = true;
+                                break;
+                            }
+                        }
+                    }
+                }
+
+                if ($hasUncoveredDemand) {
+                    $sourceOrders[] = $soDetail;
+                }
             }
 
-            if (Schema::hasTable('packages')) {
-                $packages = Package::query()
-                    ->orderBy('code')
-                    ->get(['id', 'code', 'name']);
-            } else {
-                $packages = collect();
+            // 3. Fulfill shortages using requested packages first, but only if actually short
+            foreach ($requestedPackagesMap as $pkgId => $qty) {
+                $pkg = Package::with('packageItems')->find($pkgId);
+                if ($pkg) {
+                    // Check if any item in this package is still short
+                    $needsOrdering = false;
+                    foreach ($pkg->packageItems as $pItem) {
+                        $itemId = $pItem->item_id;
+                        $stock = ItemVariant::where('item_id', $itemId)->whereNull('color')->first()?->stock_current ?? 0;
+                        $incoming = $incomingStock[$itemId] ?? 0;
+                        if (($stock + $incoming) < $totalSkuDemandMap[$itemId]) {
+                            $needsOrdering = true;
+                            break;
+                        }
+                    }
+
+                    if ($needsOrdering) {
+                        $suggestion['package_lines'][] = [
+                            'package_id' => $pkg->id,
+                            'code' => $pkg->code,
+                            'name' => $pkg->name,
+                            'quantity' => $qty,
+                        ];
+                        // Subtract package contents from loose shortage calculation
+                        foreach ($pkg->packageItems as $pItem) {
+                            if (isset($totalSkuDemandMap[$pItem->item_id])) {
+                                $totalSkuDemandMap[$pItem->item_id] -= ($qty * (int)$pItem->quantity);
+                            }
+                        }
+                    }
+                }
             }
+
+            // 4. Final calculation: Residual SKU Demand - (Current Stock + Incoming Stock)
+            foreach ($totalSkuDemandMap as $itemId => $residualDemand) {
+                $item = Item::with(['variants' => fn($q) => $q->whereNull('color')->orWhere('color', '')])->find($itemId);
+                if ($item) {
+                    $stock = $item->variants->first()?->stock_current ?? 0;
+                    $incoming = $incomingStock[$itemId] ?? 0;
+                    // Final Shortage = Remaining Demand - (Stock + Incoming)
+                    $shortage = $residualDemand - $stock - $incoming;
+                    
+                    if ($shortage > 0) {
+                        $suggestion['sku_lines'][] = [
+                            'item_id' => $item->id,
+                            'sku' => $item->sku,
+                            'name' => $item->name,
+                            'unit' => $item->unit,
+                            'demand_qty' => $residualDemand,
+                            'stock_qty' => $stock,
+                            'incoming_qty' => $incoming,
+                            'shortage_qty' => $shortage,
+                        ];
+                    }
+                }
+            }
+            
+            $suggestion['source_orders'] = $sourceOrders;
+            $items = Item::query()->orderBy('sku')->get(['id', 'sku', 'name', 'unit']);
+            $packages = Package::query()->orderBy('code')->get(['id', 'code', 'name']);
         }
 
         return Inertia::render('Procurement/Index', [
@@ -75,7 +204,7 @@ class ProcurementController extends Controller
             'suggestion' => $suggestion,
             'orders' => $orders,
             'items' => $items,
-            'packages' => $packages ?? collect(),
+            'packages' => $packages,
         ]);
     }
 
@@ -107,10 +236,8 @@ class ProcurementController extends Controller
                 'notes' => $validated['notes'] ?? null,
             ]);
 
-            // Track total quantities per SKU to create consolidated order lines
             $skuTotals = [];
 
-            // 1. Process Packages
             foreach ($validated['package_lines'] ?? [] as $pLine) {
                 $packageId = (int) $pLine['package_id'];
                 $packageQty = (int) $pLine['quantity'];
@@ -120,7 +247,6 @@ class ProcurementController extends Controller
                     'quantity' => $packageQty,
                 ]);
 
-                // Explode package into SKUs
                 $package = Package::with('packageItems')->find($packageId);
                 if ($package && $package->packageItems) {
                     foreach ($package->packageItems as $pItem) {
@@ -131,14 +257,12 @@ class ProcurementController extends Controller
                 }
             }
 
-            // 2. Process Individual SKUs
             foreach ($validated['sku_lines'] ?? [] as $sLine) {
                 $itemId = (int) $sLine['item_id'];
                 $qty = (int) $sLine['quantity'];
                 $skuTotals[$itemId] = ($skuTotals[$itemId] ?? 0) + $qty;
             }
 
-            // 3. Create consolidated order lines
             foreach ($skuTotals as $itemId => $totalQty) {
                 $order->lines()->create([
                     'item_id' => $itemId,
@@ -149,7 +273,6 @@ class ProcurementController extends Controller
                 ]);
             }
 
-            // Create CRN immediately
             $crnNumber = 'CRN-' . now()->format('Ymd') . '-' . Str::upper(Str::random(4));
             while (ContenaReceivingNote::where('crn_number', $crnNumber)->exists()) {
                 $crnNumber = 'CRN-' . now()->format('Ymd') . '-' . Str::upper(Str::random(4));
@@ -162,10 +285,8 @@ class ProcurementController extends Controller
                 'created_by' => $request->user()->id,
             ]);
 
-            // Refresh order lines to include all (package items + individual SKUs)
             $order->load('lines');
 
-            // Copy all item lines to CRN items
             foreach ($order->lines as $line) {
                 $variant = $this->findOrCreateDefaultVariant($line->item_id);
                 
@@ -365,7 +486,6 @@ class ProcurementController extends Controller
         $orderData = DB::transaction(function () use ($request, $order) {
             $order->update(['status' => 'submitted']);
 
-            // Create CRN
             $crnNumber = 'CRN-' . now()->format('Ymd') . '-' . Str::upper(Str::random(4));
             while (ContenaReceivingNote::where('crn_number', $crnNumber)->exists()) {
                 $crnNumber = 'CRN-' . now()->format('Ymd') . '-' . Str::upper(Str::random(4));
@@ -378,7 +498,6 @@ class ProcurementController extends Controller
                 'created_by' => $request->user()->id,
             ]);
 
-            // Copy lines to CRN items
             foreach ($order->lines as $line) {
                 $variant = $this->findOrCreateDefaultVariant($line->item_id);
                 
@@ -520,8 +639,6 @@ class ProcurementController extends Controller
         return [0, 0];
     }
 
-
-
     private function generateCode(): string
     {
         $datePrefix = now()->format('Ymd');
@@ -575,7 +692,7 @@ class ProcurementController extends Controller
         $status = 'received';
         foreach ($order->lines as $line) {
             if ($line->received_quantity === 0 && $line->ordered_quantity > 0) {
-                return 'draft';
+                return 'submitted';
             }
             if ($line->received_quantity < $line->ordered_quantity) {
                 $status = 'partial';
