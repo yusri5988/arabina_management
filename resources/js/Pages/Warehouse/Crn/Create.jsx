@@ -3,7 +3,7 @@ import QtyInput from '../../../components/QtyInput.jsx';
 import { useMemo, useState } from 'react';
 import AuthenticatedLayout from '../../../Layouts/AuthenticatedLayout';
 import { apiFetchJson } from '../../../lib/http';
-import { TrashIcon, PlusIcon, ArrowPathIcon, MinusIcon } from '@heroicons/react/24/outline/index.js';
+import { TrashIcon, PlusIcon, ArrowPathIcon } from '@heroicons/react/24/outline/index.js';
 
 export default function CrnCreate({ procurementOrders = [], items = [] }) {
   const [processing, setProcessing] = useState(false);
@@ -243,9 +243,9 @@ export default function CrnCreate({ procurementOrders = [], items = [] }) {
                   />
                 </div>
               </div>
-            ))}
+              ))}
+            </div>
           </div>
-        </div>
 
         {errors.message && (
           <div className="p-4 rounded-2xl bg-rose-50 border border-rose-100 text-rose-700 text-sm font-medium">
