@@ -139,4 +139,103 @@ class SalesOrderProgressTest extends TestCase
             'package_id' => null,
         ]);
     }
+
+    public function test_mixed_sales_order_is_fulfilled_after_alacarte_stock_out(): void
+    {
+        $user = User::factory()->create([
+            'role' => User::ROLE_STORE_KEEPER,
+        ]);
+
+        $packageItem = Item::query()->create([
+            'sku' => 'PKG-SKU-001',
+            'name' => 'Package Item',
+            'unit' => 'pcs',
+            'created_by' => $user->id,
+        ]);
+
+        $looseItem = Item::query()->create([
+            'sku' => 'LOOSE-SKU-002',
+            'name' => 'Loose Item',
+            'unit' => 'pcs',
+            'created_by' => $user->id,
+        ]);
+
+        ItemVariant::query()->create([
+            'item_id' => $packageItem->id,
+            'color' => null,
+            'stock_initial' => 2,
+            'stock_current' => 2,
+        ]);
+
+        ItemVariant::query()->create([
+            'item_id' => $looseItem->id,
+            'color' => null,
+            'stock_initial' => 3,
+            'stock_current' => 3,
+        ]);
+
+        $package = Package::query()->create([
+            'code' => 'PKG-MIX-01',
+            'name' => 'Mixed Package',
+            'is_active' => true,
+            'created_by' => $user->id,
+        ]);
+
+        $package->packageItems()->create([
+            'item_id' => $packageItem->id,
+            'quantity' => 1,
+        ]);
+
+        $order = SalesOrder::query()->create([
+            'code' => 'SO-MIXED-0001',
+            'customer_name' => 'Customer Mixed',
+            'order_date' => now()->toDateString(),
+            'status' => 'open',
+            'created_by' => $user->id,
+        ]);
+
+        $packageLine = $order->lines()->create([
+            'package_id' => $package->id,
+            'package_quantity' => 2,
+            'shipped_quantity' => 0,
+        ]);
+
+        $looseLine = $order->lines()->create([
+            'item_sku' => $looseItem->sku,
+            'item_quantity' => 3,
+            'shipped_quantity' => 0,
+        ]);
+
+        $this->actingAs($user)
+            ->postJson('/items/stock/out', [
+                'mode' => 'alacarte',
+                'sales_order_id' => $order->id,
+                'lines' => [
+                    [
+                        'item_id' => $packageItem->id,
+                        'quantity' => 2,
+                    ],
+                    [
+                        'item_id' => $looseItem->id,
+                        'quantity' => 3,
+                    ],
+                ],
+            ])
+            ->assertOk();
+
+        $this->assertDatabaseHas('sales_order_lines', [
+            'id' => $packageLine->id,
+            'shipped_quantity' => 2,
+        ]);
+
+        $this->assertDatabaseHas('sales_order_lines', [
+            'id' => $looseLine->id,
+            'shipped_quantity' => 3,
+        ]);
+
+        $this->assertDatabaseHas('sales_orders', [
+            'id' => $order->id,
+            'status' => 'fulfilled',
+        ]);
+    }
 }

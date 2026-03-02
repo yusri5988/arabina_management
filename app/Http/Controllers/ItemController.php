@@ -132,6 +132,7 @@ class ItemController extends Controller
                 ->with([
                     'lines' => function ($query) {
                         $query->with([
+                            'item:id,sku,name,unit',
                             'package:id,code,name',
                             'package.packageItems.item:id,sku,name,unit',
                         ])->orderBy('id');
@@ -298,20 +299,10 @@ class ItemController extends Controller
                     'item_variant_id' => $variant->id,
                     'quantity' => $line['quantity'],
                 ]);
-
-                if ($salesOrder) {
-                    $this->incrementShippedQuantity($salesOrder, $line['item_id'], $line['quantity']);
-                }
             }
 
             if ($salesOrder) {
-                if ($validated['mode'] === 'package') {
-                    $salesOrder->lines()
-                        ->where('package_id', $validated['package_id'])
-                        ->increment('shipped_quantity', (int)$validated['package_quantity']);
-                }
-                
-                $this->refreshSalesOrderStatus($salesOrder);
+                $this->syncSalesOrderProgress($salesOrder);
             }
 
             return $transaction;
@@ -323,15 +314,72 @@ class ItemController extends Controller
         ]);
     }
 
-    private function incrementShippedQuantity(SalesOrder $order, int $itemId, int $quantity): void
+    private function syncSalesOrderProgress(SalesOrder $order): void
     {
-        $item = Item::find($itemId);
-        if (!$item) return;
+        $order->load([
+            'lines.package.packageItems.item:id,sku',
+        ]);
 
-        $line = $order->lines()->where('item_sku', $item->sku)->first();
-        if ($line) {
-            $line->increment('shipped_quantity', $quantity);
+        $remainingBySku = DB::table('inventory_transaction_lines as transaction_lines')
+            ->join('inventory_transactions as transactions', 'transactions.id', '=', 'transaction_lines.inventory_transaction_id')
+            ->join('items', 'items.id', '=', 'transaction_lines.item_id')
+            ->where('transactions.type', 'out')
+            ->where('transactions.sales_order_id', $order->id)
+            ->select('items.sku', DB::raw('SUM(transaction_lines.quantity) as shipped_quantity'))
+            ->groupBy('items.sku')
+            ->pluck('shipped_quantity', 'sku')
+            ->map(fn ($quantity) => (int) $quantity)
+            ->all();
+
+        foreach ($order->lines as $line) {
+            $shippedQuantity = 0;
+
+            if ($line->package_id && $line->package) {
+                $packageItems = $line->package->packageItems ?? collect();
+                $deliverablePackages = null;
+
+                foreach ($packageItems as $packageItem) {
+                    $sku = $packageItem->item?->sku;
+                    $requiredQuantity = (int) $packageItem->quantity;
+
+                    if (! $sku || $requiredQuantity < 1) {
+                        $deliverablePackages = 0;
+                        break;
+                    }
+
+                    $availableQuantity = (int) ($remainingBySku[$sku] ?? 0);
+                    $possiblePackages = intdiv($availableQuantity, $requiredQuantity);
+
+                    $deliverablePackages = $deliverablePackages === null
+                        ? $possiblePackages
+                        : min($deliverablePackages, $possiblePackages);
+                }
+
+                $shippedQuantity = min((int) $line->package_quantity, max((int) ($deliverablePackages ?? 0), 0));
+
+                foreach ($packageItems as $packageItem) {
+                    $sku = $packageItem->item?->sku;
+                    if (! $sku) {
+                        continue;
+                    }
+
+                    $remainingBySku[$sku] = max(
+                        0,
+                        (int) ($remainingBySku[$sku] ?? 0) - ($shippedQuantity * (int) $packageItem->quantity)
+                    );
+                }
+            } elseif ($line->item_sku) {
+                $availableQuantity = (int) ($remainingBySku[$line->item_sku] ?? 0);
+                $shippedQuantity = min((int) $line->item_quantity, max($availableQuantity, 0));
+                $remainingBySku[$line->item_sku] = max(0, $availableQuantity - $shippedQuantity);
+            }
+
+            $line->update([
+                'shipped_quantity' => $shippedQuantity,
+            ]);
         }
+
+        $this->refreshSalesOrderStatus($order);
     }
 
     private function refreshSalesOrderStatus(SalesOrder $order): void

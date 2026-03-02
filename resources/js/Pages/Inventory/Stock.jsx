@@ -89,8 +89,7 @@ export default function Stock({ items, packages, salesOrders = [], type = 'in' }
         const remainingQty = Math.max(Number(line.item_quantity ?? 0) - Number(line.shipped_quantity ?? 0), 0);
         if (remainingQty <= 0) return;
 
-        // Find item in items array by SKU
-        const item = items.find(i => i.sku === line.item_sku);
+        const item = line.item ?? items.find(i => i.sku === line.item_sku);
         if (!item) return;
 
         const key = String(item.id);
