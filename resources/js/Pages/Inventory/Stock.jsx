@@ -1,4 +1,4 @@
-import { Head, Link } from '@inertiajs/react';
+import { Head, Link, router } from '@inertiajs/react';
 import { useEffect, useMemo, useState } from 'react';
 import AuthenticatedLayout from '../../Layouts/AuthenticatedLayout';
 
@@ -266,6 +266,7 @@ export default function Stock({ items, packages, salesOrders = [], type = 'in' }
         setNotification({ type: 'success', message: result.message ?? 'Transaction saved.' });
         setPackageData(prev => ({ ...prev, package_quantity: '', notes: '' }));
         setAlacarteLines([{ ...initialAlacarteLine, item_id: items?.[0]?.id?.toString() ?? '' }]);
+        router.reload();
       } else if (response.status === 422) {
         setErrors(result.errors ?? {});
       } else {

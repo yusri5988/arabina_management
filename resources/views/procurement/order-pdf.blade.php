@@ -132,7 +132,16 @@
 <body>
     <div class="page">
         <div class="header">
-            <h1>Bulk Procurement Order</h1>
+            <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 12px;">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="#ffffff" viewBox="0 0 48 48" style="width: 48px; height: 48px;">
+                    <path d="M6 12h36v24H6zm4 4v16h32V16zm28 4h-8v8h8zm-12 0h-8v8h8z"/>
+                </svg>
+                <div>
+                    <div style="font-size: 20px; font-weight: bold; letter-spacing: -0.02em;">ARABINA</div>
+                    <div style="font-size: 11px; opacity: 0.9;">Inventory Management</div>
+                </div>
+            </div>
+            <h1 style="margin-top: 0;">Bulk Procurement Order</h1>
             <p>Order No: {{ $order->code }}</p>
         </div>
 
@@ -156,7 +165,29 @@
         </div>
 
         <div class="section">
-            <h2>SKU Order Lines</h2>
+            <h2>Packages Ordered</h2>
+            @if($order->packageLines->count() > 0)
+            @foreach($order->packageLines as $pLine)
+            <div style="margin: 12px 0; padding: 12px; background: #f0fdf4; border-left: 4px solid #10b981; border-radius: 0 8px 8px 0;">
+                <h3 style="margin: 0 0 8px 0; font-size: 14px; font-weight: bold;">{{ $pLine->package->code ?? 'N/A' }} x {{ $pLine->quantity }}</h3>
+                @if($pLine->package->packageItems && $pLine->package->packageItems->count() > 0)
+                <ul style="margin: 0; padding-left: 20px; font-size: 12px;">
+                    @foreach($pLine->package->packageItems as $pItem)
+                    <li style="margin-bottom: 4px;">{{ $pItem->item->sku ?? 'N/A' }} × {{ $pItem->quantity * $pLine->quantity }}</li>
+                    @endforeach
+                </ul>
+                @else
+                <p style="font-size: 11px; color: #64748b; font-style: italic;">No items in package</p>
+                @endif
+            </div>
+            @endforeach
+            @else
+            <p style="color: #64748b; font-style: italic;">No packages ordered</p>
+            @endif
+        </div>
+
+        <div class="section">
+            <h2>Total SKU Lines</h2>
             <table>
                 <thead>
                     <tr>

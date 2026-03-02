@@ -26,6 +26,7 @@ class ProcurementController extends Controller
 {
     private const ORDER_RELATIONS = [
         'packageLines.package:id,code,name',
+        'packageLines.package.packageItems.item:id,sku,name,unit',
         'lines.item:id,sku,name,unit',
     ];
 

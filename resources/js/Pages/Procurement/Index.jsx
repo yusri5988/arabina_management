@@ -481,12 +481,19 @@ export default function ProcurementIndex({
                   <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                     <div>
                       <h4 className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-2">Packages Ordered</h4>
-                      <div className="space-y-1">
-                        {(order.package_lines ?? []).map((line) => (
-                          <p key={line.id} className="text-xs text-slate-600 font-medium">
-                            • {line.package?.code} <span className="text-blue-600">x {line.quantity}</span>
-                          </p>
-                        ))}
+                      <div className="space-y-2">
+                        {order.package_lines?.map((line) => (
+                          <div key={line.id} className="space-y-1">
+                            <p className="text-xs font-bold text-slate-700">
+                              📦 {line.package?.code} x {line.quantity}
+                            </p>
+                            {line.package?.packageItems?.map((pItem) => (
+                              <p key={pItem.id} className="ml-6 text-xs text-slate-600 pl-2 border-l border-slate-200">
+                                {pItem.item.sku} x {pItem.quantity * line.quantity}
+                              </p>
+                            )) || <p className="ml-6 text-[10px] text-slate-400 italic">No items in package</p>}
+                          </div>
+                        )) || <p className="text-sm text-slate-400 italic">No packages ordered</p>}
                       </div>
                       {order.notes && <p className="mt-2 text-xs text-slate-500 italic">"{order.notes}"</p>}
                     </div>
