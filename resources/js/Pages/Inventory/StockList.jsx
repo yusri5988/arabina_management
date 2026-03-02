@@ -27,10 +27,27 @@ export default function StockList({ items = [], packages = [] }) {
   }, [items, search, unitFilter]);
 
   return (
-    <AuthenticatedLayout title="Inventory Stock List" backUrl="__back__">
-      <Head title="Inventory Stock List" />
+    <AuthenticatedLayout title="SKU Inventory" backUrl="__back__">
+      <Head title="SKU Inventory" />
 
       <div className="space-y-8">
+        
+        {/* Top Action Bar */}
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-4 bg-white p-6 rounded-[2rem] shadow-sm border border-slate-100">
+          <div>
+            <h2 className="text-xl font-black text-slate-800 tracking-tight">Inventory Overview</h2>
+            <p className="text-xs text-slate-500 font-medium">Download or filter your current stock levels.</p>
+          </div>
+          <a
+            href="/items/stocks/pdf"
+            className="w-full sm:w-auto inline-flex items-center justify-center gap-2 rounded-2xl bg-rose-600 px-8 py-4 text-sm font-black text-white hover:bg-rose-700 transition-all shadow-lg shadow-rose-200 active:scale-95 uppercase tracking-wider"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={3} stroke="currentColor" className="w-5 h-5">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M7.5 12l4.5 4.5m0 0l4.5-4.5M12 3v13.5" />
+            </svg>
+            Generate List PDF
+          </a>
+        </div>
         
         {/* Package Availability Section */}
         {packages && packages.length > 0 && (
@@ -83,8 +100,8 @@ export default function StockList({ items = [], packages = [] }) {
         <div className="space-y-4">
           <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between px-2">
             <div>
-              <h3 className="text-sm font-bold text-slate-800">Ala Carte Inventory ({filteredInventory.length})</h3>
-              <p className="text-xs text-slate-500">Individual SKU stock breakdown.</p>
+              <h3 className="text-sm font-bold text-slate-800">SKU Inventory ({filteredInventory.length})</h3>
+              <p className="text-xs text-slate-500">SKU Inventory</p>
             </div>
 
             <div className="flex flex-col sm:flex-row gap-2 sm:items-center">
@@ -92,8 +109,8 @@ export default function StockList({ items = [], packages = [] }) {
                 type="text"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                placeholder="Search SKU or item name"
-                className="w-full sm:w-64 rounded-xl border border-slate-200 px-3 py-2 text-sm bg-white focus:ring-2 focus:ring-arabina-accent focus:outline-none"
+                placeholder="Search SKU..."
+                className="w-full sm:w-48 rounded-xl border border-slate-200 px-3 py-2 text-sm bg-white focus:ring-2 focus:ring-arabina-accent focus:outline-none"
               />
               <select
                 value={unitFilter}

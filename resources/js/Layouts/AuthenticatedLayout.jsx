@@ -11,7 +11,8 @@ import {
   ChevronLeftIcon,
   UserCircleIcon,
   Bars3Icon,
-  XMarkIcon
+  XMarkIcon,
+  BuildingStorefrontIcon
 } from '@heroicons/react/24/outline/index.js';
 
 export default function AuthenticatedLayout({ children, title, showWelcome = false, backUrl = null }) {
@@ -40,14 +41,21 @@ export default function AuthenticatedLayout({ children, title, showWelcome = fal
 
   const navLinks = [
     { name: 'Dashboard', path: '/dashboard', icon: HomeIcon },
-    { name: 'Items', path: '/items', icon: ArchiveBoxIcon },
-    { name: 'Stock List', path: '/items/stocks', icon: ArchiveBoxIcon },
-    { name: 'Order', path: '/orders', icon: ShoppingCartIcon },
-    ...(auth?.user?.role === 'procurement' || auth?.user?.role === 'store_keeper' || auth?.user?.role === 'super_admin'
+    ...(auth?.user?.role !== 'sales' && auth?.user?.role !== 'store_keeper' && auth?.user?.role !== 'procurement' ? [
+      { name: 'Items', path: '/items', icon: ArchiveBoxIcon },
+      { name: 'Stock List', path: '/items/stocks', icon: ArchiveBoxIcon },
+    ] : []),
+    ...(auth?.user?.role !== 'store_keeper' && auth?.user?.role !== 'procurement' ? [
+      { name: 'Order', path: '/orders', icon: ShoppingCartIcon },
+    ] : []),
+    ...(auth?.user?.role === 'procurement' || auth?.user?.role === 'super_admin'
       ? [{ name: 'Procurement', path: '/procurement', icon: TruckIcon }]
       : []),
-    ...(auth?.user?.role === 'procurement' || auth?.user?.role === 'store_keeper' || auth?.user?.role === 'super_admin'
-      ? [{ name: 'Rejected', path: '/rejections', icon: ExclamationTriangleIcon }]
+    ...(auth?.user?.role === 'store_keeper' || auth?.user?.role === 'super_admin'
+      ? [{ name: 'Rejected', path: '/warehouse/rejections', icon: ExclamationTriangleIcon }]
+      : []),
+    ...(auth?.user?.role !== 'sales' && auth?.user?.role !== 'procurement'
+      ? [{ name: 'Warehouse', path: '/warehouse', icon: BuildingStorefrontIcon }]
       : []),
     ...(auth?.user?.role === 'super_admin' ? [{ name: 'Users', path: '/admin/users', icon: UsersIcon }] : []),
     { name: 'Profile', path: '/profile', icon: UserCircleIcon },

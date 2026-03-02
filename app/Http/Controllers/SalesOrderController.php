@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\Package;
 use App\Models\SalesOrder;
 use App\Models\SalesOrderLine;
+use App\Models\TransactionLog;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -15,10 +16,28 @@ class SalesOrderController extends Controller
 {
     public function index(): Response
     {
+        $packagesData = Package::with('packageItems')->get();
+        $itemStocks = DB::table('inventory_transactions as tx')
+            ->join('inventory_transaction_lines as line', 'tx.id', '=', 'line.inventory_transaction_id')
+            ->selectRaw('line.item_id, SUM(CASE WHEN tx.type = "in" THEN line.quantity ELSE -line.quantity END) as stock')
+            ->groupBy('line.item_id')
+            ->pluck('stock', 'item_id');
+
+        $availability = $packagesData->map(function ($package) use ($itemStocks) {
+            $minQty = PHP_INT_MAX;
+            foreach ($package->packageItems as $pi) {
+                $stock = $itemStocks[$pi->item_id] ?? 0;
+                $minQty = min($minQty, (int) floor($stock / $pi->quantity));
+            }
+            $package->available_qty = $minQty === PHP_INT_MAX ? 0 : $minQty;
+            return $package;
+        });
+
         return Inertia::render('Sales/Orders', [
             'packages' => Package::query()->get(),
             'items' => \App\Models\Item::query()->select(['id', 'sku', 'name'])->orderBy('sku')->get(),
             'orders' => SalesOrder::with(['lines.package', 'lines.item'])->latest()->limit(10)->get(),
+            'availability' => $availability,
             'canCreate' => auth()->user()->hasRole('sales', 'super_admin'),
         ]);
     }
@@ -66,6 +85,13 @@ class SalesOrderController extends Controller
 
             return $order->load('lines.package', 'lines.item');
         });
+
+        TransactionLog::record('sales_order_created', [
+            'id' => $order->id,
+            'code' => $order->code,
+            'customer_name' => $order->customer_name,
+            'lines_count' => count($validated['lines']),
+        ]);
 
         return response()->json([
             'message' => 'Sales order created successfully.',

@@ -4,11 +4,13 @@ namespace App\Http\Controllers;
 
 use App\Models\InventoryTransaction;
 use App\Models\Item;
+use App\Models\TransactionLog;
 use App\Models\ItemVariant;
 use App\Models\Package;
 use App\Models\SalesOrder;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
@@ -74,6 +76,44 @@ class ItemController extends Controller
         ]);
     }
 
+    public function downloadStockPdf()
+    {
+        $items = Item::with('variants')->orderBy('sku')->get();
+
+        $stockByItem = [];
+        foreach ($items as $item) {
+            $stockByItem[$item->id] = $item->variants->sum('stock_current');
+        }
+
+        $packagesData = [];
+        if (Schema::hasTable('packages')) {
+            $packages = Package::with('packageItems.item')->where('is_active', true)->orderBy('name')->get();
+            
+            $packagesData = $packages->map(function ($package) use ($stockByItem) {
+                $maxPossible = null;
+                foreach ($package->packageItems as $pItem) {
+                    $requiredQty = $pItem->quantity;
+                    $currentStock = $stockByItem[$pItem->item_id] ?? 0;
+                    $possibleWithThisItem = floor($currentStock / $requiredQty);
+                    if ($maxPossible === null || $possibleWithThisItem < $maxPossible) {
+                        $maxPossible = $possibleWithThisItem;
+                    }
+                }
+                return [
+                    'code' => $package->code,
+                    'name' => $package->name,
+                    'available_qty' => $maxPossible ?? 0,
+                ];
+            });
+        }
+
+        return Pdf::loadView('inventory.stock-pdf', [
+            'items' => $items,
+            'packages' => $packagesData,
+            'generatedAt' => now()->format('d/m/Y H:i:s'),
+        ])->download('Inventory_Stock_List_' . now()->format('Ymd_His') . '.pdf');
+    }
+
     public function store(Request $request): JsonResponse
     {
         $validated = $request->validate([
@@ -89,6 +129,12 @@ class ItemController extends Controller
             'length_m' => $validated['length_m'],
             'unit' => $validated['unit'],
             'created_by' => $request->user()->id,
+        ]);
+
+        TransactionLog::record('item_created', [
+            'id' => $item->id,
+            'sku' => $item->sku,
+            'name' => $item->name,
         ]);
 
         return response()->json([
@@ -206,6 +252,14 @@ class ItemController extends Controller
                 ]);
             }
 
+            TransactionLog::record('stock_in', [
+                'id' => $transaction->id,
+                'mode' => $transaction->mode,
+                'package_id' => $transaction->package_id,
+                'package_quantity' => $transaction->package_quantity,
+                'lines_count' => count($lines),
+            ]);
+
             return $transaction;
         });
 
@@ -304,6 +358,15 @@ class ItemController extends Controller
             if ($salesOrder) {
                 $this->syncSalesOrderProgress($salesOrder);
             }
+
+            TransactionLog::record('stock_out', [
+                'id' => $transaction->id,
+                'mode' => $transaction->mode,
+                'package_id' => $transaction->package_id,
+                'package_quantity' => $transaction->package_quantity,
+                'sales_order_id' => $transaction->sales_order_id,
+                'lines_count' => count($lines),
+            ]);
 
             return $transaction;
         });

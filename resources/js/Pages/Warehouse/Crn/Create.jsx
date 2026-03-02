@@ -235,33 +235,20 @@ export default function CrnCreate({ procurementOrders = [], items = [] }) {
                     onChange={(val) => updateItem(index, 'received_qty', val)}
                     min={0}
                   />
-                  <div className="space-y-1.5">
-                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Rejected Qty</label>
-                    <div className="flex items-center border border-slate-200 rounded-xl bg-white overflow-hidden h-[38px] focus-within:ring-2 focus-within:ring-emerald-500/20 focus-within:border-emerald-500 transition-all">
-                      <button
-                        type="button"
-                        onClick={() => updateItem(index, 'rejected_qty', Math.max(0, Number(item.rejected_qty) - 1))}
-                        className="px-2 h-full flex items-center justify-center bg-slate-50 border-r border-slate-200 hover:bg-slate-100 text-slate-500"
-                      >
-                        <MinusIcon className="w-4 h-4" strokeWidth={2.5} />
-                      </button>
-                      <input
-                        type="number"
-                        min="0"
-                        required
-                        value={item.rejected_qty}
-                        onChange={(e) => updateItem(index, 'rejected_qty', e.target.value)}
-                        className="w-full border-none text-center text-sm font-bold text-slate-700 focus:ring-0 p-0 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => updateItem(index, 'rejected_qty', Number(item.rejected_qty) + 1)}
-                   QtyInput
+                  <QtyInput
                     label="Rejected Qty"
                     value={item.rejected_qty}
                     onChange={(val) => updateItem(index, 'rejected_qty', val)}
                     min={0}
-                  /e="p-4 rounded-2xl bg-rose-50 border border-rose-100 text-rose-700 text-sm font-medium">
+                  />
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {errors.message && (
+          <div className="p-4 rounded-2xl bg-rose-50 border border-rose-100 text-rose-700 text-sm font-medium">
             {errors.message}
           </div>
         )}

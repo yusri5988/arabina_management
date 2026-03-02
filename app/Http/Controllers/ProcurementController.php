@@ -7,6 +7,7 @@ use App\Models\Item;
 use App\Models\Package;
 use App\Models\ProcurementOrder;
 use App\Models\ProcurementOrderLine;
+use App\Models\TransactionLog;
 use App\Models\ContenaReceivingNote;
 use App\Models\CrnItem;
 use App\Models\RejectedItem;
@@ -303,6 +304,11 @@ class ProcurementController extends Controller
             return $order;
         });
 
+        TransactionLog::record('procurement_order_created', [
+            'id' => $order->id,
+            'code' => $order->code,
+        ]);
+
         return response()->json([
             'message' => 'Procurement order created and submitted to CRN.',
             'data' => $this->findOrderWithRelations($order->id),
@@ -355,6 +361,13 @@ class ProcurementController extends Controller
             $order->refresh()->load('lines');
 
             $order->update(['status' => $this->determineReceiptStatus($order)]);
+
+            TransactionLog::record('procurement_order_received', [
+                'id' => $order->id,
+                'code' => $order->code,
+                'status' => $order->status,
+                'lines' => $validated['lines'],
+            ]);
         });
 
         return response()->json([
@@ -510,6 +523,11 @@ class ProcurementController extends Controller
                     'rejected_qty' => 0,
                 ]);
             }
+
+            TransactionLog::record('procurement_order_submitted', [
+                'id' => $order->id,
+                'code' => $order->code,
+            ]);
 
             return $this->findOrderWithRelations($order->id);
         });

@@ -9,6 +9,7 @@ use App\Models\Item;
 use App\Models\ItemVariant;
 use App\Models\ProcurementOrder;
 use App\Models\ProcurementOrderLine;
+use App\Models\TransactionLog;
 use App\Models\RejectedItem;
 use App\Models\User;
 use Illuminate\Http\JsonResponse;
@@ -118,6 +119,12 @@ class CrnController extends Controller
             }
 
             $this->updateProcurementOrderStatus($order->id);
+
+            TransactionLog::record('crn_po_received', [
+                'crn_number' => $crn->crn_number,
+                'po_code' => $order->code,
+                'lines_count' => count($validated['lines']),
+            ]);
         });
 
         return response()->json([
@@ -158,6 +165,12 @@ class CrnController extends Controller
             $line->increment('received_quantity', $remaining);
 
             $this->updateProcurementOrderStatus($order->id);
+
+            TransactionLog::record('crn_po_safe_receive', [
+                'po_code' => $order->code,
+                'sku' => $line->item?->sku,
+                'quantity' => $remaining,
+            ]);
         });
 
         return response()->json([
@@ -277,6 +290,12 @@ class CrnController extends Controller
             return $crn;
         });
 
+        TransactionLog::record('crn_created', [
+            'id' => $crn->id,
+            'crn_number' => $crn->crn_number,
+            'items_count' => count($validated['items']),
+        ]);
+
         return response()->json([
             'message' => 'CRN created successfully.',
             'data' => $crn->load('items.itemVariant.item'),
@@ -338,6 +357,12 @@ class CrnController extends Controller
             if ($crn->procurement_order_id) {
                 $this->updateProcurementOrderStatus($crn->procurement_order_id);
             }
+
+            TransactionLog::record('crn_transferred', [
+                'id' => $crn->id,
+                'crn_number' => $crn->crn_number,
+                'items_count' => $crn->items->count(),
+            ]);
         });
 
         return response()->json([

@@ -9,6 +9,7 @@ use App\Http\Controllers\ProcurementController;
 use App\Http\Controllers\SalesOrderController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\CrnController;
+use App\Http\Controllers\LogsController;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
 
@@ -41,6 +42,7 @@ Route::middleware('auth')->group(function () {
 
     Route::get('/items', [ItemController::class, 'index'])->name('items.index');
     Route::get('/items/stocks', [ItemController::class, 'stockList'])->name('items.stocks.index');
+    Route::get('/items/stocks/pdf', [ItemController::class, 'downloadStockPdf'])->name('items.stocks.pdf');
     Route::post('/items', [ItemController::class, 'store'])->name('items.store');
     Route::get('/items/stock/in', [ItemController::class, 'stockInForm'])->name('items.stock.in.form');
     Route::get('/items/stock/out', [ItemController::class, 'stockOutForm'])->name('items.stock.out.form');
@@ -58,11 +60,11 @@ Route::middleware('auth')->group(function () {
     Route::put('/procurement/orders/{order}/submit', [ProcurementController::class, 'submit'])->name('procurement.orders.submit');
     Route::put('/procurement/orders/{order}/receive', [ProcurementController::class, 'receive'])->name('procurement.orders.receive');
     Route::delete('/procurement/orders/{order}', [ProcurementController::class, 'destroy'])->name('procurement.orders.destroy');
-    Route::get('/rejections', [ProcurementController::class, 'rejectedList'])->name('rejections.index');
 
     Route::prefix('warehouse')->group(function () {
         Route::get('/crn', [CrnController::class, 'index'])->name('warehouse.crn.index');
         Route::get('/crn/create', [CrnController::class, 'create'])->name('warehouse.crn.create');
+        Route::get('/rejections', [ProcurementController::class, 'rejectedList'])->name('warehouse.rejections.index');
 
         Route::middleware('role:store_keeper,super_admin')->group(function () {
             Route::post('/crn', [CrnController::class, 'store'])->name('warehouse.crn.store');
@@ -86,4 +88,6 @@ Route::middleware(['auth', 'role:super_admin'])->prefix('admin')->group(function
     Route::post('/users', [UserManagementController::class, 'store'])->name('admin.users.store');
     Route::put('/users/{user}', [UserManagementController::class, 'update'])->name('admin.users.update');
     Route::delete('/users/{user}', [UserManagementController::class, 'destroy'])->name('admin.users.destroy');
+
+    Route::get('/logs', [LogsController::class, 'index'])->name('admin.logs.index');
 });

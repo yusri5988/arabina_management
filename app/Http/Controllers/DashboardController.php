@@ -21,7 +21,8 @@ class DashboardController extends Controller
                     ? SalesOrder::query()->whereIn('status', ['open', 'partial'])->count()
                     : 0,
                 'active_users' => User::count(),
-            ]
+            ],
+            'canViewLogs' => auth()->user()->hasRole('super_admin'),
         ]);
     }
 }

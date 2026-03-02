@@ -1,6 +1,7 @@
 import { Head } from '@inertiajs/react';
 import { useState } from 'react';
 import AuthenticatedLayout from '../../../Layouts/AuthenticatedLayout';
+import QtyInput from '../../../components/QtyInput';
 import { apiFetchJson } from '../../../lib/http';
 import { ChevronDownIcon, PlusIcon, MinusIcon } from '@heroicons/react/24/outline/index.js';
 

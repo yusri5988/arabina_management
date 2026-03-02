@@ -112,7 +112,9 @@ export default function Orders({ packages = [], items = [], orders = [], availab
                   <p className="text-sm font-bold text-slate-800 line-clamp-1">{pkg.name}</p>
                 </div>
                 <div className="mt-4 flex items-end justify-between">
-                  <span className="text-xs text-slate-500 font-medium">Available</span>
+                  <span className={`text-xs font-medium ${pkg.available_qty > 0 ? 'text-emerald-600' : 'text-red-600'}`}>
+                    {pkg.available_qty > 0 ? 'Available' : 'Unavailable'}
+                  </span>
                   <span className={`text-2xl font-black ${pkg.available_qty > 0 ? 'text-emerald-600' : 'text-slate-300'}`}>
                     {pkg.available_qty}
                   </span>

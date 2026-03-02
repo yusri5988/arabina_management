@@ -251,15 +251,29 @@ export default function Stock({ items, packages, salesOrders = [], type = 'in' }
           };
 
     try {
-      const response = await fetch(endpoint, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Accept: 'application/json',
-          'X-CSRF-TOKEN': csrfToken,
-        },
-        body: JSON.stringify(payload),
-      });
+      let currentCsrfToken = csrfToken;
+      let attempt = 0;
+      let response;
+      while (attempt < 2) {
+        response = await fetch(endpoint, {
+          method: 'POST',
+          credentials: 'include',
+          headers: {
+            'Content-Type': 'application/json',
+            Accept: 'application/json',
+            'X-Requested-With': 'XMLHttpRequest',
+            'X-CSRF-TOKEN': currentCsrfToken,
+          },
+          body: JSON.stringify(payload),
+        });
+        if (response.status === 419 && attempt === 0) {
+          await fetch('/sanctum/csrf-cookie', { credentials: 'include' });
+          currentCsrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') ?? '';
+          attempt++;
+          continue;
+        }
+        break;
+      }
 
       const result = await response.json().catch(() => ({}));
 
@@ -271,7 +285,7 @@ export default function Stock({ items, packages, salesOrders = [], type = 'in' }
       } else if (response.status === 422) {
         setErrors(result.errors ?? {});
       } else {
-        setNotification({ type: 'error', message: result.message ?? 'Something went wrong.' });
+        setNotification({ type: 'error', message: result.message ?? `Error ${response.status}. Please try again.` });
       }
     } catch (error) {
       setNotification({ type: 'error', message: 'Network error. Please try again.' });
