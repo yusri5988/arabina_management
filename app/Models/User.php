@@ -38,6 +38,11 @@ class User extends Authenticatable
         self::ROLE_SALES,
     ];
 
+    public function scopeManaged($query)
+    {
+        return $query->whereIn('role', self::MANAGED_ROLES);
+    }
+
     /**
      * The attributes that should be hidden for serialization.
      *

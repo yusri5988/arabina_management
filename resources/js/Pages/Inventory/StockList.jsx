@@ -3,14 +3,19 @@ import { useMemo, useState } from 'react';
 import AuthenticatedLayout from '../../Layouts/AuthenticatedLayout';
 
 export default function StockList({ items = [], packages = [] }) {
-  const [inventory] = useState(items);
   const [search, setSearch] = useState('');
   const [unitFilter, setUnitFilter] = useState('all');
+
+  const units = useMemo(() => {
+    const unitSet = new Set(['all']);
+    items.forEach((item) => unitSet.add(item.unit));
+    return Array.from(unitSet);
+  }, [items]);
 
   const filteredInventory = useMemo(() => {
     const keyword = search.trim().toLowerCase();
 
-    return inventory.filter((item) => {
+    return items.filter((item) => {
       const matchKeyword = keyword === ''
         || item.sku?.toLowerCase().includes(keyword)
         || item.name?.toLowerCase().includes(keyword);
@@ -19,7 +24,7 @@ export default function StockList({ items = [], packages = [] }) {
 
       return matchKeyword && matchUnit;
     });
-  }, [inventory, search, unitFilter]);
+  }, [items, search, unitFilter]);
 
   return (
     <AuthenticatedLayout title="Inventory Stock List" backUrl="__back__">
@@ -47,7 +52,13 @@ export default function StockList({ items = [], packages = [] }) {
                     </tr>
                   </thead>
                   <tbody className="bg-white divide-y divide-slate-50">
-                    {packages.map((pkg) => (
+                    {packages.length === 0 ? (
+                      <tr>
+                        <td colSpan="3" className="px-4 py-10 text-center text-sm text-slate-500">
+                          No packages defined yet.
+                        </td>
+                      </tr>
+                    ) : packages.map((pkg) => (
                       <tr key={pkg.id} className="hover:bg-slate-50 transition-colors">
                         <td className="px-4 py-3 text-xs font-bold text-slate-700">{pkg.code}</td>
                         <td className="px-4 py-3 text-sm text-slate-800 font-medium">
@@ -89,10 +100,9 @@ export default function StockList({ items = [], packages = [] }) {
                 onChange={(e) => setUnitFilter(e.target.value)}
                 className="w-full sm:w-32 rounded-xl border border-slate-200 px-3 py-2 text-sm bg-white focus:ring-2 focus:ring-arabina-accent focus:outline-none"
               >
-                <option value="all">All Unit</option>
-                <option value="pcs">pcs</option>
-                <option value="set">set</option>
-                <option value="roll">roll</option>
+                {units.map((unit) => (
+                  <option key={unit} value={unit}>{unit === 'all' ? 'All Units' : unit.toUpperCase()}</option>
+                ))}
               </select>
             </div>
           </div>

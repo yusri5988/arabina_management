@@ -1,4 +1,5 @@
 import { Head, Link, router } from '@inertiajs/react';
+import QtyInput from '../../components/QtyInput.jsx';
 import { useEffect, useMemo, useState } from 'react';
 import AuthenticatedLayout from '../../Layouts/AuthenticatedLayout';
 
@@ -414,16 +415,12 @@ export default function Stock({ items, packages, salesOrders = [], type = 'in' }
                       )}
                     </div>
                     <div className="col-span-3">
-                        <input
-                          type="number"
-                          min="1"
-                          max={Number(itemStockById.get(String(line.item_id)) ?? 0)}
+                        <QtyInput
                           value={line.quantity}
-                          onChange={e => updateLine(index, 'quantity', e.target.value)}
-                          className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm font-bold text-right focus:ring-2 focus:ring-arabina-accent focus:outline-none bg-white"
-                        placeholder="Qty"
-                        required
-                      />
+                          onChange={(val) => updateLine(index, 'quantity', val)}
+                          min={1}
+                          max={Number(itemStockById.get(String(line.item_id)) ?? 0)}
+                        />
                     </div>
                     <div className="col-span-1 flex items-center justify-end">
                       {!isOut && alacarteLines.length > 1 && (

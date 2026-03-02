@@ -1,4 +1,5 @@
 import { Head, router } from '@inertiajs/react';
+import QtyInput from '../../../components/QtyInput.jsx';
 import { useMemo, useState } from 'react';
 import AuthenticatedLayout from '../../../Layouts/AuthenticatedLayout';
 import { apiFetchJson } from '../../../lib/http';
@@ -222,60 +223,18 @@ export default function CrnCreate({ procurementOrders = [], items = [] }) {
                 </div>
 
                 <div className="grid grid-cols-3 gap-4">
-                  <div className="space-y-1.5">
-                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Expected Qty</label>
-                    <div className="flex items-center border border-slate-200 rounded-xl bg-white overflow-hidden h-[38px] focus-within:ring-2 focus-within:ring-emerald-500/20 focus-within:border-emerald-500 transition-all">
-                      <button
-                        type="button"
-                        onClick={() => updateItem(index, 'expected_qty', Math.max(1, Number(item.expected_qty) - 1))}
-                        className="px-2 h-full flex items-center justify-center bg-slate-50 border-r border-slate-200 hover:bg-slate-100 text-slate-500"
-                      >
-                        <MinusIcon className="w-4 h-4" strokeWidth={2.5} />
-                      </button>
-                      <input
-                        type="number"
-                        min="1"
-                        required
-                        value={item.expected_qty}
-                        onChange={(e) => updateItem(index, 'expected_qty', e.target.value)}
-                        className="w-full border-none text-center text-sm font-bold text-slate-700 focus:ring-0 p-0 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => updateItem(index, 'expected_qty', Number(item.expected_qty) + 1)}
-                        className="px-2 h-full flex items-center justify-center bg-slate-50 border-l border-slate-200 hover:bg-slate-100 text-slate-500"
-                      >
-                        <PlusIcon className="w-4 h-4" strokeWidth={2.5} />
-                      </button>
-                    </div>
-                  </div>
-                  <div className="space-y-1.5">
-                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Received Qty</label>
-                    <div className="flex items-center border border-slate-200 rounded-xl bg-white overflow-hidden h-[38px] focus-within:ring-2 focus-within:ring-emerald-500/20 focus-within:border-emerald-500 transition-all">
-                      <button
-                        type="button"
-                        onClick={() => updateItem(index, 'received_qty', Math.max(0, Number(item.received_qty) - 1))}
-                        className="px-2 h-full flex items-center justify-center bg-slate-50 border-r border-slate-200 hover:bg-slate-100 text-slate-500"
-                      >
-                        <MinusIcon className="w-4 h-4" strokeWidth={2.5} />
-                      </button>
-                      <input
-                        type="number"
-                        min="0"
-                        required
-                        value={item.received_qty}
-                        onChange={(e) => updateItem(index, 'received_qty', e.target.value)}
-                        className="w-full border-none text-center text-sm font-bold text-slate-700 focus:ring-0 p-0 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => updateItem(index, 'received_qty', Number(item.received_qty) + 1)}
-                        className="px-2 h-full flex items-center justify-center bg-slate-50 border-l border-slate-200 hover:bg-slate-100 text-slate-500"
-                      >
-                        <PlusIcon className="w-4 h-4" strokeWidth={2.5} />
-                      </button>
-                    </div>
-                  </div>
+                  <QtyInput
+                    label="Expected Qty"
+                    value={item.expected_qty}
+                    onChange={(val) => updateItem(index, 'expected_qty', val)}
+                    min={1}
+                  />
+                  <QtyInput
+                    label="Received Qty"
+                    value={item.received_qty}
+                    onChange={(val) => updateItem(index, 'received_qty', val)}
+                    min={0}
+                  />
                   <div className="space-y-1.5">
                     <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Rejected Qty</label>
                     <div className="flex items-center border border-slate-200 rounded-xl bg-white overflow-hidden h-[38px] focus-within:ring-2 focus-within:ring-emerald-500/20 focus-within:border-emerald-500 transition-all">
@@ -297,33 +256,12 @@ export default function CrnCreate({ procurementOrders = [], items = [] }) {
                       <button
                         type="button"
                         onClick={() => updateItem(index, 'rejected_qty', Number(item.rejected_qty) + 1)}
-                        className="px-2 h-full flex items-center justify-center bg-slate-50 border-l border-slate-200 hover:bg-slate-100 text-slate-500"
-                      >
-                        <PlusIcon className="w-4 h-4" strokeWidth={2.5} />
-                      </button>
-                    </div>
-                  </div>
-                </div>
-
-                {parseInt(item.rejected_qty) > 0 && (
-                  <div className="space-y-1.5">
-                    <label className="text-[10px] font-bold text-rose-400 uppercase tracking-wider">Rejection Reason</label>
-                    <input
-                      type="text"
-                      placeholder="Damaged, wrong SKU, etc."
-                      value={item.rejection_reason}
-                      onChange={(e) => updateItem(index, 'rejection_reason', e.target.value)}
-                      className="w-full rounded-xl border border-rose-100 px-3 py-2 text-sm focus:ring-2 focus:ring-rose-500/20 focus:border-rose-500 transition-all outline-none bg-white"
-                    />
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {errors.message && (
-          <div className="p-4 rounded-2xl bg-rose-50 border border-rose-100 text-rose-700 text-sm font-medium">
+                   QtyInput
+                    label="Rejected Qty"
+                    value={item.rejected_qty}
+                    onChange={(val) => updateItem(index, 'rejected_qty', val)}
+                    min={0}
+                  /e="p-4 rounded-2xl bg-rose-50 border border-rose-100 text-rose-700 text-sm font-medium">
             {errors.message}
           </div>
         )}

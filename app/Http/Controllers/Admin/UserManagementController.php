@@ -16,7 +16,7 @@ class UserManagementController extends Controller
     public function index(Request $request): Response
     {
         $users = User::query()
-            ->whereIn('role', User::MANAGED_ROLES)
+            ->managed()
             ->latest('id')
             ->get(['id', 'name', 'email', 'role', 'created_at']);
 
@@ -31,7 +31,7 @@ class UserManagementController extends Controller
             'name' => ['required', 'string', 'max:255'],
             'email' => ['required', 'email', 'max:255', 'unique:users,email'],
             'password' => ['required', 'string', 'min:6'],
-            'role' => ['required', 'in:'.implode(',', User::MANAGED_ROLES)],
+            'role' => ['required', Rule::in(User::MANAGED_ROLES)],
         ]);
 
         $user = User::create([
@@ -69,7 +69,7 @@ class UserManagementController extends Controller
             'name' => ['required', 'string', 'max:255'],
             'email' => ['required', 'email', 'max:255', Rule::unique('users', 'email')->ignore($user->id)],
             'password' => ['nullable', 'string', 'min:6'],
-            'role' => ['required', 'in:'.implode(',', User::MANAGED_ROLES)],
+            'role' => ['required', Rule::in(User::MANAGED_ROLES)],
         ]);
 
         $user->name = $validated['name'];
@@ -118,6 +118,6 @@ class UserManagementController extends Controller
 
     private function ensureManagedUser(User $user): void
     {
-        abort_unless(in_array($user->role, User::MANAGED_ROLES, true), 404);
+        abort_unless($user->hasRole(...User::MANAGED_ROLES), 404);
     }
 }
