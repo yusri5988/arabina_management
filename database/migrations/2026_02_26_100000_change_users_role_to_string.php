@@ -39,7 +39,7 @@ return new class extends Migration
         $driver = Schema::getConnection()->getDriverName();
 
         if (in_array($driver, ['mysql', 'mariadb'], true)) {
-            DB::statement("ALTER TABLE `users` MODIFY `role` ENUM('admin','restaurant') NOT NULL DEFAULT 'restaurant'");
+            DB::statement("ALTER TABLE `users` MODIFY `role` ENUM('super_admin','store_keeper','procurement','finance','sales') NOT NULL DEFAULT 'store_keeper'");
         }
     }
 };
