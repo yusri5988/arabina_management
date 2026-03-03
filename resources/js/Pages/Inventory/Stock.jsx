@@ -13,6 +13,31 @@ export default function Stock({ items, packages, salesOrders = [], type = 'in' }
   const [processing, setProcessing] = useState(false);
   const [errors, setErrors] = useState({});
   const [notification, setNotification] = useState(null);
+  const [history, setHistory] = useState([]);
+  const [loadingHistory, setLoadingHistory] = useState(false);
+
+  const fetchHistory = async () => {
+    if (!isOut) return;
+    setLoadingHistory(true);
+    try {
+      const res = await fetch('/items/stock/out/history');
+      if (res.ok) {
+        const json = await res.json();
+        setHistory(json.data || []);
+      }
+    } catch (e) {
+      console.error('Failed to fetch history', e);
+    } finally {
+      setLoadingHistory(false);
+    }
+  };
+
+  useEffect(() => {
+    if (isOut) {
+      fetchHistory();
+    }
+  }, [isOut]);
+
   const [packageData, setPackageData] = useState({
     package_id: packages?.[0]?.id?.toString() ?? '',
     package_quantity: '',
@@ -281,6 +306,9 @@ export default function Stock({ items, packages, salesOrders = [], type = 'in' }
         setNotification({ type: 'success', message: result.message ?? 'Transaction saved.' });
         setPackageData(prev => ({ ...prev, package_quantity: '', notes: '' }));
         setAlacarteLines([{ ...initialAlacarteLine, item_id: items?.[0]?.id?.toString() ?? '' }]);
+        if (isOut) {
+          fetchHistory();
+        }
         router.reload();
       } else if (response.status === 422) {
         setErrors(result.errors ?? {});
@@ -525,6 +553,74 @@ export default function Stock({ items, packages, salesOrders = [], type = 'in' }
             </Link>
           </form>
         </div>
+
+        {isOut && (
+          <div className="bg-white rounded-[2rem] shadow-sm border border-slate-100 p-6 md:p-8">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-4">
+              <h2 className="text-lg font-bold text-slate-800">
+                Stock Out History (Delivery Orders)
+              </h2>
+              <button
+                onClick={fetchHistory}
+                disabled={loadingHistory}
+                className="text-xs font-bold text-arabina-accent uppercase tracking-wider"
+              >
+                {loadingHistory ? 'Refreshing...' : 'Refresh History'}
+              </button>
+            </div>
+
+            <div className="mt-6 overflow-x-auto">
+              <table className="w-full text-sm text-left">
+                <thead>
+                  <tr className="border-b border-slate-100">
+                    <th className="px-4 py-3 font-bold text-slate-500 uppercase tracking-wider text-[10px]">DO Code</th>
+                    <th className="px-4 py-3 font-bold text-slate-500 uppercase tracking-wider text-[10px]">SO / Customer</th>
+                    <th className="px-4 py-3 font-bold text-slate-500 uppercase tracking-wider text-[10px]">Items Summary</th>
+                    <th className="px-4 py-3 font-bold text-slate-500 uppercase tracking-wider text-[10px]">Date</th>
+                    <th className="px-4 py-3 font-bold text-slate-500 uppercase tracking-wider text-[10px] text-right">Action</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-50">
+                  {history.length === 0 && !loadingHistory && (
+                    <tr>
+                      <td colSpan="5" className="px-4 py-8 text-center text-slate-400 italic">
+                        No delivery history found.
+                      </td>
+                    </tr>
+                  )}
+                  {history.map((item) => (
+                    <tr key={item.id} className="hover:bg-slate-50 transition-colors">
+                      <td className="px-4 py-4 font-mono font-bold text-slate-700">{item.code}</td>
+                      <td className="px-4 py-4">
+                        <div className="font-bold text-slate-700">{item.sales_order_code}</div>
+                        <div className="text-xs text-slate-500">{item.customer_name}</div>
+                      </td>
+                      <td className="px-4 py-4 text-xs text-slate-600 max-w-[200px] truncate" title={item.items_summary}>
+                        {item.items_summary}
+                      </td>
+                      <td className="px-4 py-4 text-xs text-slate-500">
+                        {item.created_at}
+                      </td>
+                      <td className="px-4 py-4 text-right">
+                        <a
+                          href={`/items/stock/out/do/${item.id}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center px-3 py-1.5 bg-red-50 text-red-700 rounded-lg text-xs font-bold hover:bg-red-100 transition-colors"
+                        >
+                          <svg className="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                          </svg>
+                          PDF
+                        </a>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
       </div>
     </AuthenticatedLayout>
   );

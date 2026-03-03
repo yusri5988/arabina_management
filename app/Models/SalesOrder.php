@@ -12,6 +12,7 @@ class SalesOrder extends Model
     protected $fillable = [
         'code',
         'customer_name',
+        'site_id',
         'order_date',
         'status',
         'created_by',

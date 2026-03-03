@@ -1,4 +1,4 @@
-import { Head, Link } from '@inertiajs/react';
+import { Head } from '@inertiajs/react';
 import { useMemo, useState } from 'react';
 import AuthenticatedLayout from '../../Layouts/AuthenticatedLayout';
 
@@ -130,20 +130,6 @@ export default function Index({ items }) {
             >
               {processing ? 'Registering...' : 'Register Item'}
             </button>
-
-            <Link
-              href="/items/stocks"
-              className="block w-full text-center bg-slate-50 border border-slate-200 text-slate-700 py-3 rounded-2xl text-sm font-bold hover:bg-slate-100 transition-colors"
-            >
-              Open Inventory Stock List
-            </Link>
-
-            <Link
-              href="/items/stock/in"
-              className="block w-full text-center bg-emerald-50 border border-emerald-200 text-emerald-700 py-3 rounded-2xl text-sm font-bold hover:bg-emerald-100 transition-colors"
-            >
-              Update Stock by SKU
-            </Link>
           </form>
         </div>
       </div>

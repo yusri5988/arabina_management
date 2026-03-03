@@ -42,12 +42,17 @@ Route::middleware('auth')->group(function () {
 
     Route::get('/items', [ItemController::class, 'index'])->name('items.index');
     Route::get('/items/stocks', [ItemController::class, 'stockList'])->name('items.stocks.index');
+    Route::get('/items/stocks/audit', [ItemController::class, 'stockAuditForm'])->name('items.stocks.audit.form');
+    Route::post('/items/stocks/audit', [ItemController::class, 'stockAuditStore'])->name('items.stocks.audit.store');
+    Route::get('/items/stocks/audit/pdf', [ItemController::class, 'downloadStockAuditPdf'])->name('items.stocks.audit.pdf');
     Route::get('/items/stocks/pdf', [ItemController::class, 'downloadStockPdf'])->name('items.stocks.pdf');
     Route::post('/items', [ItemController::class, 'store'])->name('items.store');
     Route::get('/items/stock/in', [ItemController::class, 'stockInForm'])->name('items.stock.in.form');
     Route::get('/items/stock/out', [ItemController::class, 'stockOutForm'])->name('items.stock.out.form');
     Route::post('/items/stock/in', [ItemController::class, 'stockInStore'])->name('items.stock.in');
+    Route::get('/items/stock/out/history', [ItemController::class, 'stockOutHistory'])->name('items.stock.out.history');
     Route::post('/items/stock/out', [ItemController::class, 'stockOutStore'])->name('items.stock.out');
+    Route::get('/items/stock/out/do/{id}', [ItemController::class, 'downloadDoPdf'])->name('items.stock.out.do');
     Route::get('/orders', [SalesOrderController::class, 'index'])->name('sales.orders.index');
     Route::get('/orders/history', [SalesOrderController::class, 'history'])->name('sales.orders.history');
     Route::get('/orders/search-item', [SalesOrderController::class, 'searchItem'])->name('sales.orders.search.item');

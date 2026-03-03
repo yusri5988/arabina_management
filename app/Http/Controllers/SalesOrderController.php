@@ -53,6 +53,7 @@ class SalesOrderController extends Controller
     {
         $validated = $request->validate([
             'customer_name' => 'required|string|max:255',
+            'site_id' => 'nullable|string|max:100',
             'order_date' => 'required|date',
             'notes' => 'nullable|string',
             'lines' => 'required|array|min:1',
@@ -67,6 +68,7 @@ class SalesOrderController extends Controller
             $order = SalesOrder::create([
                 'code' => 'SO-' . strtoupper(uniqid()),
                 'customer_name' => $validated['customer_name'],
+                'site_id' => $validated['site_id'] ?? null,
                 'order_date' => $validated['order_date'],
                 'notes' => $validated['notes'],
                 'status' => 'open',

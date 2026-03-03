@@ -41,10 +41,8 @@ class CrnController extends Controller
 
     public function receiveProcurement(Request $request, ProcurementOrder $order): JsonResponse
     {
-        if (! in_array($order->status, self::OPEN_PROCUREMENT_STATUSES, true)) {
-            return response()->json([
-                'message' => 'Procurement order is already processed.',
-            ], 422);
+        if ($response = $this->ensureProcurementOrderOpen($order)) {
+            return $response;
         }
 
         $validated = $request->validate([
@@ -56,7 +54,7 @@ class CrnController extends Controller
             'lines.*.rejection_reason' => 'nullable|string|max:255',
         ]);
 
-        $lineInput = collect($validated['lines'])->keyBy(fn (array $line) => (int) $line['line_id']);
+        $lineInput = collect($validated['lines'])->keyBy(fn(array $line) => (int) $line['line_id']);
 
         $order->load('lines.item');
 
@@ -77,7 +75,7 @@ class CrnController extends Controller
 
             foreach ($order->lines as $line) {
                 $input = $lineInput->get($line->id);
-                if (! $input) {
+                if (!$input) {
                     continue;
                 }
 
@@ -140,10 +138,8 @@ class CrnController extends Controller
             ], 422);
         }
 
-        if (! in_array($order->status, self::OPEN_PROCUREMENT_STATUSES, true)) {
-            return response()->json([
-                'message' => 'Procurement order is already processed.',
-            ], 422);
+        if ($response = $this->ensureProcurementOrderOpen($order)) {
+            return $response;
         }
 
         $remaining = $this->remainingQuantity($line);
@@ -181,14 +177,16 @@ class CrnController extends Controller
     public function create(): Response
     {
         $items = Item::query()
-            ->with(['variants' => function ($query) {
-                $query->whereNull('color')->orWhere('color', '');
-            }])
+            ->with([
+                'variants' => function ($query) {
+                    $query->whereNull('color')->orWhere('color', '');
+                }
+            ])
             ->orderBy('sku')
             ->get(['id', 'sku', 'name', 'unit']);
 
         $defaultVariantByItemId = $items
-            ->mapWithKeys(fn ($item) => [$item->id => $item->variants->first()?->id]);
+            ->mapWithKeys(fn($item) => [$item->id => $item->variants->first()?->id]);
 
         $procurementOrders = ProcurementOrder::query()
             ->whereIn('status', self::OPEN_PROCUREMENT_STATUSES)
@@ -201,26 +199,7 @@ class CrnController extends Controller
             ])
             ->get(['id', 'code'])
             ->map(function ($order) use ($defaultVariantByItemId) {
-                $lines = $order->lines
-                    ->map(function ($line) use ($defaultVariantByItemId) {
-                        $remaining = $this->remainingQuantity($line);
-
-                        if ($remaining <= 0 || ! $line->item) {
-                            return null;
-                        }
-
-                        return [
-                            'line_id' => $line->id,
-                            'item_id' => $line->item_id,
-                            'item_variant_id' => $defaultVariantByItemId[$line->item_id] ?? null,
-                            'sku' => $line->item->sku,
-                            'name' => $line->item->name,
-                            'unit' => $line->item->unit,
-                            'remaining_qty' => $remaining,
-                        ];
-                    })
-                    ->filter()
-                    ->values();
+                $lines = $this->mapPendingProcurementLines($order->lines, $defaultVariantByItemId);
 
                 return [
                     'id' => $order->id,
@@ -228,7 +207,7 @@ class CrnController extends Controller
                     'lines' => $lines,
                 ];
             })
-            ->filter(fn (array $order) => $order['lines']->isNotEmpty())
+            ->filter(fn(array $order) => $order['lines']->isNotEmpty())
             ->values();
 
         return Inertia::render('Warehouse/Crn/Create', [
@@ -276,7 +255,7 @@ class CrnController extends Controller
             foreach ($validated['items'] as $item) {
                 $crnItem = $crn->items()->create($item);
 
-                if (! $crn->procurement_order_id) {
+                if (!$crn->procurement_order_id) {
                     $itemId = (int) ($variantItemIds[$crnItem->item_variant_id] ?? 0);
                     $this->recordRejectionFromCrnItem(
                         $crnItem,
@@ -304,7 +283,7 @@ class CrnController extends Controller
 
     public function transfer(Request $request, ContenaReceivingNote|int $crn): JsonResponse
     {
-        if (! $crn instanceof ContenaReceivingNote) {
+        if (!$crn instanceof ContenaReceivingNote) {
             $crn = ContenaReceivingNote::findOrFail($crn);
         }
 
@@ -321,7 +300,7 @@ class CrnController extends Controller
             $crn->load('items.itemVariant');
 
             foreach ($crn->items as $item) {
-                if (! $item->itemVariant) {
+                if (!$item->itemVariant) {
                     continue;
                 }
 
@@ -380,25 +359,7 @@ class CrnController extends Controller
             ->latest('id')
             ->get(['id', 'code', 'status', 'created_at'])
             ->map(function ($order) {
-                $lines = $order->lines
-                    ->map(function ($line) {
-                        $remaining = $this->remainingQuantity($line);
-
-                        if ($remaining <= 0 || ! $line->item) {
-                            return null;
-                        }
-
-                        return [
-                            'line_id' => $line->id,
-                            'item_id' => $line->item_id,
-                            'sku' => $line->item->sku,
-                            'name' => $line->item->name,
-                            'unit' => $line->item->unit,
-                            'remaining_qty' => $remaining,
-                        ];
-                    })
-                    ->filter()
-                    ->values();
+                $lines = $this->mapPendingProcurementLines($order->lines);
 
                 return [
                     'id' => $order->id,
@@ -408,7 +369,44 @@ class CrnController extends Controller
                     'lines' => $lines,
                 ];
             })
-            ->filter(fn (array $order) => $order['lines']->isNotEmpty())
+            ->filter(fn(array $order) => $order['lines']->isNotEmpty())
+            ->values();
+    }
+
+    private function ensureProcurementOrderOpen(ProcurementOrder $order): ?JsonResponse
+    {
+        if (in_array($order->status, self::OPEN_PROCUREMENT_STATUSES, true)) {
+            return null;
+        }
+
+        return response()->json([
+            'message' => 'Procurement order is already processed.',
+        ], 422);
+    }
+
+    private function mapPendingProcurementLines(
+        Collection $lines,
+        ?Collection $defaultVariantByItemId = null
+    ): Collection {
+        return $lines
+            ->map(function ($line) use ($defaultVariantByItemId) {
+                $remaining = $this->remainingQuantity($line);
+
+                if ($remaining <= 0 || !$line->item) {
+                    return null;
+                }
+
+                return [
+                    'line_id' => $line->id,
+                    'item_id' => $line->item_id,
+                    'item_variant_id' => $defaultVariantByItemId?->get($line->item_id),
+                    'sku' => $line->item->sku,
+                    'name' => $line->item->name,
+                    'unit' => $line->item->unit,
+                    'remaining_qty' => $remaining,
+                ];
+            })
+            ->filter()
             ->values();
     }
 
@@ -492,7 +490,7 @@ class CrnController extends Controller
     private function updateProcurementOrderStatus(int $poId): void
     {
         $po = ProcurementOrder::with('lines')->find($poId);
-        if (! $po) {
+        if (!$po) {
             return;
         }
 

@@ -131,6 +131,28 @@ export default function ProcurementIndex({
     }
   };
 
+  const deleteDraft = async (order) => {
+    if (!confirm(`Are you sure you want to delete draft ${order.code}?`)) return;
+    setProcessingDeleteId(order.id);
+
+    try {
+      const { response, payload } = await apiFetchJson(`/procurement/orders/${order.id}`, {
+        method: 'DELETE',
+      });
+
+      if (response.ok) {
+        setNotification({ type: 'success', message: payload.message ?? 'Draft deleted.' });
+        setList((prev) => prev.filter((o) => o.id !== order.id));
+      } else {
+        setNotification({ type: 'error', message: payload.message ?? 'Failed to delete draft.' });
+      }
+    } catch (_) {
+      setNotification({ type: 'error', message: 'Network error. Please try again.' });
+    } finally {
+      setProcessingDeleteId(null);
+    }
+  };
+
   const setDraftSearchValue = (orderId, value) => {
     setDraftSearchForms((prev) => ({
       ...prev,
@@ -201,7 +223,7 @@ export default function ProcurementIndex({
                                 </div>
                                 <button 
                                     onClick={useSuggestion}
-                                    className="w-full bg-amber-600 text-white py-4 rounded-2xl text-xs font-black hover:bg-amber-700 transition-all shadow-lg shadow-amber-900/20 active:scale-95"
+                                    className="w-full bg-amber-600 text-white py-5 rounded-2xl text-sm font-black hover:bg-amber-700 transition-all shadow-lg shadow-amber-900/20 active:scale-95"
                                 >
                                     AUTO-FILL ORDER FORM
                                 </button>
@@ -294,24 +316,24 @@ export default function ProcurementIndex({
                         </h3>
                         <div className="space-y-3 mb-4">
                             {newOrderPackageLines.map((line, index) => (
-                            <div key={index} className="flex items-center justify-between rounded-xl border border-slate-100 bg-white p-3 shadow-sm">
-                                <div className="flex items-center gap-3">
-                                <div className="w-8 h-8 rounded-lg bg-blue-50 flex items-center justify-center text-blue-400 text-[10px] font-bold">
+                            <div key={index} className="flex items-center justify-between rounded-xl border border-slate-100 bg-white p-4 shadow-sm">
+                                <div className="flex items-center gap-4">
+                                <div className="w-10 h-10 rounded-lg bg-blue-50 flex items-center justify-center text-blue-500 text-xs font-black">
                                     {index + 1}
                                 </div>
-                                <div className="max-w-[120px]">
-                                    <p className="text-xs font-bold text-slate-800 truncate">{line.package_code}</p>
-                                    <p className="text-[10px] text-slate-500 truncate">{line.package_name}</p>
+                                <div className="max-w-[200px]">
+                                    <p className="text-sm font-black text-slate-800 truncate">{line.package_code}</p>
+                                    <p className="text-xs text-slate-500 truncate">{line.package_name}</p>
                                 </div>
                                 </div>
                                 <div className="flex items-center gap-2">
-                                <div className="flex items-center bg-slate-100 rounded-lg p-0.5">
-                                    <button onClick={() => updateNewOrderPackageQuantity(index, -1)} className="w-5 h-5 flex items-center justify-center bg-white rounded text-slate-400">-</button>
-                                    <span className="min-w-[1.5rem] text-center text-xs font-bold">{line.quantity}</span>
-                                    <button onClick={() => updateNewOrderPackageQuantity(index, 1)} className="w-5 h-5 flex items-center justify-center bg-white rounded text-slate-400">+</button>
+                                <div className="flex items-center bg-slate-100 rounded-lg p-1">
+                                    <button onClick={() => updateNewOrderPackageQuantity(index, -1)} className="w-8 h-8 flex items-center justify-center bg-white rounded-lg text-slate-600 font-bold border border-slate-200 shadow-sm active:bg-slate-50">-</button>
+                                    <span className="min-w-[2rem] text-center text-sm font-bold">{line.quantity}</span>
+                                    <button onClick={() => updateNewOrderPackageQuantity(index, 1)} className="w-8 h-8 flex items-center justify-center bg-white rounded-lg text-slate-600 font-bold border border-slate-200 shadow-sm active:bg-slate-50">+</button>
                                 </div>
-                                <button onClick={() => removeNewOrderPackageLine(index)} className="text-red-400">
-                                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-4 h-4">
+                                <button onClick={() => removeNewOrderPackageLine(index)} className="text-red-400 p-2 ml-1">
+                                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor" className="w-6 h-6">
                                         <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
                                     </svg>
                                 </button>
@@ -319,12 +341,12 @@ export default function ProcurementIndex({
                             </div>
                             ))}
                         </div>
-                        <div className="grid grid-cols-12 gap-2">
+                        <div className="grid grid-cols-12 gap-3">
                             <div className="col-span-8">
                             <select
                                 value={newOrderAddPackageForm.package_id}
                                 onChange={(e) => setNewOrderAddPackageForm({ ...newOrderAddPackageForm, package_id: e.target.value })}
-                                className="w-full rounded-lg border border-slate-200 px-2 py-1.5 text-xs bg-white focus:ring-2 focus:ring-blue-500/20 focus:outline-none"
+                                className="w-full rounded-xl border border-slate-200 px-3 py-3 text-sm bg-white focus:ring-2 focus:ring-blue-500/20 focus:outline-none"
                             >
                                 <option value="">Select Package</option>
                                 {packages.map((pkg) => (
@@ -340,15 +362,15 @@ export default function ProcurementIndex({
                                 value={newOrderAddPackageForm.quantity}
                                 onChange={(e) => setNewOrderAddPackageForm({ ...newOrderAddPackageForm, quantity: e.target.value })}
                                 placeholder="Qty"
-                                className="w-full rounded-lg border border-slate-200 px-2 py-1.5 text-xs text-right bg-white"
+                                className="w-full rounded-xl border border-slate-200 px-3 py-3 text-sm text-right bg-white"
                             />
                             </div>
                             <button
                                 type="button"
                                 onClick={addNewOrderPackageLine}
-                                className="col-span-12 rounded-lg bg-blue-600 text-white text-[10px] font-bold py-1.5 hover:bg-blue-700"
+                                className="col-span-12 rounded-xl bg-blue-600 text-white text-xs font-black py-4 hover:bg-blue-700 shadow-md active:scale-[0.98] transition-all"
                             >
-                                ADD PACKAGE
+                                ADD PACKAGE TO LIST
                             </button>
                         </div>
                         </div>
@@ -360,24 +382,24 @@ export default function ProcurementIndex({
                         </h3>
                         <div className="space-y-3 mb-4">
                             {newOrderSkuLines.map((line, index) => (
-                            <div key={index} className="flex items-center justify-between rounded-xl border border-slate-100 bg-white p-3 shadow-sm">
-                                <div className="flex items-center gap-3">
-                                <div className="w-8 h-8 rounded-lg bg-emerald-50 flex items-center justify-center text-emerald-400 text-[10px] font-bold">
+                            <div key={index} className="flex items-center justify-between rounded-xl border border-slate-100 bg-white p-4 shadow-sm">
+                                <div className="flex items-center gap-4">
+                                <div className="w-10 h-10 rounded-lg bg-emerald-50 flex items-center justify-center text-emerald-500 text-xs font-black">
                                     {index + 1}
                                 </div>
-                                <div className="max-w-[120px]">
-                                    <p className="text-xs font-bold text-slate-800 truncate">{line.sku}</p>
-                                    <p className="text-[10px] text-slate-500 truncate">{line.name}</p>
+                                <div className="max-w-[200px]">
+                                    <p className="text-sm font-black text-slate-800 truncate">{line.sku}</p>
+                                    <p className="text-xs text-slate-500 truncate">{line.name}</p>
                                 </div>
                                 </div>
                                 <div className="flex items-center gap-2">
-                                <div className="flex items-center bg-slate-100 rounded-lg p-0.5">
-                                    <button onClick={() => updateNewOrderSkuQuantity(index, -1)} className="w-5 h-5 flex items-center justify-center bg-white rounded text-slate-400">-</button>
-                                    <span className="min-w-[1.5rem] text-center text-xs font-bold">{line.quantity}</span>
-                                    <button onClick={() => updateNewOrderSkuQuantity(index, 1)} className="w-5 h-5 flex items-center justify-center bg-white rounded text-slate-400">+</button>
+                                <div className="flex items-center bg-slate-100 rounded-lg p-1">
+                                    <button onClick={() => updateNewOrderSkuQuantity(index, -1)} className="w-8 h-8 flex items-center justify-center bg-white rounded-lg text-slate-600 font-bold border border-slate-200 shadow-sm active:bg-slate-50">-</button>
+                                    <span className="min-w-[2rem] text-center text-sm font-bold">{line.quantity}</span>
+                                    <button onClick={() => updateNewOrderSkuQuantity(index, 1)} className="w-8 h-8 flex items-center justify-center bg-white rounded-lg text-slate-600 font-bold border border-slate-200 shadow-sm active:bg-slate-50">+</button>
                                 </div>
-                                <button onClick={() => removeNewOrderSkuLine(index)} className="text-red-400">
-                                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-4 h-4">
+                                <button onClick={() => removeNewOrderSkuLine(index)} className="text-red-400 p-2 ml-1">
+                                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor" className="w-6 h-6">
                                         <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
                                     </svg>
                                 </button>
@@ -385,12 +407,12 @@ export default function ProcurementIndex({
                             </div>
                             ))}
                         </div>
-                        <div className="grid grid-cols-12 gap-2">
+                        <div className="grid grid-cols-12 gap-3">
                             <div className="col-span-8">
                             <select
                                 value={newOrderAddSkuForm.item_id}
                                 onChange={(e) => setNewOrderAddSkuForm({ ...newOrderAddSkuForm, item_id: e.target.value })}
-                                className="w-full rounded-lg border border-slate-200 px-2 py-1.5 text-xs bg-white focus:ring-2 focus:ring-emerald-500/20 focus:outline-none"
+                                className="w-full rounded-xl border border-slate-200 px-3 py-3 text-sm bg-white focus:ring-2 focus:ring-emerald-500/20 focus:outline-none"
                             >
                                 <option value="">Select SKU</option>
                                 {items.map((item) => (
@@ -406,15 +428,15 @@ export default function ProcurementIndex({
                                 value={newOrderAddSkuForm.quantity}
                                 onChange={(e) => setNewOrderAddSkuForm({ ...newOrderAddSkuForm, quantity: e.target.value })}
                                 placeholder="Qty"
-                                className="w-full rounded-lg border border-slate-200 px-2 py-1.5 text-xs text-right bg-white"
+                                className="w-full rounded-xl border border-slate-200 px-3 py-3 text-sm text-right bg-white"
                             />
                             </div>
                             <button
                                 type="button"
                                 onClick={addNewOrderSkuLine}
-                                className="col-span-12 rounded-lg bg-emerald-600 text-white text-[10px] font-bold py-1.5 hover:bg-emerald-700"
+                                className="col-span-12 rounded-xl bg-emerald-600 text-white text-xs font-black py-4 hover:bg-emerald-700 shadow-md active:scale-[0.98] transition-all"
                             >
-                                ADD SKU
+                                ADD SKU TO LIST
                             </button>
                         </div>
                         </div>
@@ -430,14 +452,14 @@ export default function ProcurementIndex({
                         || processingCreate
                         || (newOrderPackageLines.length === 0 && newOrderSkuLines.length === 0)
                         }
-                        className="group relative w-full overflow-hidden rounded-2xl bg-[#1E3D1A] p-4 text-white shadow-lg transition-all hover:bg-emerald-900 disabled:opacity-50"
+                        className="group relative w-full overflow-hidden rounded-[1.5rem] bg-[#1E3D1A] p-4 text-white shadow-lg transition-all hover:bg-emerald-900 disabled:opacity-50 active:scale-[0.98]"
                     >
                         <div className="relative z-10 flex items-center justify-center gap-2">
-                        <span className="text-sm font-bold uppercase tracking-wider">
-                            {processingCreate ? 'Creating...' : 'Create Procurement Order'}
+                        <span className="text-sm font-black uppercase tracking-widest">
+                            {processingCreate ? 'Creating Order...' : 'Create Procurement Order'}
                         </span>
                         {!processingCreate && (
-                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-4 h-4 group-hover:translate-x-1 transition-transform">
+                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={3} stroke="currentColor" className="w-4 h-4 group-hover:translate-x-1 transition-transform">
                             <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 4.5 21 12m0 0-7.5 7.5M21 12H3" />
                             </svg>
                         )}
@@ -502,18 +524,18 @@ export default function ProcurementIndex({
                       <button
                         type="button"
                         onClick={() => toggleReceiveForm(order.id)}
-                        className="w-full mb-2 flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 hover:bg-slate-100"
+                        className="w-full mb-2 flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-3 py-4 hover:bg-slate-100 active:bg-slate-200 transition-colors"
                       >
-                        <span className="text-xs font-bold uppercase tracking-wider text-slate-600">SKU List ({(order.lines ?? []).length})</span>
-                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className={`w-4 h-4 text-slate-500 transition-transform ${isReceiveFormOpen ? 'rotate-180' : ''}`}>
+                        <span className="text-xs font-black uppercase tracking-widest text-slate-700">View SKU List ({(order.lines ?? []).length})</span>
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={3} stroke="currentColor" className={`w-4 h-4 text-slate-700 transition-transform ${isReceiveFormOpen ? 'rotate-180' : ''}`}>
                           <path strokeLinecap="round" strokeLinejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" />
                         </svg>
                       </button>
 
                       {isReceiveFormOpen && (
-                        <div className="space-y-2 max-h-60 overflow-y-auto">
+                        <div className="space-y-2 max-h-60 overflow-y-auto pr-2 custom-scrollbar">
                             {filteredOrderLines.map((line) => (
-                              <div key={line.id} className="flex items-center justify-between rounded-xl bg-slate-50 border border-slate-200 px-3 py-2">
+                              <div key={line.id} className="flex items-center justify-between rounded-xl bg-slate-50 border border-slate-200 px-3 py-3">
                                 <div className="text-xs">
                                   <p className="font-bold text-slate-700">{line.item?.sku}</p>
                                   <p className="text-[10px] text-slate-400">{line.item?.name}</p>
@@ -528,19 +550,19 @@ export default function ProcurementIndex({
                     </div>
                   </div>
 
-                  <div className="mt-4 pt-4 border-t border-slate-100 flex gap-2">
+                  <div className="mt-4 pt-4 border-t border-slate-100 flex gap-3">
                     <a
                       href={`/procurement/orders/${order.id}/pdf`}
                       target="_blank"
                       rel="noreferrer"
-                      className="flex-1 bg-white border border-emerald-200 text-emerald-700 py-2 rounded-xl text-xs font-bold text-center hover:bg-emerald-50"
+                      className="flex-1 bg-white border-2 border-emerald-600 text-emerald-700 py-4 rounded-xl text-xs font-black text-center hover:bg-emerald-50 active:scale-[0.98] transition-all uppercase tracking-widest"
                     >
-                      Download PDF
+                      PDF
                     </a>
                     {canManage && order.status === 'draft' && (
                         <button 
                             onClick={() => deleteDraft(order)}
-                            className="flex-1 bg-red-50 text-red-600 py-2 rounded-xl text-xs font-bold hover:bg-red-100"
+                            className="flex-1 bg-red-50 border-2 border-red-100 text-red-600 py-4 rounded-xl text-xs font-black hover:bg-red-100 active:scale-[0.98] transition-all uppercase tracking-widest"
                         >
                             Delete
                         </button>

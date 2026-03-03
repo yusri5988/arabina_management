@@ -31,7 +31,7 @@ export default function StockList({ items = [], packages = [] }) {
       <Head title="SKU Inventory" />
 
       <div className="space-y-8">
-        
+
         {/* Top Action Bar */}
         <div className="flex flex-col sm:flex-row items-center justify-between gap-4 bg-white p-6 rounded-[2rem] shadow-sm border border-slate-100">
           <div>
@@ -47,8 +47,14 @@ export default function StockList({ items = [], packages = [] }) {
             </svg>
             Generate List PDF
           </a>
+          <a
+            href="/items/stocks/audit"
+            className="w-full sm:w-auto inline-flex items-center justify-center gap-2 rounded-2xl bg-emerald-600 px-8 py-4 text-sm font-black text-white hover:bg-emerald-700 transition-all shadow-lg shadow-emerald-200 active:scale-95 uppercase tracking-wider"
+          >
+            Stock Audit
+          </a>
         </div>
-        
+
         {/* Package Availability Section */}
         {packages && packages.length > 0 && (
           <div className="space-y-4">

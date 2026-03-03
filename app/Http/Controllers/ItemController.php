@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\InventoryTransaction;
 use App\Models\Item;
+use App\Models\StockAudit;
 use App\Models\TransactionLog;
 use App\Models\ItemVariant;
 use App\Models\Package;
@@ -39,7 +40,7 @@ class ItemController extends Controller
         $packagesData = [];
         if (Schema::hasTable('packages')) {
             $packages = Package::with('packageItems.item')->where('is_active', true)->orderBy('name')->get();
-            
+
             $packagesData = $packages->map(function ($package) use ($stockByItem) {
                 $maxPossible = null;
                 $missingItems = [];
@@ -47,9 +48,9 @@ class ItemController extends Controller
                 foreach ($package->packageItems as $pItem) {
                     $requiredQty = $pItem->quantity;
                     $currentStock = $stockByItem[$pItem->item_id] ?? 0;
-                    
+
                     $possibleWithThisItem = floor($currentStock / $requiredQty);
-                    
+
                     if ($maxPossible === null || $possibleWithThisItem < $maxPossible) {
                         $maxPossible = $possibleWithThisItem;
                     }
@@ -76,6 +77,211 @@ class ItemController extends Controller
         ]);
     }
 
+    public function stockAuditForm(): Response
+    {
+        $selectedAuditId = request()->integer('audit_id');
+
+        $items = Item::query()
+            ->with([
+                'variants' => function ($query) {
+                    $query->where(function ($q) {
+                        $q->whereNull('color')->orWhere('color', '');
+                    });
+                }
+            ])
+            ->orderBy('sku')
+            ->get();
+
+        $auditOptions = StockAudit::query()
+            ->with('auditor:id,name')
+            ->latest('audited_at')
+            ->latest('id')
+            ->limit(50)
+            ->get(['id', 'audited_at', 'audited_by'])
+            ->map(function ($audit) {
+                return [
+                    'id' => $audit->id,
+                    'audited_at' => optional($audit->audited_at)->format('Y-m-d H:i:s'),
+                    'auditor' => $audit->auditor?->name,
+                ];
+            })
+            ->values();
+
+        $auditHistories = StockAudit::query()
+            ->with(['lines.item:id,sku,name', 'auditor:id,name'])
+            ->latest('audited_at')
+            ->latest('id')
+            ->limit(50)
+            ->get()
+            ->map(function ($audit) {
+                return [
+                    'id' => $audit->id,
+                    'audited_at' => optional($audit->audited_at)->format('Y-m-d H:i:s'),
+                    'auditor' => $audit->auditor?->name,
+                    'notes' => $audit->notes,
+                    'lines' => $audit->lines->map(function ($line) {
+                        return [
+                            'item_id' => $line->item_id,
+                            'sku' => $line->item?->sku,
+                            'name' => $line->item?->name,
+                            'stock_before' => (int) $line->stock_before,
+                            'audited_stock' => (int) $line->audited_stock,
+                            'diff_quantity' => (int) $line->diff_quantity,
+                            'short_quantity' => (int) $line->short_quantity,
+                        ];
+                    })->values(),
+                ];
+            })
+            ->values();
+
+        $currentLines = $items->map(function ($item) {
+            $stockCurrent = (int) $item->variants->sum('stock_current');
+
+            return [
+                'item_id' => $item->id,
+                'sku' => $item->sku,
+                'name' => $item->name,
+                'stock_current' => $stockCurrent,
+                'audited_stock' => $stockCurrent,
+            ];
+        })->values();
+
+        $latestAuditQuery = StockAudit::query()
+            ->with(['lines.item:id,sku,name', 'auditor:id,name'])
+            ->latest('audited_at')
+            ->latest('id');
+
+        if ($selectedAuditId) {
+            $latestAuditQuery->where('id', $selectedAuditId);
+        }
+
+        $latestAudit = $latestAuditQuery->first();
+
+        $latestAuditPayload = null;
+        if ($latestAudit) {
+            $latestAuditPayload = [
+                'id' => $latestAudit->id,
+                'audited_at' => optional($latestAudit->audited_at)->format('Y-m-d H:i:s'),
+                'auditor' => $latestAudit->auditor?->name,
+                'notes' => $latestAudit->notes,
+                'lines' => $latestAudit->lines->map(function ($line) {
+                    return [
+                        'item_id' => $line->item_id,
+                        'sku' => $line->item?->sku,
+                        'name' => $line->item?->name,
+                        'stock_before' => (int) $line->stock_before,
+                        'audited_stock' => (int) $line->audited_stock,
+                        'diff_quantity' => (int) $line->diff_quantity,
+                        'short_quantity' => (int) $line->short_quantity,
+                    ];
+                })->values(),
+            ];
+        }
+
+        return Inertia::render('Inventory/StockAudit', [
+            'items' => $currentLines,
+            'latestAudit' => $latestAuditPayload,
+            'auditOptions' => $auditOptions,
+            'selectedAuditId' => $latestAudit?->id,
+            'auditHistories' => $auditHistories,
+        ]);
+    }
+
+    public function downloadStockAuditPdf(Request $request)
+    {
+        $validated = $request->validate([
+            'audit_id' => 'nullable|integer|exists:stock_audits,id',
+        ]);
+
+        $auditQuery = StockAudit::query()
+            ->with(['lines.item:id,sku,name', 'auditor:id,name'])
+            ->latest('audited_at')
+            ->latest('id');
+
+        if (!empty($validated['audit_id'])) {
+            $auditQuery->where('id', (int) $validated['audit_id']);
+        }
+
+        $audit = $auditQuery->first();
+
+        if (!$audit) {
+            abort(404, 'No stock audit found.');
+        }
+
+        return Pdf::loadView('inventory.stock-audit-pdf', [
+            'audit' => $audit,
+            'generatedAt' => now()->format('d/m/Y H:i:s'),
+        ])->download('Stock_Audit_' . optional($audit->audited_at)->format('Ymd_His') . '.pdf');
+    }
+
+    public function stockAuditStore(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'notes' => 'nullable|string|max:500',
+            'lines' => 'required|array|min:1',
+            'lines.*.item_id' => 'required|integer|distinct|exists:items,id',
+            'lines.*.audited_stock' => 'required|integer|min:0',
+        ]);
+
+        $audit = DB::transaction(function () use ($request, $validated) {
+            $audit = StockAudit::create([
+                'audited_by' => $request->user()->id,
+                'audited_at' => now(),
+                'notes' => $validated['notes'] ?? null,
+            ]);
+
+            $shortItems = [];
+
+            foreach ($validated['lines'] as $line) {
+                $itemId = (int) $line['item_id'];
+                $auditedStock = (int) $line['audited_stock'];
+
+                $variant = $this->findOrCreateDefaultVariant($itemId, true);
+                $stockBefore = (int) $variant->stock_current;
+                $diff = $auditedStock - $stockBefore;
+                $shortQty = $auditedStock < $stockBefore ? ($stockBefore - $auditedStock) : 0;
+
+                $variant->update([
+                    'stock_current' => $auditedStock,
+                ]);
+
+                $audit->lines()->create([
+                    'item_id' => $itemId,
+                    'stock_before' => $stockBefore,
+                    'audited_stock' => $auditedStock,
+                    'diff_quantity' => $diff,
+                    'short_quantity' => $shortQty,
+                ]);
+
+                if ($shortQty > 0) {
+                    $item = Item::query()->find($itemId, ['id', 'sku', 'name']);
+                    $shortItems[] = [
+                        'item_id' => $itemId,
+                        'sku' => $item?->sku,
+                        'name' => $item?->name,
+                        'short_quantity' => $shortQty,
+                    ];
+                }
+            }
+
+            TransactionLog::record('stock_audit', [
+                'stock_audit_id' => $audit->id,
+                'audited_at' => now()->format('Y-m-d H:i:s'),
+                'short_items_count' => count($shortItems),
+                'short_items' => $shortItems,
+            ]);
+
+            return $audit;
+        });
+
+        return response()->json([
+            'message' => 'Stock audit saved and current stock updated.',
+            'data' => [
+                'id' => $audit->id,
+            ],
+        ]);
+    }
+
     public function downloadStockPdf()
     {
         $items = Item::with('variants')->orderBy('sku')->get();
@@ -88,7 +294,7 @@ class ItemController extends Controller
         $packagesData = [];
         if (Schema::hasTable('packages')) {
             $packages = Package::with('packageItems.item')->where('is_active', true)->orderBy('name')->get();
-            
+
             $packagesData = $packages->map(function ($package) use ($stockByItem) {
                 $maxPossible = null;
                 foreach ($package->packageItems as $pItem) {
@@ -151,6 +357,53 @@ class ItemController extends Controller
     public function stockOutForm(): Response
     {
         return $this->stockForm('out');
+    }
+
+    public function stockOutHistory(): JsonResponse
+    {
+        $transactions = InventoryTransaction::query()
+            ->with(['lines.item', 'salesOrder', 'creator'])
+            ->where('type', 'out')
+            ->latest()
+            ->limit(20)
+            ->get();
+
+        return response()->json([
+            'data' => $transactions->map(function ($t) {
+                return [
+                    'id' => $t->id,
+                    'code' => 'DO-' . str_pad($t->id, 6, '0', STR_PAD_LEFT),
+                    'sales_order_code' => $t->salesOrder?->code ?? 'N/A',
+                    'customer_name' => $t->salesOrder?->customer_name ?? 'N/A',
+                    'created_at' => $t->created_at->format('Y-m-d H:i:s'),
+                    'creator' => $t->creator?->name ?? 'System',
+                    'notes' => $t->notes,
+                    'lines_count' => $t->lines->count(),
+                    'items_summary' => $t->lines->take(3)->map(function ($l) {
+                        return $l->item?->sku . ' (x' . $l->quantity . ')';
+                    })->implode(', ') . ($t->lines->count() > 3 ? '...' : ''),
+                ];
+            }),
+        ]);
+    }
+
+    public function downloadDoPdf(int $id)
+    {
+        $transaction = InventoryTransaction::query()
+            ->with(['lines.item', 'salesOrder', 'creator'])
+            ->findOrFail($id);
+
+        if ($transaction->type !== 'out') {
+            abort(404, 'Transaction is not a delivery order.');
+        }
+
+        $pdf = Pdf::loadView('inventory.do-pdf', [
+            'transaction' => $transaction,
+            'doCode' => 'DO-' . str_pad($transaction->id, 6, '0', STR_PAD_LEFT),
+            'generatedAt' => now()->format('d/m/Y H:i:s'),
+        ]);
+
+        return $pdf->download('DO_' . str_pad($transaction->id, 6, '0', STR_PAD_LEFT) . '.pdf');
     }
 
     private function stockForm(string $type): Response
@@ -272,7 +525,7 @@ class ItemController extends Controller
     public function stockOutStore(Request $request): JsonResponse
     {
         $salesOrderTableReady = Schema::hasTable('sales_orders');
-        if (! $salesOrderTableReady) {
+        if (!$salesOrderTableReady) {
             return response()->json([
                 'message' => 'Sales order table is not ready. Please run php artisan migrate.',
             ], 409);
@@ -318,19 +571,19 @@ class ItemController extends Controller
                 $item = Item::query()->find($line['item_id']);
                 throw ValidationException::withMessages([
                     'package_quantity' => [
-                        'Insufficient stock for '.$item?->sku.'. Current: '.$variant->stock_current,
+                        'Insufficient stock for ' . $item?->sku . '. Current: ' . $variant->stock_current,
                     ],
                 ]);
             }
         }
 
         $transaction = DB::transaction(function () use ($request, $validated, $lines, $salesOrder) {
-            $mergedNotes = 'Customer: '.$salesOrder->customer_name;
+            $mergedNotes = 'Customer: ' . $salesOrder->customer_name;
             if ($salesOrder) {
-                $mergedNotes .= ' | SO: '.$salesOrder->code;
+                $mergedNotes .= ' | SO: ' . $salesOrder->code;
             }
-            if (! empty($validated['notes'])) {
-                $mergedNotes .= ' | '.$validated['notes'];
+            if (!empty($validated['notes'])) {
+                $mergedNotes .= ' | ' . $validated['notes'];
             }
 
             $transaction = InventoryTransaction::create([
@@ -391,7 +644,7 @@ class ItemController extends Controller
             ->select('items.sku', DB::raw('SUM(transaction_lines.quantity) as shipped_quantity'))
             ->groupBy('items.sku')
             ->pluck('shipped_quantity', 'sku')
-            ->map(fn ($quantity) => (int) $quantity)
+            ->map(fn($quantity) => (int) $quantity)
             ->all();
 
         foreach ($order->lines as $line) {
@@ -405,7 +658,7 @@ class ItemController extends Controller
                     $sku = $packageItem->item?->sku;
                     $requiredQuantity = (int) $packageItem->quantity;
 
-                    if (! $sku || $requiredQuantity < 1) {
+                    if (!$sku || $requiredQuantity < 1) {
                         $deliverablePackages = 0;
                         break;
                     }
@@ -422,7 +675,7 @@ class ItemController extends Controller
 
                 foreach ($packageItems as $packageItem) {
                     $sku = $packageItem->item?->sku;
-                    if (! $sku) {
+                    if (!$sku) {
                         continue;
                     }
 
@@ -448,13 +701,13 @@ class ItemController extends Controller
     private function refreshSalesOrderStatus(SalesOrder $order): void
     {
         $order->load('lines');
-        
+
         $allFulfilled = $order->lines->every(function ($line) {
             $target = $line->package_id ? $line->package_quantity : $line->item_quantity;
             return $line->shipped_quantity >= $target;
         });
 
-        $anyShipped = $order->lines->contains(fn ($line) => $line->shipped_quantity > 0);
+        $anyShipped = $order->lines->contains(fn($line) => $line->shipped_quantity > 0);
 
         $status = $allFulfilled ? 'fulfilled' : ($anyShipped ? 'partial' : 'open');
         $order->update(['status' => $status]);
@@ -466,7 +719,7 @@ class ItemController extends Controller
             ->with('packageItems')
             ->find($packageId);
 
-        if (! $package || ! $package->is_active) {
+        if (!$package || !$package->is_active) {
             throw ValidationException::withMessages([
                 'package_id' => ['Selected package is not active.'],
             ]);
@@ -502,7 +755,7 @@ class ItemController extends Controller
             return $variant;
         }
 
-        if (! $allowCreate) {
+        if (!$allowCreate) {
             throw ValidationException::withMessages([
                 'package_quantity' => ['No stock variant found for selected SKU.'],
             ]);

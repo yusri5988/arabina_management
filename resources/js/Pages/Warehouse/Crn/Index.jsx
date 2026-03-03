@@ -114,6 +114,55 @@ export default function CrnIndex({ pendingProcurements = [], notes = [], canMana
     }
   };
 
+  const submitAllLines = async (order) => {
+    const linesPayload = (order.lines ?? []).map((line) => {
+      const current = forms?.[order.id]?.[line.line_id] ?? {
+        received_qty: Number(line.remaining_qty ?? 0),
+        rejected_qty: 0,
+        rejection_reason: '',
+      };
+
+      return {
+        line_id: line.line_id,
+        received_qty: Number(current.received_qty || 0),
+        rejected_qty: Number(current.rejected_qty || 0),
+        rejection_reason: current.rejection_reason || null,
+      };
+    });
+
+    if (linesPayload.length === 0) {
+      return;
+    }
+
+    setNotification(null);
+    const procKey = `all-${order.id}`;
+    setProcessingId(procKey);
+
+    try {
+      const { response, payload } = await apiFetchJson(`/warehouse/crn/procurement/${order.id}/receive`, {
+        method: 'POST',
+        body: JSON.stringify({ lines: linesPayload }),
+      });
+
+      if (response.ok) {
+        setNotification({ type: 'success', message: payload.message ?? 'All SKU submitted.' });
+        setPendingList((prev) => prev.filter((po) => po.id !== order.id));
+        setForms((prev) => {
+          const next = { ...prev };
+          delete next[order.id];
+          return next;
+        });
+        setOpenOrderId((prev) => (prev === order.id ? null : prev));
+      } else {
+        setNotification({ type: 'error', message: payload.message ?? 'Submit all failed.' });
+      }
+    } catch (_) {
+      setNotification({ type: 'error', message: 'Network error. Please try again.' });
+    } finally {
+      setProcessingId(null);
+    }
+  };
+
   return (
     <AuthenticatedLayout title="Contena Receiving Note (CRN)" backUrl="__back__">
       <Head title="CRN Checklist" />
@@ -153,6 +202,17 @@ export default function CrnIndex({ pendingProcurements = [], notes = [], canMana
 
                 {isOpen && (
                   <div className="mt-4 space-y-3">
+                    <div className="flex justify-end">
+                      <button
+                        type="button"
+                        onClick={() => submitAllLines(order)}
+                        disabled={!canManage || processingId === `all-${order.id}` || (order.lines ?? []).length === 0}
+                        className="rounded-lg bg-slate-800 text-white text-xs font-bold px-3 py-2 hover:bg-slate-900 disabled:opacity-50"
+                      >
+                        {processingId === `all-${order.id}` ? 'Submitting...' : 'Submit All'}
+                      </button>
+                    </div>
+
                     {(order.lines ?? []).map((line) => {
                       const current = orderForm?.[line.line_id] ?? {
                         received_qty: Number(line.remaining_qty ?? 0),
@@ -199,7 +259,7 @@ export default function CrnIndex({ pendingProcurements = [], notes = [], canMana
                               <button
                                 type="button"
                                 onClick={() => submitSingleLine(order, line)}
-                                disabled={!canManage || processingId === `line-${order.id}-${line.line_id}`}
+                                disabled={!canManage || processingId === `line-${order.id}-${line.line_id}` || processingId === `all-${order.id}`}
                                 className="w-full rounded-lg bg-emerald-600 text-white text-xs font-bold py-2 hover:bg-emerald-700 disabled:opacity-50"
                               >
                                 {processingId === `line-${order.id}-${line.line_id}` ? '...' : 'Submit'}
@@ -223,14 +283,43 @@ export default function CrnIndex({ pendingProcurements = [], notes = [], canMana
         </div>
 
         {notes.length > 0 && (
-          <div className="bg-white rounded-2xl border border-slate-200 p-4">
-            <p className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-2">Latest CRN Logs</p>
-            <div className="space-y-1">
-              {notes.slice(0, 5).map((note) => (
-                <p key={note.id} className="text-xs text-slate-600">
-                  {note.crn_number} - {note.procurement_order?.code || 'Standalone'} ({note.status})
-                </p>
-              ))}
+          <div className="bg-white rounded-[2rem] shadow-sm border border-slate-100 p-6 md:p-8">
+            <h2 className="text-lg font-bold text-slate-800 border-b border-slate-100 pb-4 mb-5">Latest CRN Logs</h2>
+            <div className="overflow-x-auto -mx-6 md:-mx-8">
+              <table className="w-full text-left border-collapse min-w-[600px]">
+                <thead>
+                  <tr className="bg-slate-50 border-y border-slate-100">
+                    <th className="px-6 md:px-8 py-3.5 text-xs font-bold text-slate-500 uppercase tracking-wider">Date</th>
+                    <th className="px-6 md:px-8 py-3.5 text-xs font-bold text-slate-500 uppercase tracking-wider">CRN Number</th>
+                    <th className="px-6 md:px-8 py-3.5 text-xs font-bold text-slate-500 uppercase tracking-wider">PO Code</th>
+                    <th className="px-6 md:px-8 py-3.5 text-xs font-bold text-slate-500 uppercase tracking-wider">Status</th>
+                    <th className="px-6 md:px-8 py-3.5 text-xs font-bold text-slate-500 uppercase tracking-wider">Created By</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-50">
+                  {notes.slice(0, 10).map((note) => (
+                    <tr key={note.id} className="hover:bg-slate-50/50 transition-colors">
+                      <td className="px-6 md:px-8 py-4 text-xs font-medium text-slate-600">
+                        {note.received_at ? new Date(note.received_at).toLocaleDateString('en-GB') : '-'}
+                      </td>
+                      <td className="px-6 md:px-8 py-4 text-xs font-bold text-slate-800">{note.crn_number}</td>
+                      <td className="px-6 md:px-8 py-4 text-xs font-medium text-slate-600">
+                        {note.procurement_order?.code || <span className="text-slate-400 italic">Standalone</span>}
+                      </td>
+                      <td className="px-6 md:px-8 py-4">
+                        <span className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-tight ${
+                          note.status === 'transferred' ? 'bg-emerald-50 text-emerald-600' : 'bg-amber-50 text-amber-600'
+                        }`}>
+                          {note.status}
+                        </span>
+                      </td>
+                      <td className="px-6 md:px-8 py-4 text-xs font-medium text-slate-600">
+                        {note.creator?.name || 'System'}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           </div>
         )}
