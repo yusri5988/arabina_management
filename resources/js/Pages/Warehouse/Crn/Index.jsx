@@ -75,7 +75,7 @@ export default function CrnIndex({ pendingProcurements = [], activeCrns = [], no
       });
       if (response.ok) {
         setNotification({ type: 'success', message: payload.message ?? 'SKU submitted.' });
-        setPendingList(prev => prev.map(po => po.id !== order.id ? po : { ...po, lines: po.lines.filter(x => x.line_id !== line.line_id) }).filter(po => po.lines.length > 0));
+        router.reload();
       } else {
         setNotification({ type: 'error', message: payload.message });
       }
@@ -100,8 +100,7 @@ export default function CrnIndex({ pendingProcurements = [], activeCrns = [], no
       });
       if (response.ok) {
         setNotification({ type: 'success', message: 'All SKU submitted.' });
-        setPendingList(prev => prev.filter(po => po.id !== order.id));
-        setOpenOrderId(null);
+        router.reload();
       } else {
         setNotification({ type: 'error', message: payload.message });
       }
