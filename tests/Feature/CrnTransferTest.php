@@ -2,7 +2,8 @@
 
 namespace Tests\Feature;
 
-use App\Models\ContenaReceivingNote;
+use App\Models\ContainerReceivingNote;
+
 use App\Models\Item;
 use App\Models\ItemVariant;
 use App\Models\ProcurementOrder;
@@ -45,7 +46,7 @@ class CrnTransferTest extends TestCase
             'rejected_quantity' => 0,
         ]);
 
-        $crn = ContenaReceivingNote::create([
+        $crn = ContainerReceivingNote::create([
             'crn_number' => 'CRN-TEST',
             'procurement_order_id' => $po->id,
             'received_at' => now(),

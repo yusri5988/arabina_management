@@ -151,8 +151,8 @@ export default function CrnIndex({ pendingProcurements = [], activeCrns = [], no
   };
 
   return (
-    <AuthenticatedLayout title="Contena Receiving Note (CRN)" backUrl="__back__">
-      <Head title="CRN Checklist" />
+    <AuthenticatedLayout title="Container Receiving Note (CRN)" backUrl="__back__">
+      <Head title="Container Receiving Note" />
       <div className="space-y-6">
         {crnList.filter(c => ['awaiting_shipping', 'shipping'].includes(c.status)).length > 0 && (
           <div className="space-y-3 mb-8">

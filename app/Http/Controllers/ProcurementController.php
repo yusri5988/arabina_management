@@ -8,7 +8,7 @@ use App\Models\Package;
 use App\Models\ProcurementOrder;
 use App\Models\ProcurementOrderLine;
 use App\Models\TransactionLog;
-use App\Models\ContenaReceivingNote;
+use App\Models\ContainerReceivingNote;
 use App\Models\CrnItem;
 use App\Models\RejectedItem;
 use App\Models\SalesOrder;
@@ -276,11 +276,11 @@ class ProcurementController extends Controller
             }
 
             $crnNumber = 'CRN-' . now()->format('Ymd') . '-' . Str::upper(Str::random(4));
-            while (ContenaReceivingNote::where('crn_number', $crnNumber)->exists()) {
+            while (ContainerReceivingNote::where('crn_number', $crnNumber)->exists()) {
                 $crnNumber = 'CRN-' . now()->format('Ymd') . '-' . Str::upper(Str::random(4));
             }
 
-            $crn = ContenaReceivingNote::create([
+            $crn = ContainerReceivingNote::create([
                 'crn_number' => $crnNumber,
                 'procurement_order_id' => $order->id,
                 'status' => 'awaiting_shipping',
@@ -501,11 +501,11 @@ class ProcurementController extends Controller
             $order->update(['status' => 'submitted']);
 
             $crnNumber = 'CRN-' . now()->format('Ymd') . '-' . Str::upper(Str::random(4));
-            while (ContenaReceivingNote::where('crn_number', $crnNumber)->exists()) {
+            while (ContainerReceivingNote::where('crn_number', $crnNumber)->exists()) {
                 $crnNumber = 'CRN-' . now()->format('Ymd') . '-' . Str::upper(Str::random(4));
             }
 
-            $crn = ContenaReceivingNote::create([
+            $crn = ContainerReceivingNote::create([
                 'crn_number' => $crnNumber,
                 'procurement_order_id' => $order->id,
                 'status' => 'awaiting_shipping',

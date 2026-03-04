@@ -5,7 +5,7 @@ namespace Tests\Feature;
 use App\Http\Controllers\CrnController;
 use App\Models\Item;
 use App\Models\ItemVariant;
-use App\Models\ContenaReceivingNote;
+use App\Models\ContainerReceivingNote;
 use App\Models\ProcurementOrder;
 use App\Models\ProcurementOrderLine;
 use App\Models\User;
@@ -96,7 +96,7 @@ class CrnControllerTest extends TestCase
     {
         $user = User::factory()->create(['role' => User::ROLE_SALES]);
 
-        $crn = ContenaReceivingNote::create([
+        $crn = ContainerReceivingNote::create([
             'crn_number' => 'CRN-TEST-ETA-1',
             'status' => 'awaiting_shipping',
             'created_by' => $user->id,
@@ -115,7 +115,7 @@ class CrnControllerTest extends TestCase
     {
         $user = User::factory()->create(['role' => User::ROLE_SUPER_ADMIN]);
 
-        $crn = ContenaReceivingNote::create([
+        $crn = ContainerReceivingNote::create([
             'crn_number' => 'CRN-TEST-ETA-2',
             'status' => 'awaiting_shipping',
             'created_by' => $user->id,
@@ -133,7 +133,7 @@ class CrnControllerTest extends TestCase
         $response = app(CrnController::class)->updateEta($request, $crn);
 
         $this->assertSame(200, $response->getStatusCode());
-        $this->assertDatabaseHas('contena_receiving_notes', [
+        $this->assertDatabaseHas('container_receiving_notes', [
             'id' => $crn->id,
             'status' => 'shipping',
             'eta' => $eta . ' 00:00:00',
@@ -144,7 +144,7 @@ class CrnControllerTest extends TestCase
     {
         $user = User::factory()->create(['role' => User::ROLE_SUPER_ADMIN]);
 
-        $crn = ContenaReceivingNote::create([
+        $crn = ContainerReceivingNote::create([
             'crn_number' => 'CRN-TEST-ARRIVED-1',
             'status' => 'awaiting_shipping',
             'created_by' => $user->id,
@@ -155,7 +155,7 @@ class CrnControllerTest extends TestCase
             ->postJson("/warehouse/crn/{$crn->id}/arrived");
 
         $response->assertStatus(422);
-        $this->assertDatabaseHas('contena_receiving_notes', [
+        $this->assertDatabaseHas('container_receiving_notes', [
             'id' => $crn->id,
             'status' => 'awaiting_shipping',
         ]);

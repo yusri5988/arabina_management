@@ -67,13 +67,14 @@ class SalesOrderProgressTest extends TestCase
                 'package_id' => $package->id,
                 'package_quantity' => 1,
                 'sales_order_id' => $order->id,
+                'completion_action' => 'partial_done',
                 'notes' => 'first shipment',
             ])
             ->assertOk();
 
         $this->assertDatabaseHas('sales_order_lines', [
             'id' => $line->id,
-            'shipped_quantity' => 1,
+            'shipped_quantity' => 0,
         ]);
         $this->assertDatabaseHas('sales_orders', [
             'id' => $order->id,
@@ -86,13 +87,15 @@ class SalesOrderProgressTest extends TestCase
                 'package_id' => $package->id,
                 'package_quantity' => 1,
                 'sales_order_id' => $order->id,
+                'completion_action' => 'done',
+                'done_confirmed' => true,
                 'notes' => 'second shipment',
             ])
             ->assertOk();
 
         $this->assertDatabaseHas('sales_order_lines', [
             'id' => $line->id,
-            'shipped_quantity' => 2,
+            'shipped_quantity' => 0,
         ]);
         $this->assertDatabaseHas('sales_orders', [
             'id' => $order->id,
@@ -128,7 +131,7 @@ class SalesOrderProgressTest extends TestCase
             ]);
 
         $response->assertOk();
-        
+
         $this->assertDatabaseHas('sales_orders', [
             'customer_name' => 'Loose Customer',
         ]);
@@ -210,6 +213,8 @@ class SalesOrderProgressTest extends TestCase
             ->postJson('/items/stock/out', [
                 'mode' => 'alacarte',
                 'sales_order_id' => $order->id,
+                'completion_action' => 'done',
+                'done_confirmed' => true,
                 'lines' => [
                     [
                         'item_id' => $packageItem->id,
@@ -225,7 +230,7 @@ class SalesOrderProgressTest extends TestCase
 
         $this->assertDatabaseHas('sales_order_lines', [
             'id' => $packageLine->id,
-            'shipped_quantity' => 2,
+            'shipped_quantity' => 0,
         ]);
 
         $this->assertDatabaseHas('sales_order_lines', [
@@ -236,6 +241,79 @@ class SalesOrderProgressTest extends TestCase
         $this->assertDatabaseHas('sales_orders', [
             'id' => $order->id,
             'status' => 'fulfilled',
+        ]);
+    }
+
+    public function test_partial_done_keeps_sales_order_partial_even_if_do_differs_from_order_lines(): void
+    {
+        $user = User::factory()->create([
+            'role' => User::ROLE_STORE_KEEPER,
+        ]);
+
+        $orderedItem = Item::query()->create([
+            'sku' => 'SO-ITEM-001',
+            'name' => 'Ordered Item',
+            'unit' => 'pcs',
+            'created_by' => $user->id,
+        ]);
+
+        $differentDoItem = Item::query()->create([
+            'sku' => 'DO-ITEM-999',
+            'name' => 'Different DO Item',
+            'unit' => 'pcs',
+            'created_by' => $user->id,
+        ]);
+
+        ItemVariant::query()->create([
+            'item_id' => $orderedItem->id,
+            'color' => null,
+            'stock_initial' => 10,
+            'stock_current' => 10,
+        ]);
+
+        ItemVariant::query()->create([
+            'item_id' => $differentDoItem->id,
+            'color' => null,
+            'stock_initial' => 10,
+            'stock_current' => 10,
+        ]);
+
+        $order = SalesOrder::query()->create([
+            'code' => 'SO-DIFF-0001',
+            'customer_name' => 'Customer Diff',
+            'order_date' => now()->toDateString(),
+            'status' => 'open',
+            'created_by' => $user->id,
+        ]);
+
+        $line = $order->lines()->create([
+            'item_sku' => $orderedItem->sku,
+            'item_quantity' => 5,
+            'shipped_quantity' => 0,
+        ]);
+
+        $this->actingAs($user)
+            ->postJson('/items/stock/out', [
+                'mode' => 'alacarte',
+                'sales_order_id' => $order->id,
+                'completion_action' => 'partial_done',
+                'lines' => [
+                    [
+                        'item_id' => $differentDoItem->id,
+                        'quantity' => 2,
+                    ],
+                ],
+            ])
+            ->assertOk();
+
+        $this->assertDatabaseHas('sales_orders', [
+            'id' => $order->id,
+            'status' => 'partial',
+        ]);
+
+        $this->assertDatabaseHas('sales_order_lines', [
+            'id' => $line->id,
+            'shipped_quantity' => 0,
         ]);
     }
 }

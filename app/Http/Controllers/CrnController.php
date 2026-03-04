@@ -2,7 +2,7 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\ContenaReceivingNote;
+use App\Models\ContainerReceivingNote;
 use App\Models\CrnItem;
 use App\Models\InventoryTransaction;
 use App\Models\Item;
@@ -28,13 +28,13 @@ class CrnController extends Controller
 
     public function index(Request $request): Response
     {
-        $notes = ContenaReceivingNote::query()
+        $notes = ContainerReceivingNote::query()
             ->where('status', 'transferred')
             ->with(['creator:id,name', 'procurementOrder:id,code', 'items.itemVariant.item'])
             ->latest()
             ->get();
 
-        $activeCrns = ContenaReceivingNote::query()
+        $activeCrns = ContainerReceivingNote::query()
             ->whereIn('status', ['awaiting_shipping', 'shipping', 'arrived'])
             ->with(['procurementOrder:id,code', 'items.itemVariant.item'])
             ->latest()
@@ -48,7 +48,7 @@ class CrnController extends Controller
         ]);
     }
 
-    public function updateEta(Request $request, ContenaReceivingNote $crn): JsonResponse
+    public function updateEta(Request $request, ContainerReceivingNote $crn): JsonResponse
     {
         $this->authorizeManage($request);
 
@@ -79,7 +79,7 @@ class CrnController extends Controller
         ]);
     }
 
-    public function markAsArrived(Request $request, ContenaReceivingNote $crn): JsonResponse
+    public function markAsArrived(Request $request, ContainerReceivingNote $crn): JsonResponse
     {
         $this->authorizeManage($request);
 
@@ -103,7 +103,7 @@ class CrnController extends Controller
         ]);
     }
 
-    public function downloadPdf(ContenaReceivingNote $crn)
+    public function downloadPdf(ContainerReceivingNote $crn)
     {
         $crn->load(['procurementOrder', 'creator', 'items.itemVariant.item']);
 
@@ -171,7 +171,7 @@ class CrnController extends Controller
                 "Direct receive from PO: {$order->code}"
             );
 
-            $crn = ContenaReceivingNote::create([
+            $crn = ContainerReceivingNote::create([
                 'crn_number' => $this->generateCrnNumber(),
                 'procurement_order_id' => $order->id,
                 'received_at' => now(),
@@ -350,7 +350,7 @@ class CrnController extends Controller
                 ->whereIn('id', collect($validated['items'])->pluck('item_variant_id')->unique()->values())
                 ->pluck('item_id', 'id');
 
-            $crn = ContenaReceivingNote::create([
+            $crn = ContainerReceivingNote::create([
                 'crn_number' => $this->generateCrnNumber(),
                 'procurement_order_id' => $validated['procurement_order_id'] ?? null,
                 'received_at' => $validated['received_at'],
@@ -388,10 +388,10 @@ class CrnController extends Controller
         ], 201);
     }
 
-    public function transfer(Request $request, ContenaReceivingNote|int $crn): JsonResponse
+    public function transfer(Request $request, ContainerReceivingNote|int $crn): JsonResponse
     {
-        if (!$crn instanceof ContenaReceivingNote) {
-            $crn = ContenaReceivingNote::findOrFail($crn);
+        if (!$crn instanceof ContainerReceivingNote) {
+            $crn = ContainerReceivingNote::findOrFail($crn);
         }
 
         if ($crn->status === 'transferred') {
@@ -491,13 +491,13 @@ class CrnController extends Controller
         );
     }
 
-    private function hasStatus(ContenaReceivingNote $crn, string $expected): bool
+    private function hasStatus(ContainerReceivingNote $crn, string $expected): bool
     {
         if ((string) $crn->status === $expected) {
             return true;
         }
 
-        return ContenaReceivingNote::query()
+        return ContainerReceivingNote::query()
             ->whereKey($crn->getKey())
             ->where('status', $expected)
             ->exists();
@@ -557,7 +557,7 @@ class CrnController extends Controller
 
     private function recordRejectionFromCrnItem(
         CrnItem $crnItem,
-        ContenaReceivingNote $crn,
+        ContainerReceivingNote $crn,
         int $itemId,
         int $userId
     ): void {
@@ -617,7 +617,7 @@ class CrnController extends Controller
 
         do {
             $number = $prefix . '-' . Str::upper(Str::random(4));
-        } while (ContenaReceivingNote::where('crn_number', $number)->exists());
+        } while (ContainerReceivingNote::where('crn_number', $number)->exists());
 
         return $number;
     }

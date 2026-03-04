@@ -37,7 +37,7 @@ class RejectedItem extends Model
 
     public function crn(): BelongsTo
     {
-        return $this->belongsTo(ContenaReceivingNote::class, 'crn_id');
+        return $this->belongsTo(ContainerReceivingNote::class, 'crn_id');
     }
 
     public function item(): BelongsTo

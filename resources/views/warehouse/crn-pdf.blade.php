@@ -21,7 +21,7 @@
 </head>
 <body>
     <div class="header">
-        <h1>Contena Receiving Note</h1>
+        <h1>Container Receiving Note</h1>
         <p>Official stock arrival record for Arabina Inventory System</p>
     </div>
 

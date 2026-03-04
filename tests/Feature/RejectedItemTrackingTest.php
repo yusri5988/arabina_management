@@ -2,7 +2,7 @@
 
 namespace Tests\Feature;
 
-use App\Models\ContenaReceivingNote;
+use App\Models\ContainerReceivingNote;
 use App\Models\CrnItem;
 use App\Models\Item;
 use App\Models\ItemVariant;
@@ -104,7 +104,7 @@ class RejectedItemTrackingTest extends TestCase
             'rejected_quantity' => 0,
         ]);
 
-        $crn = ContenaReceivingNote::create([
+        $crn = ContainerReceivingNote::create([
             'crn_number' => 'CRN-RJ-200',
             'procurement_order_id' => $order->id,
             'received_at' => now(),

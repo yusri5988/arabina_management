@@ -33,7 +33,7 @@ class ProcurementOrder extends Model
 
     public function crns(): HasMany
     {
-        return $this->hasMany(ContenaReceivingNote::class);
+        return $this->hasMany(ContainerReceivingNote::class);
     }
 
 }

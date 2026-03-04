@@ -111,14 +111,14 @@ export default function CrnCreate({ procurementOrders = [], items = [] }) {
   };
 
   return (
-    <AuthenticatedLayout title="Create CRN" backUrl="/warehouse/crn">
-      <Head title="Create CRN" />
+    <AuthenticatedLayout title="Create Container Receiving Note (CRN)" backUrl="/warehouse/crn">
+      <Head title="Create Container Receiving Note" />
 
       <form onSubmit={handleSubmit} className="max-w-4xl mx-auto space-y-6">
         <div className="bg-white rounded-[2rem] shadow-sm border border-slate-100 p-6 md:p-8">
           <h2 className="text-lg font-bold text-slate-800 mb-6 flex items-center gap-2">
             <span className="w-1.5 h-4 bg-amber-500 rounded-full"></span>
-            CRN General Information
+            Container General Information
           </h2>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">

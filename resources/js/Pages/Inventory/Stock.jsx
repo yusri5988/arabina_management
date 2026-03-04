@@ -15,6 +15,7 @@ export default function Stock({ items, packages, salesOrders = [], type = 'in' }
   const [notification, setNotification] = useState(null);
   const [history, setHistory] = useState([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
+  const [doneConfirmed, setDoneConfirmed] = useState(false);
 
   const fetchHistory = async () => {
     if (!isOut) return;
@@ -44,9 +45,11 @@ export default function Stock({ items, packages, salesOrders = [], type = 'in' }
     sales_order_id: '',
     notes: '',
   });
-  const [alacarteLines, setAlacarteLines] = useState([
-    { ...initialAlacarteLine, item_id: items?.[0]?.id?.toString() ?? '' },
-  ]);
+  const [alacarteLines, setAlacarteLines] = useState(
+    isOut
+      ? []
+      : [{ ...initialAlacarteLine, item_id: items?.[0]?.id?.toString() ?? '' }],
+  );
   const [outAddSku, setOutAddSku] = useState({
     item_id: items?.[0]?.id?.toString() ?? '',
     quantity: '',
@@ -77,92 +80,36 @@ export default function Stock({ items, packages, salesOrders = [], type = 'in' }
     [salesOrders, packageData.sales_order_id],
   );
 
-  const salesOrderSkuLines = useMemo(() => {
+  const salesOrderDeliveryStatus = useMemo(() => {
     if (!isOut || !selectedSalesOrder) return [];
 
-    const skuMap = new Map();
-
-    (selectedSalesOrder.lines ?? []).forEach((line) => {
-      // 1. Process Package Lines
-      if (line.package_id) {
-        const remainingQty = Math.max(Number(line.package_quantity ?? 0) - Number(line.shipped_quantity ?? 0), 0);
-        if (remainingQty <= 0) return;
-
-        const packageItems = line.package?.package_items ?? line.package?.packageItems ?? [];
-        packageItems.forEach((pkgItem) => {
-          const item = pkgItem.item;
-          if (!item) return;
-
-          const key = String(item.id);
-          const qty = Number(pkgItem.quantity ?? 0) * remainingQty;
-          const availableStock = Number(itemStockById.get(key) ?? 0);
-          
-          const prev = skuMap.get(key) ?? {
-            item_id: item.id,
-            sku: item.sku,
-            name: item.name,
-            unit: item.unit,
-            required_quantity: 0,
-            available_stock: availableStock,
-          };
-
-          prev.required_quantity += qty;
-          skuMap.set(key, prev);
-        });
-      } 
-      // 2. Process Loose SKU Lines
-      else if (line.item_sku) {
-        const remainingQty = Math.max(Number(line.item_quantity ?? 0) - Number(line.shipped_quantity ?? 0), 0);
-        if (remainingQty <= 0) return;
-
-        const item = line.item ?? items.find(i => i.sku === line.item_sku);
-        if (!item) return;
-
-        const key = String(item.id);
-        const availableStock = Number(itemStockById.get(key) ?? 0);
-
-        const prev = skuMap.get(key) ?? {
-          item_id: item.id,
-          sku: item.sku,
-          name: item.name,
-          unit: item.unit,
-          required_quantity: 0,
-          available_stock: availableStock,
-        };
-
-        prev.required_quantity += remainingQty;
-        skuMap.set(key, prev);
-      }
-    });
-
-    return Array.from(skuMap.values()).map((line) => ({
-      ...line,
-      deliverable_quantity: Math.min(Number(line.required_quantity), Number(line.available_stock)),
+    return (selectedSalesOrder.pending_sku_lines ?? []).map((line) => ({
+      key: `sku-${line.sku}`,
+      label: `${line.sku ?? 'SKU'} - ${line.name ?? 'Item'}`,
+      type: 'sku',
+      ordered: Number(line.ordered_quantity ?? 0),
+      shipped: Number(line.shipped_quantity ?? 0),
+      remaining: Number(line.pending_quantity ?? 0),
     }));
-  }, [isOut, selectedSalesOrder, itemStockById, items]);
+  }, [isOut, selectedSalesOrder]);
+
+  const pendingDeliveryStatus = useMemo(
+    () => salesOrderDeliveryStatus.filter((entry) => Number(entry.remaining) > 0),
+    [salesOrderDeliveryStatus],
+  );
+
+  const pendingSkuSummary = useMemo(
+    () => pendingDeliveryStatus.map((entry) => entry.label).join(', '),
+    [pendingDeliveryStatus],
+  );
 
   useEffect(() => {
-    if (!isOut || !selectedSalesOrder) {
+    if (!isOut) {
       return;
     }
 
-    const deliverableLines = salesOrderSkuLines.filter((line) => Number(line.deliverable_quantity) > 0);
-
-    setAlacarteLines(
-      deliverableLines.map((line) => ({
-        item_id: String(line.item_id),
-        quantity: String(line.deliverable_quantity),
-      })),
-    );
-
-    const blockedCount = salesOrderSkuLines.filter((line) => Number(line.deliverable_quantity) <= 0).length;
-    if (blockedCount > 0) {
-      setNotification({
-        type: 'error',
-        message: `${blockedCount} SKU skipped because stock is zero.`,
-      });
-    }
-  }, [isOut, selectedSalesOrder, salesOrderSkuLines]);
+    setAlacarteLines([]);
+  }, [isOut, packageData.sales_order_id]);
 
   useEffect(() => {
     if (!isOut) {
@@ -248,32 +195,38 @@ export default function Stock({ items, packages, salesOrders = [], type = 'in' }
     setErrors({});
     setProcessing(true);
 
+    const completionAction = isOut
+      ? (e?.nativeEvent?.submitter?.value || 'partial_done')
+      : null;
+
     const endpoint = isOut ? '/items/stock/out' : '/items/stock/in';
     const payload = isOut
       ? {
+        mode: 'alacarte',
+        lines: alacarteLines.map(line => ({
+          item_id: Number(line.item_id),
+          quantity: Number(line.quantity),
+        })),
+        sales_order_id: Number(packageData.sales_order_id),
+        completion_action: completionAction,
+        done_confirmed: completionAction === 'done' ? doneConfirmed : true,
+        notes: packageData.notes || null,
+      }
+      : mode === 'package'
+        ? {
+          mode: 'package',
+          package_id: Number(packageData.package_id),
+          package_quantity: Number(packageData.package_quantity),
+          notes: packageData.notes || null,
+        }
+        : {
           mode: 'alacarte',
           lines: alacarteLines.map(line => ({
             item_id: Number(line.item_id),
             quantity: Number(line.quantity),
           })),
-          sales_order_id: Number(packageData.sales_order_id),
           notes: packageData.notes || null,
-        }
-      : mode === 'package'
-        ? {
-            mode: 'package',
-            package_id: Number(packageData.package_id),
-            package_quantity: Number(packageData.package_quantity),
-            notes: packageData.notes || null,
-          }
-        : {
-            mode: 'alacarte',
-            lines: alacarteLines.map(line => ({
-              item_id: Number(line.item_id),
-              quantity: Number(line.quantity),
-            })),
-            notes: packageData.notes || null,
-          };
+        };
 
     try {
       let currentCsrfToken = csrfToken;
@@ -305,7 +258,7 @@ export default function Stock({ items, packages, salesOrders = [], type = 'in' }
       if (response.ok) {
         setNotification({ type: 'success', message: result.message ?? 'Transaction saved.' });
         setPackageData(prev => ({ ...prev, package_quantity: '', notes: '' }));
-        setAlacarteLines([{ ...initialAlacarteLine, item_id: items?.[0]?.id?.toString() ?? '' }]);
+        setAlacarteLines(isOut ? [] : [{ ...initialAlacarteLine, item_id: items?.[0]?.id?.toString() ?? '' }]);
         if (isOut) {
           fetchHistory();
         }
@@ -328,9 +281,8 @@ export default function Stock({ items, packages, salesOrders = [], type = 'in' }
 
       <div className="space-y-6">
         {notification && (
-          <div className={`rounded-2xl border px-4 py-3 text-sm shadow-sm ${
-            notification.type === 'success' ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-red-200 bg-red-50 text-red-700'
-          }`}>
+          <div className={`rounded-2xl border px-4 py-3 text-sm shadow-sm ${notification.type === 'success' ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-red-200 bg-red-50 text-red-700'
+            }`}>
             {notification.message}
           </div>
         )}
@@ -368,6 +320,7 @@ export default function Stock({ items, packages, salesOrders = [], type = 'in' }
                     value={packageData.sales_order_id}
                     onChange={e => {
                       setNotification(null);
+                      setDoneConfirmed(false);
                       setPackageData(prev => ({ ...prev, sales_order_id: e.target.value }));
                     }}
                     className="w-full rounded-2xl border border-slate-200 px-4 py-3.5 text-sm focus:ring-2 focus:ring-arabina-accent focus:outline-none bg-slate-50"
@@ -384,6 +337,32 @@ export default function Stock({ items, packages, salesOrders = [], type = 'in' }
                   {errors.sales_order_id && <p className="text-xs text-red-500 mt-1">{errors.sales_order_id[0]}</p>}
                   {salesOrders.length === 0 && <p className="text-xs text-amber-600 mt-1">Create sales order first before stock out.</p>}
                 </div>
+
+                {selectedSalesOrder && (
+                  <div className="col-span-2 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                    <p className="text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">Pending Delivery Items</p>
+                    {pendingDeliveryStatus.length > 0 && (
+                      <p className="text-xs text-slate-600 mb-2">
+                        Pending ({pendingDeliveryStatus.length}): {pendingSkuSummary}
+                      </p>
+                    )}
+
+                    {pendingDeliveryStatus.length === 0 ? (
+                      <p className="text-xs text-slate-500">All items have been delivered.</p>
+                    ) : (
+                      <div className="space-y-2">
+                        {pendingDeliveryStatus.map((entry) => (
+                          <div key={entry.key} className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs">
+                            <div className="font-bold text-slate-700">{entry.label}</div>
+                            <div className="text-slate-600 mt-1">
+                              Ordered: {entry.ordered} | Delivered: {entry.shipped} | Pending: {entry.remaining}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
 
               </div>
             )}
@@ -457,15 +436,15 @@ export default function Stock({ items, packages, salesOrders = [], type = 'in' }
                       )}
                     </div>
                     <div className="col-span-3">
-                        <QtyInput
-                          value={line.quantity}
-                          onChange={(val) => updateLine(index, 'quantity', val)}
-                          min={1}
-                          max={Number(itemStockById.get(String(line.item_id)) ?? 0)}
-                        />
+                      <QtyInput
+                        value={line.quantity}
+                        onChange={(val) => updateLine(index, 'quantity', val)}
+                        min={1}
+                        max={Number(itemStockById.get(String(line.item_id)) ?? 0)}
+                      />
                     </div>
                     <div className="col-span-1 flex items-center justify-end">
-                      {!isOut && alacarteLines.length > 1 && (
+                      {(isOut || alacarteLines.length > 1) && (
                         <button type="button" onClick={() => removeLine(index)} className="text-red-500 text-xs font-bold">
                           X
                         </button>
@@ -521,6 +500,18 @@ export default function Stock({ items, packages, salesOrders = [], type = 'in' }
               </div>
             )}
 
+            {isOut && (
+              <label className="flex items-start gap-2 text-xs text-slate-600">
+                <input
+                  type="checkbox"
+                  checked={doneConfirmed}
+                  onChange={(e) => setDoneConfirmed(e.target.checked)}
+                  className="mt-0.5"
+                />
+                Confirm tiada lagi delivery order untuk sales order ini (baru boleh tekan Done).
+              </label>
+            )}
+
             <div>
               <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5 ml-1">Notes (Optional)</label>
               <textarea
@@ -531,19 +522,50 @@ export default function Stock({ items, packages, salesOrders = [], type = 'in' }
               />
             </div>
 
-            <button
-              type="submit"
-              disabled={
-                processing
-                || (!isOut && mode === 'package' && noPackages)
-                || ((isOut || mode === 'alacarte') && noItems)
-                || (isOut && (salesOrders?.length ?? 0) === 0)
-                || (isOut && alacarteLines.length === 0)
-              }
-              className={`w-full text-white py-4 rounded-2xl text-sm font-bold disabled:opacity-50 active:scale-[0.98] transition-all shadow-md ${isOut ? 'bg-red-600 hover:bg-red-700' : 'bg-[#1E3D1A] hover:bg-emerald-950'}`}
-            >
-              {processing ? 'Saving...' : (isOut ? 'Submit Delivery Order' : 'Submit Stock In')}
-            </button>
+            {isOut ? (
+              <div className="grid grid-cols-2 gap-3">
+                <button
+                  type="submit"
+                  value="partial_done"
+                  disabled={
+                    processing
+                    || noItems
+                    || (salesOrders?.length ?? 0) === 0
+                    || alacarteLines.length === 0
+                  }
+                  className="w-full bg-amber-500 hover:bg-amber-600 text-white py-4 rounded-2xl text-sm font-bold disabled:opacity-50 active:scale-[0.98] transition-all shadow-md"
+                >
+                  {processing ? 'Saving...' : 'Partial Done'}
+                </button>
+
+                <button
+                  type="submit"
+                  value="done"
+                  disabled={
+                    processing
+                    || noItems
+                    || (salesOrders?.length ?? 0) === 0
+                    || alacarteLines.length === 0
+                    || !doneConfirmed
+                  }
+                  className="w-full bg-red-600 hover:bg-red-700 text-white py-4 rounded-2xl text-sm font-bold disabled:opacity-50 active:scale-[0.98] transition-all shadow-md"
+                >
+                  {processing ? 'Saving...' : 'Done'}
+                </button>
+              </div>
+            ) : (
+              <button
+                type="submit"
+                disabled={
+                  processing
+                  || (mode === 'package' && noPackages)
+                  || (mode === 'alacarte' && noItems)
+                }
+                className="w-full bg-[#1E3D1A] hover:bg-emerald-950 text-white py-4 rounded-2xl text-sm font-bold disabled:opacity-50 active:scale-[0.98] transition-all shadow-md"
+              >
+                {processing ? 'Saving...' : 'Submit Stock In'}
+              </button>
+            )}
 
             <Link
               href="/items"

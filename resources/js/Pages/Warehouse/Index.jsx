@@ -21,7 +21,7 @@ export default function WarehouseIndex() {
             <div className="w-12 h-12 bg-amber-50 rounded-xl flex items-center justify-center mb-4 text-amber-600 shadow-inner group-hover:bg-amber-600 group-hover:text-white transition-colors duration-300">
               <DocumentTextIcon className="w-6 h-6" strokeWidth={2} />
             </div>
-            <h4 className="text-lg font-bold text-slate-800 mb-1 tracking-tight">CRN (Contena)</h4>
+            <h4 className="text-lg font-bold text-slate-800 mb-1 tracking-tight">CRN (Container)</h4>
             <p className="text-slate-500 text-sm font-medium leading-snug">Receive containers and record item counts.</p>
           </div>
         </Link>
@@ -91,7 +91,7 @@ export default function WarehouseIndex() {
         </Link>
 
         <Link
-          href="/rejections"
+          href="/warehouse/rejections"
           className="group relative bg-white p-6 rounded-2xl shadow-sm border border-rose-100 hover:border-rose-300 hover:shadow-lg hover:shadow-rose-100/50 transition-all duration-300 active:scale-[0.98] overflow-hidden"
         >
           <div className="absolute top-0 right-0 p-4 opacity-5 group-hover:opacity-10 transition-opacity transform group-hover:scale-110 duration-500">

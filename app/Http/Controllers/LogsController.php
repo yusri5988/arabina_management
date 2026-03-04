@@ -2,7 +2,8 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\ContenaReceivingNote;
+use App\Models\ContainerReceivingNote;
+
 use App\Models\InventoryTransaction;
 use App\Models\ProcurementOrder;
 use App\Models\SalesOrder;
@@ -86,7 +87,7 @@ class LogsController extends Controller
         }
 
         if (isset($details['id']) && in_array($log->action, ['crn_created', 'crn_transferred'], true)) {
-            $crn = ContenaReceivingNote::with([
+            $crn = ContainerReceivingNote::with([
                 'items.itemVariant.item:id,sku,name,unit',
                 'procurementOrder:id,code,status',
             ])->find((int) $details['id']);
@@ -97,7 +98,7 @@ class LogsController extends Controller
         }
 
         if (isset($details['crn_number']) && in_array($log->action, ['crn_po_received'], true)) {
-            $crn = ContenaReceivingNote::with([
+            $crn = ContainerReceivingNote::with([
                 'items.itemVariant.item:id,sku,name,unit',
                 'procurementOrder:id,code,status',
             ])->where('crn_number', (string) $details['crn_number'])->first();
