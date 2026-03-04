@@ -103,14 +103,16 @@ class CrnController extends Controller
         ]);
     }
 
-    public function downloadPdf(ContenaReceivingNote $crn): \Symfony\Component\HttpFoundation\Response
+    public function downloadPdf(ContenaReceivingNote $crn)
     {
         $crn->load(['procurementOrder', 'creator', 'items.itemVariant.item']);
 
-        return Pdf::loadView('warehouse.crn-pdf', [
+        $pdf = Pdf::loadView('warehouse.crn-pdf', [
             'crn' => $crn,
             'generatedAt' => now(),
-        ])->download("CRN-{$crn->crn_number}.pdf");
+        ]);
+
+        return $pdf->stream("CRN-{$crn->crn_number}.pdf");
     }
 
     public function receiveProcurement(Request $request, ProcurementOrder $order): JsonResponse
