@@ -68,6 +68,8 @@ Route::middleware('auth')->group(function () {
 
     Route::prefix('warehouse')->group(function () {
         Route::get('/crn', [CrnController::class, 'index'])->name('warehouse.crn.index');
+        Route::post('/crn/{crn}/eta', [CrnController::class, 'updateEta'])->name('warehouse.crn.eta');
+        Route::post('/crn/{crn}/arrived', [CrnController::class, 'markAsArrived'])->name('warehouse.crn.arrived');
         Route::get('/crn/create', [CrnController::class, 'create'])->name('warehouse.crn.create');
         Route::get('/rejections', [ProcurementController::class, 'rejectedList'])->name('warehouse.rejections.index');
 
@@ -95,4 +97,5 @@ Route::middleware(['auth', 'role:super_admin'])->prefix('admin')->group(function
     Route::delete('/users/{user}', [UserManagementController::class, 'destroy'])->name('admin.users.destroy');
 
     Route::get('/logs', [LogsController::class, 'index'])->name('admin.logs.index');
+    Route::get('/logs/{log}/pdf', [LogsController::class, 'pdf'])->name('admin.logs.pdf');
 });

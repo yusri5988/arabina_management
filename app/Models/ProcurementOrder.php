@@ -31,4 +31,9 @@ class ProcurementOrder extends Model
         return $this->belongsTo(User::class, 'created_by');
     }
 
+    public function crns(): HasMany
+    {
+        return $this->hasMany(ContenaReceivingNote::class);
+    }
+
 }

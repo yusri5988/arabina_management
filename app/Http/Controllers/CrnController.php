@@ -28,14 +28,60 @@ class CrnController extends Controller
     public function index(Request $request): Response
     {
         $notes = ContenaReceivingNote::query()
-            ->with(['creator:id,name', 'procurementOrder:id,code'])
+            ->where('status', 'transferred')
+            ->with(['creator:id,name', 'procurementOrder:id,code', 'items.itemVariant.item'])
+            ->latest()
+            ->get();
+
+        $activeCrns = ContenaReceivingNote::query()
+            ->whereIn('status', ['awaiting_shipping', 'shipping', 'arrived'])
+            ->with(['procurementOrder:id,code', 'items.itemVariant.item'])
             ->latest()
             ->get();
 
         return Inertia::render('Warehouse/Crn/Index', [
             'notes' => $notes,
+            'activeCrns' => $activeCrns,
             'pendingProcurements' => $this->buildPendingProcurementPayload(),
             'canManage' => in_array($request->user()->role, [User::ROLE_STORE_KEEPER, User::ROLE_SUPER_ADMIN], true),
+        ]);
+    }
+
+    public function updateEta(Request $request, ContenaReceivingNote $crn): JsonResponse
+    {
+        $validated = $request->validate([
+            'eta' => 'required|date|after_or_equal:today',
+        ]);
+
+        $crn->update([
+            'eta' => $validated['eta'],
+            'status' => 'shipping',
+        ]);
+
+        TransactionLog::record('crn_eta_updated', [
+            'id' => $crn->id,
+            'crn_number' => $crn->crn_number,
+            'eta' => $crn->eta,
+        ]);
+
+        return response()->json([
+            'message' => 'ETA updated and status set to Shipping.',
+            'crn' => $crn,
+        ]);
+    }
+
+    public function markAsArrived(Request $request, ContenaReceivingNote $crn): JsonResponse
+    {
+        $crn->update(['status' => 'arrived']);
+
+        TransactionLog::record('crn_arrived', [
+            'id' => $crn->id,
+            'crn_number' => $crn->crn_number,
+        ]);
+
+        return response()->json([
+            'message' => 'Shipment marked as Arrived. You can now process the stock checklist.',
+            'crn' => $crn,
         ]);
     }
 
@@ -353,6 +399,9 @@ class CrnController extends Controller
     {
         return ProcurementOrder::query()
             ->whereIn('status', self::OPEN_PROCUREMENT_STATUSES)
+            ->whereHas('crns', function($q) {
+                $q->where('status', 'arrived');
+            })
             ->with([
                 'lines.item:id,sku,name,unit',
             ])

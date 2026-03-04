@@ -283,7 +283,7 @@ class ProcurementController extends Controller
             $crn = ContenaReceivingNote::create([
                 'crn_number' => $crnNumber,
                 'procurement_order_id' => $order->id,
-                'status' => 'pending',
+                'status' => 'awaiting_shipping',
                 'created_by' => $request->user()->id,
             ]);
 
@@ -508,7 +508,7 @@ class ProcurementController extends Controller
             $crn = ContenaReceivingNote::create([
                 'crn_number' => $crnNumber,
                 'procurement_order_id' => $order->id,
-                'status' => 'pending',
+                'status' => 'awaiting_shipping',
                 'created_by' => $request->user()->id,
             ]);
 

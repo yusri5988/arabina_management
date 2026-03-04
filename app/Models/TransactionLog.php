@@ -32,7 +32,7 @@ class TransactionLog extends Model
             'user_id' => auth()->id(),
             'action' => $action,
             'details' => $details,
-            'ip_address' => request()->ip(),
+            'ip_address' => null,
         ]);
     }
 }

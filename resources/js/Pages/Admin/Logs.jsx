@@ -2,29 +2,6 @@ import AuthenticatedLayout from '../../Layouts/AuthenticatedLayout';
 import { Head, Link } from '@inertiajs/react';
 
 export default function Logs({ logs }) {
-  const formatDetails = (details) => {
-    if (!details) return '-';
-    
-    // Try to find a code or identifier to show instead of full JSON
-    const primaryId = details.code || details.crn_number || details.sku || details.po_code;
-    
-    if (primaryId) {
-      return (
-        <div className="flex flex-col gap-1">
-          <span className="text-sm font-black text-slate-800 tracking-tight">{primaryId}</span>
-          {details.customer_name && <span className="text-[10px] text-slate-500 font-medium">{details.customer_name}</span>}
-          {details.mode && <span className="text-[10px] text-slate-400 italic">Mode: {details.mode}</span>}
-        </div>
-      );
-    }
-
-    return (
-      <div className="text-[10px] text-slate-400 font-mono italic">
-        (System Data)
-      </div>
-    );
-  };
-
   const getActionBadge = (action) => {
     const badges = {
       sales_order_created: 'bg-cyan-100 text-cyan-700',
@@ -58,8 +35,7 @@ export default function Logs({ logs }) {
               <tr className="bg-slate-50/50 border-b border-slate-100">
                 <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">User</th>
                 <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Action</th>
-                <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Details</th>
-                <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">IP Address</th>
+                <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Form PDF</th>
                 <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Timestamp</th>
               </tr>
             </thead>
@@ -77,11 +53,13 @@ export default function Logs({ logs }) {
                   <td className="px-6 py-4">
                     {getActionBadge(log.action)}
                   </td>
-                  <td className="px-6 py-4 max-w-xs">
-                    {formatDetails(log.details)}
-                  </td>
-                  <td className="px-6 py-4 text-xs font-medium text-slate-400">
-                    {log.ip_address ?? '-'}
+                  <td className="px-6 py-4">
+                    <a
+                      href={route('admin.logs.pdf', log.id)}
+                      className="inline-flex items-center rounded-lg bg-slate-900 px-3 py-1.5 text-[11px] font-bold text-white hover:bg-slate-700"
+                    >
+                      Download PDF
+                    </a>
                   </td>
                   <td className="px-6 py-4 text-xs font-bold text-slate-500">
                     {new Date(log.created_at).toLocaleString()}
@@ -90,7 +68,7 @@ export default function Logs({ logs }) {
               ))}
               {logs.data.length === 0 && (
                 <tr>
-                  <td colSpan="5" className="px-6 py-12 text-center text-sm text-slate-400 font-medium">
+                  <td colSpan="4" className="px-6 py-12 text-center text-sm text-slate-400 font-medium">
                     No activity logs found.
                   </td>
                 </tr>
@@ -107,13 +85,12 @@ export default function Logs({ logs }) {
                 key={i}
                 href={link.url || '#'}
                 dangerouslySetInnerHTML={{ __html: link.label }}
-                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                  link.active 
-                    ? 'bg-[#1E3D1A] text-white shadow-md' 
-                    : link.url 
-                      ? 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200' 
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${link.active
+                    ? 'bg-[#1E3D1A] text-white shadow-md'
+                    : link.url
+                      ? 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
                       : 'text-slate-300 cursor-not-allowed'
-                }`}
+                  }`}
               />
             ))}
           </div>
