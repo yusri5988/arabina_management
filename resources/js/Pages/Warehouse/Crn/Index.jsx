@@ -122,7 +122,7 @@ export default function CrnIndex({ pendingProcurements = [], activeCrns = [], no
       });
       if (response.ok) {
         setNotification({ type: 'success', message: 'ETA updated. Status: Shipping.' });
-        setCrnList(prev => prev.map(c => c.id === crnId ? { ...c, status: 'shipping', eta } : c));
+        router.reload();
       } else {
         setNotification({ type: 'error', message: payload.message });
       }
