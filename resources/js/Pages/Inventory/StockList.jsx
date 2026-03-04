@@ -5,6 +5,7 @@ import AuthenticatedLayout from '../../Layouts/AuthenticatedLayout';
 export default function StockList({ items = [], packages = [] }) {
   const [search, setSearch] = useState('');
   const [unitFilter, setUnitFilter] = useState('all');
+  const [sortConfig, setSortConfig] = useState({ key: 'name', direction: 'asc' });
 
   const units = useMemo(() => {
     const unitSet = new Set(['all']);
@@ -12,10 +13,18 @@ export default function StockList({ items = [], packages = [] }) {
     return Array.from(unitSet);
   }, [items]);
 
+  const requestSort = (key) => {
+    let direction = 'asc';
+    if (sortConfig.key === key && sortConfig.direction === 'asc') {
+      direction = 'desc';
+    }
+    setSortConfig({ key, direction });
+  };
+
   const filteredInventory = useMemo(() => {
     const keyword = search.trim().toLowerCase();
 
-    return items.filter((item) => {
+    let result = items.filter((item) => {
       const matchKeyword = keyword === ''
         || item.sku?.toLowerCase().includes(keyword)
         || item.name?.toLowerCase().includes(keyword);
@@ -24,7 +33,24 @@ export default function StockList({ items = [], packages = [] }) {
 
       return matchKeyword && matchUnit;
     });
-  }, [items, search, unitFilter]);
+
+    if (sortConfig.key) {
+      result.sort((a, b) => {
+        const aValue = a[sortConfig.key] || '';
+        const bValue = b[sortConfig.key] || '';
+
+        if (aValue < bValue) {
+          return sortConfig.direction === 'asc' ? -1 : 1;
+        }
+        if (aValue > bValue) {
+          return sortConfig.direction === 'asc' ? 1 : -1;
+        }
+        return 0;
+      });
+    }
+
+    return result;
+  }, [items, search, unitFilter, sortConfig]);
 
   return (
     <AuthenticatedLayout title="SKU Inventory" backUrl="__back__">
@@ -136,7 +162,18 @@ export default function StockList({ items = [], packages = [] }) {
                 <thead className="bg-slate-50">
                   <tr>
                     <th className="px-4 py-3 text-left text-[10px] font-bold text-slate-500 uppercase tracking-wider">SKU</th>
-                    <th className="px-4 py-3 text-left text-[10px] font-bold text-slate-500 uppercase tracking-wider">Item Name</th>
+                    <th
+                      className="px-4 py-3 text-left text-[10px] font-bold text-slate-500 uppercase tracking-wider cursor-pointer hover:bg-slate-100 group transition-colors"
+                      onClick={() => requestSort('name')}
+                    >
+                      <div className="flex items-center gap-1">
+                        Item Name
+                        <span className="flex flex-col text-[8px] leading-none text-slate-300">
+                          <span className={sortConfig.key === 'name' && sortConfig.direction === 'asc' ? 'text-slate-900' : ''}>▲</span>
+                          <span className={sortConfig.key === 'name' && sortConfig.direction === 'desc' ? 'text-slate-900' : ''}>▼</span>
+                        </span>
+                      </div>
+                    </th>
                     <th className="px-4 py-3 text-left text-[10px] font-bold text-slate-500 uppercase tracking-wider">Length (m)</th>
                     <th className="px-4 py-3 text-left text-[10px] font-bold text-slate-500 uppercase tracking-wider">Unit</th>
                     <th className="px-4 py-3 text-right text-[10px] font-bold text-slate-500 uppercase tracking-wider">Total Stock</th>

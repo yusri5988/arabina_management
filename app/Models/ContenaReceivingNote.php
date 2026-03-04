@@ -12,12 +12,14 @@ class ContenaReceivingNote extends Model
         'crn_number',
         'procurement_order_id',
         'status',
+        'eta',
         'received_at',
         'remarks',
         'created_by',
     ];
 
     protected $casts = [
+        'eta' => 'date',
         'received_at' => 'datetime',
     ];
 

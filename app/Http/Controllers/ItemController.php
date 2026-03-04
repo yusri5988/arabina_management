@@ -24,7 +24,7 @@ class ItemController extends Controller
     public function index(): Response
     {
         return Inertia::render('Inventory/Index', [
-            'items' => []
+            'items' => Item::latest()->get(['id', 'sku', 'name', 'length_m', 'unit']),
         ]);
     }
 
@@ -326,7 +326,7 @@ class ItemController extends Controller
             'sku' => 'required|string|unique:items,sku',
             'name' => 'required|string|max:255',
             'length_m' => 'nullable|numeric|unique:items,length_m',
-            'unit' => 'required|in:pcs,set',
+            'unit' => 'required|in:pcs,set,roll',
         ]);
 
         $item = Item::create([
@@ -347,6 +347,103 @@ class ItemController extends Controller
             'message' => 'Item registered successfully.',
             'data' => $item->load('variants')
         ], 201);
+    }
+
+    public function bulkStore(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'items' => 'required|array|min:1|max:500',
+            'items.*.sku' => 'required|string|max:100',
+            'items.*.item_name' => 'required|string|max:255',
+            'items.*.length_m' => 'nullable|numeric',
+            'items.*.unit' => 'required|in:pcs,set,roll',
+        ]);
+
+        $created = [];
+        $skipped = [];
+
+        DB::transaction(function () use ($request, $validated, &$created, &$skipped) {
+            foreach ($validated['items'] as $row) {
+                $exists = Item::where('sku', $row['sku'])->exists();
+                if ($exists) {
+                    $skipped[] = $row['sku'];
+                    continue;
+                }
+
+                $item = Item::create([
+                    'sku' => $row['sku'],
+                    'name' => $row['item_name'],
+                    'length_m' => $row['length_m'] ?? null,
+                    'unit' => $row['unit'],
+                    'created_by' => $request->user()->id,
+                ]);
+
+                $item->variants()->create([
+                    'color' => null,
+                    'stock_initial' => 0,
+                    'stock_current' => 0,
+                ]);
+
+                $created[] = $item->only(['id', 'sku', 'name', 'length_m', 'unit']);
+            }
+        });
+
+        TransactionLog::record('items_bulk_created', [
+            'created_count' => count($created),
+            'skipped_count' => count($skipped),
+            'skipped_skus' => $skipped,
+        ]);
+
+        return response()->json([
+            'message' => count($created) . ' item(s) created. ' . count($skipped) . ' skipped (duplicate SKU).',
+            'data' => $created,
+            'skipped' => $skipped,
+        ], 201);
+    }
+
+    public function update(Request $request, Item $item): JsonResponse
+    {
+        $validated = $request->validate([
+            'sku' => ['required', 'string', Rule::unique('items', 'sku')->ignore($item->id)],
+            'name' => 'required|string|max:255',
+            'length_m' => ['nullable', 'numeric', Rule::unique('items', 'length_m')->ignore($item->id)],
+            'unit' => 'required|in:pcs,set,roll',
+        ]);
+
+        $item->update($validated);
+
+        TransactionLog::record('item_updated', [
+            'id' => $item->id,
+            'sku' => $item->sku,
+            'name' => $item->name,
+        ]);
+
+        return response()->json([
+            'message' => 'Item updated successfully.',
+            'data' => $item->fresh(['variants']),
+        ]);
+    }
+
+    public function destroy(Item $item): JsonResponse
+    {
+        $hasStock = $item->variants()->where('stock_current', '>', 0)->exists();
+
+        if ($hasStock) {
+            return response()->json([
+                'message' => 'Cannot delete item with existing stock.',
+            ], 409);
+        }
+
+        $logData = ['id' => $item->id, 'sku' => $item->sku, 'name' => $item->name];
+
+        $item->variants()->delete();
+        $item->delete();
+
+        TransactionLog::record('item_deleted', $logData);
+
+        return response()->json([
+            'message' => 'Item deleted successfully.',
+        ]);
     }
 
     public function stockInForm(): Response

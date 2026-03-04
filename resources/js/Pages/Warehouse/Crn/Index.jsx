@@ -140,7 +140,7 @@ export default function CrnIndex({ pendingProcurements = [], activeCrns = [], no
       const { response, payload } = await apiFetchJson(`/warehouse/crn/${crnId}/arrived`, { method: 'POST' });
       if (response.ok) {
         setNotification({ type: 'success', message: 'Arrived! Checklist available below.' });
-        window.location.reload();
+        router.reload();
       } else {
         setNotification({ type: 'error', message: payload.message });
       }
@@ -251,7 +251,7 @@ export default function CrnIndex({ pendingProcurements = [], activeCrns = [], no
             <div className="overflow-x-auto -mx-6 md:-mx-8">
               <table className="w-full text-left border-collapse min-w-[600px]">
                 <thead>
-                    <tr className="bg-slate-50 border-y border-slate-100">
+                  <tr className="bg-slate-50 border-y border-slate-100">
                     <th className="px-6 md:px-8 py-3.5 text-xs font-bold text-slate-500 uppercase tracking-wider">Date</th>
                     <th className="px-6 md:px-8 py-3.5 text-xs font-bold text-slate-500 uppercase tracking-wider">CRN Number</th>
                     <th className="px-6 md:px-8 py-3.5 text-xs font-bold text-slate-500 uppercase tracking-wider">PO Code</th>
@@ -280,7 +280,7 @@ export default function CrnIndex({ pendingProcurements = [], activeCrns = [], no
                       </td>
                       <td className="px-6 md:px-8 py-4 text-xs font-medium text-slate-600">{note.creator?.name || 'System'}</td>
                       <td className="px-6 md:px-8 py-4 text-right">
-                        <button 
+                        <button
                           onClick={() => setSelectedNote(note)}
                           className="text-xs font-bold text-slate-600 hover:text-slate-900 underline"
                         >

@@ -49,6 +49,14 @@ class CrnController extends Controller
 
     public function updateEta(Request $request, ContenaReceivingNote $crn): JsonResponse
     {
+        $this->authorizeManage($request);
+
+        if (!$this->hasStatus($crn, 'awaiting_shipping')) {
+            return response()->json([
+                'message' => 'ETA can only be updated for CRN awaiting shipping.',
+            ], 422);
+        }
+
         $validated = $request->validate([
             'eta' => 'required|date|after_or_equal:today',
         ]);
@@ -72,6 +80,14 @@ class CrnController extends Controller
 
     public function markAsArrived(Request $request, ContenaReceivingNote $crn): JsonResponse
     {
+        $this->authorizeManage($request);
+
+        if (!$this->hasStatus($crn, 'shipping')) {
+            return response()->json([
+                'message' => 'Only CRN in shipping status can be marked as arrived.',
+            ], 422);
+        }
+
         $crn->update(['status' => 'arrived']);
 
         TransactionLog::record('crn_arrived', [
@@ -103,6 +119,37 @@ class CrnController extends Controller
         $lineInput = collect($validated['lines'])->keyBy(fn(array $line) => (int) $line['line_id']);
 
         $order->load('lines.item');
+
+        // Pre-validate processable lines to avoid empty CRN/transaction
+        $validLineCount = 0;
+        foreach ($order->lines as $line) {
+            $input = $lineInput->get($line->id);
+            if (!$input) {
+                continue;
+            }
+
+            $remaining = $this->remainingQuantity($line);
+            if ($remaining <= 0) {
+                continue;
+            }
+
+            $receivedQty = (int) $input['received_qty'];
+            $rejectedQty = (int) $input['rejected_qty'];
+
+            if (($receivedQty + $rejectedQty) > $remaining) {
+                throw ValidationException::withMessages([
+                    'lines' => ["Total received + rejected exceeds remaining quantity for SKU {$line->item?->sku}."],
+                ]);
+            }
+
+            $validLineCount++;
+        }
+
+        if ($validLineCount === 0) {
+            return response()->json([
+                'message' => 'No valid lines to process. All lines are already fully received or rejected.',
+            ], 422);
+        }
 
         DB::transaction(function () use ($request, $order, $lineInput, $validated) {
             $transaction = $this->createInventoryTransaction(
@@ -399,7 +446,7 @@ class CrnController extends Controller
     {
         return ProcurementOrder::query()
             ->whereIn('status', self::OPEN_PROCUREMENT_STATUSES)
-            ->whereHas('crns', function($q) {
+            ->whereHas('crns', function ($q) {
                 $q->where('status', 'arrived');
             })
             ->with([
@@ -422,9 +469,34 @@ class CrnController extends Controller
             ->values();
     }
 
+    private function authorizeManage(Request $request): void
+    {
+        abort_unless(
+            in_array($request->user()->role, [User::ROLE_STORE_KEEPER, User::ROLE_SUPER_ADMIN], true),
+            403
+        );
+    }
+
+    private function hasStatus(ContenaReceivingNote $crn, string $expected): bool
+    {
+        if ((string) $crn->status === $expected) {
+            return true;
+        }
+
+        return ContenaReceivingNote::query()
+            ->whereKey($crn->getKey())
+            ->where('status', $expected)
+            ->exists();
+    }
+
     private function ensureProcurementOrderOpen(ProcurementOrder $order): ?JsonResponse
     {
         if (in_array($order->status, self::OPEN_PROCUREMENT_STATUSES, true)) {
+            return null;
+        }
+
+        // Backward compatibility for legacy status values used before CRN flow was normalized.
+        if (!in_array($order->status, ['received', 'fulfilled', 'closed', 'cancelled'], true)) {
             return null;
         }
 

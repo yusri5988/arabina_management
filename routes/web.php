@@ -47,6 +47,9 @@ Route::middleware('auth')->group(function () {
     Route::get('/items/stocks/audit/pdf', [ItemController::class, 'downloadStockAuditPdf'])->name('items.stocks.audit.pdf');
     Route::get('/items/stocks/pdf', [ItemController::class, 'downloadStockPdf'])->name('items.stocks.pdf');
     Route::post('/items', [ItemController::class, 'store'])->name('items.store');
+    Route::post('/items/bulk', [ItemController::class, 'bulkStore'])->name('items.bulk.store');
+    Route::put('/items/{item}', [ItemController::class, 'update'])->name('items.update');
+    Route::delete('/items/{item}', [ItemController::class, 'destroy'])->name('items.destroy');
     Route::get('/items/stock/in', [ItemController::class, 'stockInForm'])->name('items.stock.in.form');
     Route::get('/items/stock/out', [ItemController::class, 'stockOutForm'])->name('items.stock.out.form');
     Route::post('/items/stock/in', [ItemController::class, 'stockInStore'])->name('items.stock.in');
