@@ -82,9 +82,10 @@ class CrnController extends Controller
     {
         $this->authorizeManage($request);
 
-        if (!$this->hasStatus($crn, 'shipping')) {
+        // Allow 'shipping' or 'awaiting_shipping' to be marked as arrived for flexibility
+        if (!in_array($crn->status, ['shipping', 'awaiting_shipping'], true)) {
             return response()->json([
-                'message' => 'Only CRN in shipping status can be marked as arrived.',
+                'message' => 'Only CRN in shipping or awaiting status can be marked as arrived.',
             ], 422);
         }
 
