@@ -286,12 +286,14 @@ export default function CrnIndex({ pendingProcurements = [], activeCrns = [], no
                           >
                             View Details
                           </button>
-                          <a
-                            href={route('warehouse.crn.pdf', note.id)}
-                            className="text-xs font-bold text-rose-600 hover:text-rose-900 underline"
-                          >
-                            PDF
-                          </a>
+                          {typeof route !== 'undefined' && (
+                            <a
+                              href={route('warehouse.crn.pdf', note.id)}
+                              className="text-xs font-bold text-rose-600 hover:text-rose-900 underline"
+                            >
+                              PDF
+                            </a>
+                          )}
                         </div>
                       </td>
 
@@ -342,15 +344,17 @@ export default function CrnIndex({ pendingProcurements = [], activeCrns = [], no
                 </table>
               </div>
               <div className="p-6 border-t border-slate-100 bg-slate-50 flex justify-end gap-3">
-                <a
-                  href={route('warehouse.crn.pdf', selectedNote.id)}
-                  className="bg-rose-600 text-white text-xs font-bold px-6 py-2 rounded-xl hover:bg-rose-700 flex items-center gap-2"
-                >
-                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-4 h-4">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M7.5 12l4.5 4.5m0 0l4.5-4.5M12 3v13.5" />
-                  </svg>
-                  Download PDF
-                </a>
+                {typeof route !== 'undefined' && (
+                  <a
+                    href={route('warehouse.crn.pdf', selectedNote.id)}
+                    className="bg-rose-600 text-white text-xs font-bold px-6 py-2 rounded-xl hover:bg-rose-700 flex items-center gap-2"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-4 h-4">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M7.5 12l4.5 4.5m0 0l4.5-4.5M12 3v13.5" />
+                    </svg>
+                    Download PDF
+                  </a>
+                )}
                 <button onClick={() => setSelectedNote(null)} className="bg-white border border-slate-200 text-slate-600 text-xs font-bold px-6 py-2 rounded-xl hover:bg-slate-100">Close</button>
               </div>
             </div>
