@@ -1,7 +1,7 @@
 import { Head, usePage, Link } from '@inertiajs/react';
 import AuthenticatedLayout from '../Layouts/AuthenticatedLayout';
-import { 
-  UsersIcon, 
+import {
+  UsersIcon,
   TruckIcon,
   ClipboardDocumentListIcon,
   BuildingStorefrontIcon,
@@ -14,28 +14,13 @@ export default function Dashboard({ stats, canViewLogs }) {
   return (
     <AuthenticatedLayout title="Dashboard" showWelcome={true}>
       <Head title="Dashboard" />
-      
+
       <div className="space-y-8">
-        {auth?.user?.role === 'super_admin' && (
-          /* Stats Grid */
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
-            <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100">
-              <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-1">Total Stock</p>
-              <p className="text-3xl font-black text-slate-800">{stats?.stock_items?.toLocaleString() ?? 0}</p>
-            </div>
-            <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100">
-              <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-1">Pending Orders</p>
-              <p className="text-3xl font-black text-slate-800">{stats?.pending_orders?.toLocaleString() ?? 0}</p>
-            </div>
-            <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100">
-              <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-1">Active Users</p>
-              <p className="text-3xl font-black text-slate-800">{stats?.active_users?.toLocaleString() ?? 0}</p>
-            </div>
-          </div>
-        )}
+        {/* Stats Grid Removed */}
+
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          
+
           {/* Action 1: Sales Form */}
           {auth?.user?.role !== 'store_keeper' && auth?.user?.role !== 'procurement' && (
             <Link
@@ -76,7 +61,7 @@ export default function Dashboard({ stats, canViewLogs }) {
 
           {/* Action 3: Warehouse */}
           {auth?.user?.role !== 'sales' && auth?.user?.role !== 'procurement' && (
-            <Link 
+            <Link
               href="/warehouse"
               className="group relative bg-white p-6 rounded-2xl shadow-sm border border-teal-100 hover:border-teal-300 hover:shadow-lg hover:shadow-teal-100/50 transition-all duration-300 active:scale-[0.98] overflow-hidden"
             >
@@ -95,7 +80,7 @@ export default function Dashboard({ stats, canViewLogs }) {
 
           {/* Action 4: User Management (Admin Only) */}
           {auth?.user?.role === 'super_admin' && (
-            <Link 
+            <Link
               href="/admin/users"
               className="group relative bg-white p-6 rounded-2xl shadow-sm border border-purple-100 hover:border-purple-300 hover:shadow-lg hover:shadow-purple-100/50 transition-all duration-300 active:scale-[0.98] overflow-hidden"
             >
@@ -114,7 +99,7 @@ export default function Dashboard({ stats, canViewLogs }) {
 
           {/* Action 5: Activity Logs (Admin Only) */}
           {canViewLogs && (
-            <Link 
+            <Link
               href="/admin/logs"
               className="group relative bg-white p-6 rounded-2xl shadow-sm border border-slate-100 hover:border-slate-300 hover:shadow-lg hover:shadow-slate-100/50 transition-all duration-300 active:scale-[0.98] overflow-hidden"
             >

@@ -84,6 +84,44 @@ class PackageController extends Controller
         ], 201);
     }
 
+    public function update(Request $request, Package $package): JsonResponse
+    {
+        $validated = $request->validate([
+            'code' => ['required', 'string', 'max:50', 'unique:packages,code,' . $package->id],
+            'name' => ['required', 'string', 'max:255'],
+            'is_active' => ['nullable', 'boolean'],
+            'lines' => ['required', 'array', 'min:1'],
+            'lines.*.item_id' => ['required', 'integer', 'distinct', 'exists:items,id'],
+            'lines.*.quantity' => ['required', 'integer', 'min:1'],
+        ]);
+
+        DB::transaction(function () use ($package, $validated) {
+            $package->update([
+                'code' => $validated['code'],
+                'name' => $validated['name'],
+                'is_active' => $validated['is_active'] ?? true,
+            ]);
+
+            // Delete old items and recreate
+            $package->packageItems()->delete();
+            $package->packageItems()->createMany(
+                collect($validated['lines'])->map(function ($line) {
+                    return [
+                        'item_id' => $line['item_id'],
+                        'quantity' => $line['quantity'],
+                    ];
+                })->all()
+            );
+        });
+
+        return response()->json([
+            'message' => 'Package updated successfully.',
+            'data' => Package::query()
+                ->with(['packageItems.item:id,sku,name,unit'])
+                ->findOrFail($package->id),
+        ]);
+    }
+
     public function destroy(Package $package): JsonResponse
     {
         if (! (Schema::hasTable('packages') && Schema::hasTable('package_items'))) {

@@ -3,7 +3,7 @@ import { useState } from 'react';
 import AuthenticatedLayout from '../../../Layouts/AuthenticatedLayout';
 import QtyInput from '../../../components/QtyInput';
 import { apiFetchJson } from '../../../lib/http';
-import { ChevronDownIcon, PlusIcon } from '@heroicons/react/24/outline/index.js';
+import { ChevronDownIcon, PlusIcon, ArrowDownTrayIcon } from '@heroicons/react/24/outline/index.js';
 
 export default function CrnIndex({ pendingProcurements = [], activeCrns = [], notes = [], canManage = false }) {
   const [notification, setNotification] = useState(null);
@@ -75,7 +75,7 @@ export default function CrnIndex({ pendingProcurements = [], activeCrns = [], no
       });
       if (response.ok) {
         setNotification({ type: 'success', message: payload.message ?? 'SKU submitted.' });
-        router.reload();
+        window.location.reload();
       } else {
         setNotification({ type: 'error', message: payload.message });
       }
@@ -100,7 +100,7 @@ export default function CrnIndex({ pendingProcurements = [], activeCrns = [], no
       });
       if (response.ok) {
         setNotification({ type: 'success', message: 'All SKU submitted.' });
-        router.reload();
+        window.location.reload();
       } else {
         setNotification({ type: 'error', message: payload.message });
       }
@@ -122,7 +122,7 @@ export default function CrnIndex({ pendingProcurements = [], activeCrns = [], no
       });
       if (response.ok) {
         setNotification({ type: 'success', message: 'ETA updated. Status: Shipping.' });
-        router.reload();
+        window.location.reload();
       } else {
         setNotification({ type: 'error', message: payload.message });
       }
@@ -139,7 +139,7 @@ export default function CrnIndex({ pendingProcurements = [], activeCrns = [], no
       const { response, payload } = await apiFetchJson(`/warehouse/crn/${crnId}/arrived`, { method: 'POST' });
       if (response.ok) {
         setNotification({ type: 'success', message: 'Arrived! Checklist available below.' });
-        router.reload();
+        window.location.reload();
       } else {
         setNotification({ type: 'error', message: payload.message });
       }
@@ -161,9 +161,21 @@ export default function CrnIndex({ pendingProcurements = [], activeCrns = [], no
               <div key={crn.id} className="bg-white rounded-2xl border border-slate-200 p-4 shadow-sm">
                 <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                   <div className="flex items-center gap-3">
-                    <div className={`p-2 rounded-xl ${crn.status === 'awaiting_shipping' ? 'bg-amber-50' : 'bg-sky-50'}`}>
-                      <PlusIcon className={`w-5 h-5 ${crn.status === 'awaiting_shipping' ? 'text-amber-600' : 'text-sky-600'}`} />
-                    </div>
+                    {crn.procurement_order_id ? (
+                      <a
+                        href={`/procurement/orders/${crn.procurement_order_id}/pdf`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center gap-2 px-3 py-2 rounded-xl bg-red-50 hover:bg-red-100 text-red-600 border border-red-100 transition-colors"
+                      >
+                        <ArrowDownTrayIcon className="w-5 h-5" />
+                        <span className="text-xs font-bold uppercase tracking-tight">Download List</span>
+                      </a>
+                    ) : (
+                      <div className={`p-2 rounded-xl ${crn.status === 'awaiting_shipping' ? 'bg-amber-50' : 'bg-sky-50'}`}>
+                        <PlusIcon className={`w-5 h-5 ${crn.status === 'awaiting_shipping' ? 'text-amber-600' : 'text-sky-600'}`} />
+                      </div>
+                    )}
                     <div>
                       <p className="text-sm font-bold text-slate-800">{crn.crn_number}</p>
                       <p className="text-xs text-slate-500">PO: {crn.procurement_order?.code || 'Standalone'}</p>

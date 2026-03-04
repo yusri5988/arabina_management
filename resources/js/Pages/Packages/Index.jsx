@@ -15,6 +15,7 @@ export default function Index({ items, packages, schemaReady = true }) {
   const [errors, setErrors] = useState({});
   const [processing, setProcessing] = useState(false);
   const [deletingId, setDeletingId] = useState(null);
+  const [editingId, setEditingId] = useState(null);
   const [notification, setNotification] = useState(null);
 
   const csrfToken = useMemo(
@@ -46,6 +47,21 @@ export default function Index({ items, packages, schemaReady = true }) {
   const resetForm = () => {
     setData(initialForm);
     setErrors({});
+    setEditingId(null);
+  };
+
+  const startEdit = (pkg) => {
+    setEditingId(pkg.id);
+    setData({
+      code: pkg.code,
+      name: pkg.name,
+      is_active: Boolean(pkg.is_active),
+      lines: pkg.package_items.map(pi => ({
+        item_id: String(pi.item_id),
+        quantity: String(pi.quantity),
+      })),
+    });
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   const submit = async (e) => {
@@ -54,9 +70,12 @@ export default function Index({ items, packages, schemaReady = true }) {
     setErrors({});
     setProcessing(true);
 
+    const url = editingId ? `/packages/${editingId}` : '/packages';
+    const method = editingId ? 'PUT' : 'POST';
+
     try {
-      const response = await fetch('/packages', {
-        method: 'POST',
+      const response = await fetch(url, {
+        method,
         headers: {
           'Content-Type': 'application/json',
           Accept: 'application/json',
@@ -67,9 +86,13 @@ export default function Index({ items, packages, schemaReady = true }) {
 
       const payload = await response.json();
 
-      if (response.status === 201) {
-        setList(prev => [payload.data, ...prev]);
-        setNotification({ type: 'success', message: payload.message ?? 'Package created successfully.' });
+      if (response.status === 201 || (editingId && response.ok)) {
+        if (editingId) {
+          setList(prev => prev.map(item => item.id === editingId ? payload.data : item));
+        } else {
+          setList(prev => [payload.data, ...prev]);
+        }
+        setNotification({ type: 'success', message: payload.message ?? 'Package saved successfully.' });
         resetForm();
       } else if (response.status === 422) {
         setErrors(payload.errors ?? {});
@@ -104,6 +127,7 @@ export default function Index({ items, packages, schemaReady = true }) {
       if (response.ok) {
         setList(prev => prev.filter(item => item.id !== pkg.id));
         setNotification({ type: 'success', message: payload.message ?? 'Package deleted successfully.' });
+        if (editingId === pkg.id) resetForm();
       } else {
         setNotification({ type: 'error', message: payload.message ?? 'Failed to delete package.' });
       }
@@ -134,9 +158,21 @@ export default function Index({ items, packages, schemaReady = true }) {
         )}
 
         <div className="bg-white rounded-[2rem] shadow-sm border border-slate-100 p-6 md:p-8">
-          <h2 className="text-lg font-bold text-slate-800 border-b border-slate-100 pb-4">Create Package by SKU</h2>
+          <div className="flex items-center justify-between border-b border-slate-100 pb-4 mb-5">
+            <h2 className="text-lg font-bold text-slate-800">
+              {editingId ? `Edit Package: ${data.code}` : 'Create Package by SKU'}
+            </h2>
+            {editingId && (
+              <button
+                onClick={resetForm}
+                className="text-xs font-bold text-slate-400 hover:text-slate-600 uppercase tracking-widest"
+              >
+                Cancel Edit
+              </button>
+            )}
+          </div>
 
-          <form onSubmit={submit} className="mt-5 space-y-5">
+          <form onSubmit={submit} className="space-y-5">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
               <div>
                 <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5 ml-1">Package Code</label>
@@ -232,9 +268,11 @@ export default function Index({ items, packages, schemaReady = true }) {
             <button
               type="submit"
               disabled={processing || !schemaReady}
-              className="w-full bg-[#1E3D1A] text-white py-4 rounded-2xl text-sm font-bold hover:bg-emerald-950 disabled:opacity-50 active:scale-[0.98] transition-all shadow-md"
+              className={`w-full text-white py-4 rounded-2xl text-sm font-bold disabled:opacity-50 active:scale-[0.98] transition-all shadow-md ${
+                editingId ? 'bg-amber-500 hover:bg-amber-600' : 'bg-[#1E3D1A] hover:bg-emerald-950'
+              }`}
             >
-              {processing ? 'Saving...' : 'Save Package'}
+              {processing ? 'Saving...' : editingId ? 'Update Package' : 'Save Package'}
             </button>
           </form>
         </div>
@@ -243,16 +281,25 @@ export default function Index({ items, packages, schemaReady = true }) {
           <h3 className="text-sm font-bold text-slate-800 mb-4 px-2">Package List ({list.length})</h3>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {list.map(pkg => (
-              <div key={pkg.id} className="bg-white p-5 rounded-[2rem] shadow-sm border border-slate-100 space-y-3">
-                <div className="flex items-start justify-between">
+              <div key={pkg.id} className={`bg-white p-5 rounded-[2rem] shadow-sm border transition-all duration-300 ${
+                editingId === pkg.id ? 'border-amber-400 ring-2 ring-amber-100 shadow-lg' : 'border-slate-100'
+              }`}>
+                <div className="flex items-start justify-between mb-3">
                   <div>
                     <h4 className="font-bold text-slate-900">{pkg.name}</h4>
                     <p className="text-xs text-slate-400 font-bold uppercase tracking-wider">{pkg.code}</p>
                   </div>
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-1.5">
                     <span className={`px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider ${pkg.is_active ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>
                       {pkg.is_active ? 'Active' : 'Inactive'}
                     </span>
+                    <button
+                      type="button"
+                      onClick={() => startEdit(pkg)}
+                      className="text-[10px] font-bold text-amber-600 uppercase tracking-wider px-2.5 py-1 rounded-xl bg-amber-50 hover:bg-amber-100"
+                    >
+                      Edit
+                    </button>
                     <button
                       type="button"
                       onClick={() => deletePackage(pkg)}
