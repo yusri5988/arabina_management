@@ -12,6 +12,7 @@ use App\Models\ProcurementOrderLine;
 use App\Models\TransactionLog;
 use App\Models\RejectedItem;
 use App\Models\User;
+use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
@@ -100,6 +101,16 @@ class CrnController extends Controller
             'message' => 'Shipment marked as Arrived. You can now process the stock checklist.',
             'crn' => $crn,
         ]);
+    }
+
+    public function downloadPdf(ContenaReceivingNote $crn): \Symfony\Component\HttpFoundation\Response
+    {
+        $crn->load(['procurementOrder', 'creator', 'items.itemVariant.item']);
+
+        return Pdf::loadView('warehouse.crn-pdf', [
+            'crn' => $crn,
+            'generatedAt' => now(),
+        ])->download("CRN-{$crn->crn_number}.pdf");
     }
 
     public function receiveProcurement(Request $request, ProcurementOrder $order): JsonResponse

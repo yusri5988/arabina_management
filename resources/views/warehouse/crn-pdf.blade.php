@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>CRN - {{ $crn->crn_number }}</title>
+    <style>
+        body { font-family: sans-serif; font-size: 12px; color: #333; line-height: 1.5; }
+        .header { margin-bottom: 30px; border-bottom: 2px solid #1e3d1a; padding-bottom: 10px; }
+        .header h1 { color: #1e3d1a; margin: 0; font-size: 24px; }
+        .info-table { width: 100%; margin-bottom: 20px; }
+        .info-table td { padding: 4px 0; vertical-align: top; }
+        .label { font-weight: bold; color: #666; width: 120px; }
+        .data-table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+        .data-table th { background-color: #f8fafc; border: 1px solid #e2e8f0; padding: 10px; text-align: left; font-size: 10px; text-transform: uppercase; }
+        .data-table td { border: 1px solid #e2e8f0; padding: 10px; }
+        .text-center { text-align: center; }
+        .text-right { text-align: right; }
+        .footer { margin-top: 50px; font-size: 10px; color: #94a3b8; text-align: center; }
+        .status-badge { display: inline-block; padding: 2px 8px; border-radius: 4px; background: #e2e8f0; font-weight: bold; font-size: 10px; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>Contena Receiving Note</h1>
+        <p>Official stock arrival record for Arabina Inventory System</p>
+    </div>
+
+    <table class="info-table">
+        <tr>
+            <td class="label">CRN Number:</td>
+            <td><strong>{{ $crn->crn_number }}</strong></td>
+            <td class="label">Date:</td>
+            <td>{{ $crn->received_at ? $crn->received_at->format('d/m/Y H:i') : $crn->updated_at->format('d/m/Y H:i') }}</td>
+        </tr>
+        <tr>
+            <td class="label">PO Reference:</td>
+            <td>{{ $crn->procurementOrder?->code ?? 'Standalone' }}</td>
+            <td class="label">Received By:</td>
+            <td>{{ $crn->creator?->name ?? 'System' }}</td>
+        </tr>
+        <tr>
+            <td class="label">Status:</td>
+            <td><span class="status-badge">{{ strtoupper($crn->status) }}</span></td>
+            <td class="label">Generated:</td>
+            <td>{{ $generatedAt->format('d/m/Y H:i') }}</td>
+        </tr>
+    </table>
+
+    @if($crn->remarks)
+    <div style="margin-bottom: 20px; padding: 10px; background: #fdfbf7; border: 1px solid #faedcd; border-radius: 8px;">
+        <strong>Remarks:</strong><br>
+        {{ $crn->remarks }}
+    </div>
+    @endif
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>SKU</th>
+                <th>Item Name</th>
+                <th class="text-center">Expected</th>
+                <th class="text-center">Received</th>
+                <th class="text-center">Rejected</th>
+                <th>Reason</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach($crn->items as $item)
+            <tr>
+                <td><strong>{{ $item->itemVariant?->item?->sku }}</strong></td>
+                <td>{{ $item->itemVariant?->item?->name }}</td>
+                <td class="text-center">{{ $item->expected_qty }}</td>
+                <td class="text-center" style="background-color: #f0fdf4; font-weight: bold; color: #166534;">{{ $item->received_qty }}</td>
+                <td class="text-center" style="color: #991b1b;">{{ $item->rejected_qty }}</td>
+                <td><small>{{ $item->rejection_reason ?? '-' }}</small></td>
+            </tr>
+            @endforeach
+        </tbody>
+        <tfoot>
+            <tr style="background-color: #f8fafc; font-weight: bold;">
+                <td colspan="2" class="text-right">Total:</td>
+                <td class="text-center">{{ $crn->items->sum('expected_qty') }}</td>
+                <td class="text-center">{{ $crn->items->sum('received_qty') }}</td>
+                <td class="text-center">{{ $crn->items->sum('rejected_qty') }}</td>
+                <td></td>
+            </tr>
+        </tfoot>
+    </table>
+
+    <div class="footer">
+        <p>This is a computer-generated document. No signature required.</p>
+        <p>&copy; {{ date('Y') }} Arabina Management System. All rights reserved.</p>
+    </div>
+</body>
+</html>

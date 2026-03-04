@@ -71,6 +71,7 @@ Route::middleware('auth')->group(function () {
 
     Route::prefix('warehouse')->group(function () {
         Route::get('/crn', [CrnController::class, 'index'])->name('warehouse.crn.index');
+        Route::get('/crn/{crn}/pdf', [CrnController::class, 'downloadPdf'])->name('warehouse.crn.pdf');
         Route::post('/crn/{crn}/eta', [CrnController::class, 'updateEta'])->name('warehouse.crn.eta');
         Route::post('/crn/{crn}/arrived', [CrnController::class, 'markAsArrived'])->name('warehouse.crn.arrived');
         Route::get('/crn/create', [CrnController::class, 'create'])->name('warehouse.crn.create');
