@@ -55,7 +55,9 @@ export default function Logs({ logs }) {
                   </td>
                   <td className="px-6 py-4">
                     <a
-                      href={typeof route !== 'undefined' ? route('admin.logs.pdf', log.id) : '#'}
+                      href={`/admin/logs/${log.id}/pdf`}
+                      target="_blank"
+                      rel="noopener noreferrer"
                       className="inline-flex items-center rounded-lg bg-slate-900 px-3 py-1.5 text-[11px] font-bold text-white hover:bg-slate-700"
                     >
                       Download PDF
