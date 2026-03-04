@@ -456,6 +456,33 @@ class ItemController extends Controller
         return $this->stockForm('out');
     }
 
+    public function stockInHistory(): JsonResponse
+    {
+        $transactions = InventoryTransaction::query()
+            ->with(['lines.item', 'package', 'creator'])
+            ->where('type', 'in')
+            ->latest()
+            ->limit(20)
+            ->get();
+
+        return response()->json([
+            'data' => $transactions->map(function ($t) {
+                return [
+                    'id' => $t->id,
+                    'mode' => $t->mode === 'package' ? 'Package' : 'Ala Carte',
+                    'package_name' => $t->package?->name ?? 'N/A',
+                    'created_at' => $t->created_at->format('Y-m-d H:i:s'),
+                    'creator' => $t->creator?->name ?? 'System',
+                    'notes' => $t->notes,
+                    'lines_count' => $t->lines->count(),
+                    'items_summary' => $t->lines->take(3)->map(function ($l) {
+                        return $l->item?->sku . ' (x' . $l->quantity . ')';
+                    })->implode(', ') . ($t->lines->count() > 3 ? '...' : ''),
+                ];
+            }),
+        ]);
+    }
+
     public function stockOutHistory(): JsonResponse
     {
         $transactions = InventoryTransaction::query()
@@ -645,11 +672,36 @@ class ItemController extends Controller
             })->values();
         }
 
+        $historyData = collect();
+        if ($type === 'in') {
+            $historyData = InventoryTransaction::query()
+                ->with(['lines.item', 'package', 'creator'])
+                ->where('type', 'in')
+                ->latest()
+                ->limit(10)
+                ->get()
+                ->map(function ($t) {
+                    return [
+                        'id' => $t->id,
+                        'mode' => $t->mode === 'package' ? 'Package' : 'Ala Carte',
+                        'package_name' => $t->package?->name ?? 'N/A',
+                        'created_at' => $t->created_at->format('Y-m-d H:i:s'),
+                        'creator' => $t->creator?->name ?? 'System',
+                        'notes' => $t->notes,
+                        'lines_count' => $t->lines->count(),
+                        'items_summary' => $t->lines->take(3)->map(function ($l) {
+                            return $l->item?->sku . ' (x' . $l->quantity . ')';
+                        })->implode(', ') . ($t->lines->count() > 3 ? '...' : ''),
+                    ];
+                });
+        }
+
         return Inertia::render('Inventory/Stock', [
             'items' => $items,
             'type' => $type,
             'packages' => $packages,
             'salesOrders' => $salesOrders,
+            'historyData' => $historyData,
         ]);
     }
 

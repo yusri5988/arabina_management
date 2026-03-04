@@ -53,6 +53,7 @@ Route::middleware('auth')->group(function () {
     Route::get('/items/stock/in', [ItemController::class, 'stockInForm'])->name('items.stock.in.form');
     Route::get('/items/stock/out', [ItemController::class, 'stockOutForm'])->name('items.stock.out.form');
     Route::post('/items/stock/in', [ItemController::class, 'stockInStore'])->name('items.stock.in');
+    Route::get('/items/stock/in/history', [ItemController::class, 'stockInHistory'])->name('items.stock.in.history');
     Route::get('/items/stock/out/history', [ItemController::class, 'stockOutHistory'])->name('items.stock.out.history');
     Route::post('/items/stock/out', [ItemController::class, 'stockOutStore'])->name('items.stock.out');
     Route::get('/items/stock/out/do/{id}', [ItemController::class, 'downloadDoPdf'])->name('items.stock.out.do');

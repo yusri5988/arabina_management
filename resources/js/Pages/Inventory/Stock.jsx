@@ -5,7 +5,7 @@ import AuthenticatedLayout from '../../Layouts/AuthenticatedLayout';
 
 const initialAlacarteLine = { item_id: '', quantity: '' };
 
-export default function Stock({ items, packages, salesOrders = [], type = 'in' }) {
+export default function Stock({ items, packages, salesOrders = [], type = 'in', historyData = [] }) {
   const initialType = type === 'out' ? 'out' : 'in';
   const isOut = initialType === 'out';
 
@@ -13,15 +13,15 @@ export default function Stock({ items, packages, salesOrders = [], type = 'in' }
   const [processing, setProcessing] = useState(false);
   const [errors, setErrors] = useState({});
   const [notification, setNotification] = useState(null);
-  const [history, setHistory] = useState([]);
+  const [history, setHistory] = useState(historyData || []);
   const [loadingHistory, setLoadingHistory] = useState(false);
   const [doneConfirmed, setDoneConfirmed] = useState(false);
 
   const fetchHistory = async () => {
-    if (!isOut) return;
     setLoadingHistory(true);
     try {
-      const res = await fetch('/items/stock/out/history');
+      const endpoint = isOut ? '/items/stock/out/history' : '/items/stock/in/history';
+      const res = await fetch(endpoint);
       if (res.ok) {
         const json = await res.json();
         setHistory(json.data || []);
@@ -34,9 +34,7 @@ export default function Stock({ items, packages, salesOrders = [], type = 'in' }
   };
 
   useEffect(() => {
-    if (isOut) {
-      fetchHistory();
-    }
+    fetchHistory();
   }, [isOut]);
 
   const [packageData, setPackageData] = useState({
@@ -48,7 +46,7 @@ export default function Stock({ items, packages, salesOrders = [], type = 'in' }
   const [alacarteLines, setAlacarteLines] = useState(
     isOut
       ? []
-      : [{ ...initialAlacarteLine, item_id: items?.[0]?.id?.toString() ?? '' }],
+      : [{ ...initialAlacarteLine, item_id: items?.[0]?.id?.toString() ?? '', quantity: '' }],
   );
   const [outAddSku, setOutAddSku] = useState({
     item_id: items?.[0]?.id?.toString() ?? '',
@@ -635,6 +633,64 @@ export default function Stock({ items, packages, salesOrders = [], type = 'in' }
                           </svg>
                           PDF
                         </a>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {!isOut && (
+          <div className="bg-white rounded-[2rem] shadow-sm border border-slate-100 p-6 md:p-8">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-4">
+              <h2 className="text-lg font-bold text-slate-800">
+                Stock In History
+              </h2>
+              <button
+                onClick={fetchHistory}
+                disabled={loadingHistory}
+                className="text-xs font-bold text-arabina-accent uppercase tracking-wider"
+              >
+                {loadingHistory ? 'Refreshing...' : 'Refresh History'}
+              </button>
+            </div>
+
+            <div className="mt-6 overflow-x-auto">
+              <table className="w-full text-sm text-left">
+                <thead>
+                  <tr className="border-b border-slate-100">
+                    <th className="px-4 py-3 font-bold text-slate-500 uppercase tracking-wider text-[10px]">ID</th>
+                    <th className="px-4 py-3 font-bold text-slate-500 uppercase tracking-wider text-[10px]">Mode / Package</th>
+                    <th className="px-4 py-3 font-bold text-slate-500 uppercase tracking-wider text-[10px]">Items Summary</th>
+                    <th className="px-4 py-3 font-bold text-slate-500 uppercase tracking-wider text-[10px]">Date</th>
+                    <th className="px-4 py-3 font-bold text-slate-500 uppercase tracking-wider text-[10px]">PIC</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-50">
+                  {history.length === 0 && !loadingHistory && (
+                    <tr>
+                      <td colSpan="5" className="px-4 py-8 text-center text-slate-400 italic">
+                        No stock in history found.
+                      </td>
+                    </tr>
+                  )}
+                  {history.map((item) => (
+                    <tr key={item.id} className="hover:bg-slate-50 transition-colors">
+                      <td className="px-4 py-4 font-mono font-bold text-slate-700">#{item.id}</td>
+                      <td className="px-4 py-4">
+                        <div className="font-bold text-slate-700">{item.mode}</div>
+                        {item.package_name !== 'N/A' && <div className="text-xs text-slate-500">{item.package_name}</div>}
+                      </td>
+                      <td className="px-4 py-4 text-xs text-slate-600 max-w-[200px] truncate" title={item.items_summary}>
+                        {item.items_summary}
+                      </td>
+                      <td className="px-4 py-4 text-xs text-slate-500">
+                        {item.created_at}
+                      </td>
+                      <td className="px-4 py-4 text-xs text-slate-600">
+                        {item.creator}
                       </td>
                     </tr>
                   ))}
