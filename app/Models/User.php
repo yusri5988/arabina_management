@@ -6,6 +6,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
+use Illuminate\Support\Facades\Schema;
 
 class User extends Authenticatable
 {
@@ -22,6 +23,7 @@ class User extends Authenticatable
         'email',
         'password',
         'role',
+        'module_permissions',
         'created_by',
     ];
 
@@ -63,6 +65,7 @@ class User extends Authenticatable
         return [
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
+            'module_permissions' => 'array',
         ];
     }
 
@@ -74,5 +77,49 @@ class User extends Authenticatable
     public function hasRole(...$roles): bool
     {
         return in_array($this->role, $roles);
+    }
+
+    public function hasModuleAccess(string $module): bool
+    {
+        if (!Schema::hasColumn($this->getTable(), 'module_permissions')) {
+            // Backward-compatible fallback before migration is applied.
+            return true;
+        }
+
+        $permissions = $this->module_permissions ?? [];
+
+        if (in_array($module, $permissions, true)) {
+            return true;
+        }
+
+        $legacyMap = [
+            'item_catalog' => ['inventory'],
+            'stock_list' => ['inventory'],
+            'stock_in' => ['inventory'],
+            'delivery_order' => ['inventory'],
+            'create_package' => ['packages'],
+            'crn' => [
+                'warehouse_crn',
+                'warehouse_crn_index',
+                'warehouse_crn_pdf',
+                'warehouse_crn_eta',
+                'warehouse_crn_arrived',
+                'warehouse_crn_create',
+                'warehouse_crn_store',
+                'warehouse_crn_procurement_receive',
+                'warehouse_crn_procurement_safe_line',
+                'warehouse_crn_transfer',
+            ],
+            'rejected_list' => ['warehouse_rejections'],
+        ];
+
+        $fallbacks = $legacyMap[$module] ?? [];
+        foreach ($fallbacks as $fallbackKey) {
+            if (in_array($fallbackKey, $permissions, true)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 }

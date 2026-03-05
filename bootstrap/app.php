@@ -3,6 +3,7 @@
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
+use App\Http\Middleware\EnsureModule;
 use App\Http\Middleware\EnsureRole;
 
 return Application::configure(basePath: dirname(__DIR__))
@@ -14,6 +15,7 @@ return Application::configure(basePath: dirname(__DIR__))
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->alias([
             'role' => EnsureRole::class,
+            'module' => EnsureModule::class,
         ]);
 
         $middleware->web(append: [

@@ -7,9 +7,10 @@ const initialForm = {
   email: '',
   password: '',
   role: 'store_keeper',
+  module_permissions: [],
 };
 
-export default function UserManagement({ users }) {
+export default function UserManagement({ users, moduleOptions = [] }) {
   const [data, setData] = useState(initialForm);
   const [accounts, setAccounts] = useState(users ?? []);
   const [processing, setProcessing] = useState(false);
@@ -25,6 +26,16 @@ export default function UserManagement({ users }) {
 
   const updateField = (field, value) => {
     setData((prev) => ({ ...prev, [field]: value }));
+  };
+
+  const toggleModulePermission = (moduleKey) => {
+    setData((prev) => {
+      const current = prev.module_permissions ?? [];
+      const next = current.includes(moduleKey)
+        ? current.filter((key) => key !== moduleKey)
+        : [...current, moduleKey];
+      return { ...prev, module_permissions: next };
+    });
   };
 
   const resetForm = () => {
@@ -55,6 +66,7 @@ export default function UserManagement({ users }) {
       name: data.name,
       email: data.email,
       role: data.role,
+      module_permissions: data.module_permissions ?? [],
       ...(data.password ? { password: data.password } : {}),
     };
 
@@ -121,6 +133,7 @@ export default function UserManagement({ users }) {
       email: user.email,
       password: '',
       role: user.role,
+      module_permissions: user.module_permissions ?? [],
     });
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
@@ -255,22 +268,27 @@ export default function UserManagement({ users }) {
                 {errors.password && <p className="text-xs text-red-500 mt-1.5 px-1">{errors.password[0] ?? errors.password}</p>}
               </div>
 
-              <div>
-                <label htmlFor="role" className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5 ml-1">Role</label>
-                <select
-                  id="role"
-                  name="role"
-                  value={data.role}
-                  onChange={(e) => updateField('role', e.target.value)}
-                  className="w-full rounded-2xl border border-slate-200 px-4 py-3.5 text-sm focus:ring-2 focus:ring-arabina-accent focus:border-arabina-accent focus:outline-none bg-slate-50 transition-colors"
-                >
-                  <option value="store_keeper">Store Keeper</option>
-                  <option value="procurement">Procurement</option>
-                  <option value="finance">Finance</option>
-                  <option value="sales">Sales</option>
-                </select>
-                {errors.role && <p className="text-xs text-red-500 mt-1.5 px-1">{errors.role[0] ?? errors.role}</p>}
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2 ml-1">Module Access</label>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-2 bg-slate-50 border border-slate-200 rounded-2xl p-3">
+                {moduleOptions.map((module) => (
+                  <label key={module.key} className="inline-flex items-center gap-2 text-sm text-slate-700">
+                    <input
+                      type="checkbox"
+                      checked={(data.module_permissions ?? []).includes(module.key)}
+                      onChange={() => toggleModulePermission(module.key)}
+                      className="rounded border-slate-300 text-arabina-accent focus:ring-arabina-accent"
+                    />
+                    <span>{module.label}</span>
+                  </label>
+                ))}
+                {moduleOptions.length === 0 && (
+                  <p className="text-xs text-slate-500">No modules configured.</p>
+                )}
               </div>
+              {errors.module_permissions && <p className="text-xs text-red-500 mt-1.5 px-1">{errors.module_permissions[0] ?? errors.module_permissions}</p>}
             </div>
 
             <button
@@ -306,9 +324,10 @@ export default function UserManagement({ users }) {
                   </div>
 
                   <div className="pt-4 border-t border-slate-50 flex justify-between items-center">
-                    <span className="text-[11px] font-medium text-slate-400">
-                      Added {new Date(user.created_at).toLocaleDateString()}
-                    </span>
+                    <div className="text-[11px] text-slate-400">
+                      <div className="font-medium">Added {new Date(user.created_at).toLocaleDateString()}</div>
+                      <div>Modules: {(user.module_permissions ?? []).length}</div>
+                    </div>
                     <div className="flex items-center gap-2">
                       <button
                         type="button"
