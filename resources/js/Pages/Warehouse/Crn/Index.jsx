@@ -193,7 +193,10 @@ export default function CrnIndex({ pendingProcurements = [], activeCrns = [], no
                     <p className="text-sm font-bold text-slate-800">{order.code}</p>
                     <p className="text-xs text-slate-500">{order.created_at} · {order.lines.length} SKU</p>
                   </div>
-                  <ChevronDownIcon className={`w-5 h-5 text-slate-400 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+                  <span className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-700 hover:bg-slate-50 transition-colors">
+                    {isOpen ? 'Hide Checklist' : 'Show Checklist'}
+                    <ChevronDownIcon className={`w-4 h-4 text-slate-500 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+                  </span>
                 </button>
                 {isOpen && (
                   <div className="mt-4 space-y-3">
@@ -204,7 +207,12 @@ export default function CrnIndex({ pendingProcurements = [], activeCrns = [], no
                       const current = orderForm?.[line.line_id] ?? { received_qty: Number(line.remaining_qty ?? 0), rejected_qty: 0, rejection_reason: '' };
                       return (
                         <div key={line.line_id} className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-                          <div className="flex items-center justify-between gap-3 mb-2"><p className="text-xs font-bold text-slate-700">{line.sku}</p></div>
+                          <div className="flex items-center justify-between gap-3 mb-2">
+                            <div>
+                              <p className="text-sm font-bold text-slate-700">{line.sku}</p>
+                              <p className="text-xs text-slate-500">{line.name || line.item?.name || '-'}</p>
+                            </div>
+                          </div>
                           <div className="grid grid-cols-1 md:grid-cols-4 gap-2 items-end">
                             <div><p className="text-[10px] font-bold text-slate-400 uppercase">Expected</p><p className="text-sm font-bold text-slate-700">{line.remaining_qty}</p></div>
                             <QtyInput label="Received" value={current.received_qty} onChange={(val) => setLineValue(order.id, line.line_id, 'received_qty', val, line.remaining_qty)} min={0} max={line.remaining_qty} />
