@@ -119,6 +119,7 @@ class SalesOrderProgressTest extends TestCase
         $response = $this->actingAs($user)
             ->postJson('/orders', [
                 'customer_name' => 'Loose Customer',
+                'site_id' => 'SITE-001',
                 'order_date' => now()->toDateString(),
                 'notes' => 'Some notes',
                 'lines' => [
@@ -134,6 +135,7 @@ class SalesOrderProgressTest extends TestCase
 
         $this->assertDatabaseHas('sales_orders', [
             'customer_name' => 'Loose Customer',
+            'site_id' => 'SITE-001',
         ]);
 
         $this->assertDatabaseHas('sales_order_lines', [
@@ -141,6 +143,29 @@ class SalesOrderProgressTest extends TestCase
             'item_quantity' => 5,
             'package_id' => null,
         ]);
+    }
+
+    public function test_create_sales_order_fails_without_site_id(): void
+    {
+        $user = User::factory()->create([
+            'role' => User::ROLE_SUPER_ADMIN,
+        ]);
+
+        $response = $this->actingAs($user)
+            ->postJson('/orders', [
+                'customer_name' => 'No Site Customer',
+                'order_date' => now()->toDateString(),
+                'lines' => [
+                    [
+                        'type' => 'loose',
+                        'item_sku' => 'ANY-SKU',
+                        'item_quantity' => 1,
+                    ]
+                ],
+            ]);
+
+        $response->assertStatus(422)
+            ->assertJsonValidationErrors(['site_id']);
     }
 
     public function test_mixed_sales_order_is_fulfilled_after_alacarte_stock_out(): void

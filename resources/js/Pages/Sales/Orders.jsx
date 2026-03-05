@@ -117,7 +117,7 @@ export default function Orders({ packages = [], items = [], orders = [], availab
                   <span className={`text-xs font-medium ${pkg.available_qty > 0 ? 'text-emerald-600' : 'text-red-600'}`}>
                     {pkg.available_qty > 0 ? 'Available' : 'Unavailable'}
                   </span>
-                  <span className={`text-2xl font-black ${pkg.available_qty > 0 ? 'text-emerald-600' : 'text-slate-300'}`}>
+                  <span className={`text-2xl font-black ${pkg.available_qty < 0 ? 'text-red-600' : pkg.available_qty > 0 ? 'text-emerald-600' : 'text-slate-300'}`}>
                     {pkg.available_qty}
                   </span>
                 </div>
@@ -159,13 +159,16 @@ export default function Orders({ packages = [], items = [], orders = [], availab
                 {errors.customer_name && <p className="text-xs text-red-500 mt-1">{errors.customer_name[0]}</p>}
               </div>
               <div>
-                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5 ml-1">Site ID</label>
+                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5 ml-1">
+                  Site ID
+                </label>
                 <input
                   type="text"
                   value={form.site_id}
                   onChange={(e) => setForm(prev => ({ ...prev, site_id: e.target.value }))}
                   className="w-full rounded-2xl border border-slate-200 px-4 py-3.5 text-sm bg-slate-50 focus:ring-2 focus:ring-arabina-accent focus:outline-none"
                   placeholder="Contoh: SITE-001"
+                  required
                 />
                 {errors.site_id && <p className="text-xs text-red-500 mt-1">{errors.site_id[0]}</p>}
               </div>

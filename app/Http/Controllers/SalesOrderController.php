@@ -16,20 +16,27 @@ class SalesOrderController extends Controller
 {
     public function index(): Response
     {
-        $packagesData = Package::with('packageItems')->get();
-        $itemStocks = DB::table('inventory_transactions as tx')
-            ->join('inventory_transaction_lines as line', 'tx.id', '=', 'line.inventory_transaction_id')
-            ->selectRaw('line.item_id, SUM(CASE WHEN tx.type = "in" THEN line.quantity ELSE -line.quantity END) as stock')
-            ->groupBy('line.item_id')
-            ->pluck('stock', 'item_id');
+        $packages = Package::query()->get(['id', 'code', 'name']);
 
-        $availability = $packagesData->map(function ($package) use ($itemStocks) {
-            $minQty = PHP_INT_MAX;
-            foreach ($package->packageItems as $pi) {
-                $stock = $itemStocks[$pi->item_id] ?? 0;
-                $minQty = min($minQty, (int) floor($stock / $pi->quantity));
-            }
-            $package->available_qty = $minQty === PHP_INT_MAX ? 0 : $minQty;
+        $procuredByPackage = DB::table('procurement_order_package_lines as popl')
+            ->join('procurement_orders as po', 'po.id', '=', 'popl.procurement_order_id')
+            ->where('po.status', '!=', 'draft')
+            ->selectRaw('popl.package_id, SUM(popl.quantity) as qty')
+            ->groupBy('popl.package_id')
+            ->pluck('qty', 'popl.package_id');
+
+        $usedByPackage = DB::table('sales_order_lines')
+            ->whereNotNull('package_id')
+            ->selectRaw('package_id, SUM(package_quantity) as qty')
+            ->groupBy('package_id')
+            ->pluck('qty', 'package_id');
+
+        $availability = $packages->map(function ($package) use ($procuredByPackage, $usedByPackage) {
+            $procured = (int) ($procuredByPackage[$package->id] ?? 0);
+            $used = (int) ($usedByPackage[$package->id] ?? 0);
+
+            $package->available_qty = $procured - $used;
+
             return $package;
         });
 
@@ -53,7 +60,7 @@ class SalesOrderController extends Controller
     {
         $validated = $request->validate([
             'customer_name' => 'required|string|max:255',
-            'site_id' => 'nullable|string|max:100',
+            'site_id' => 'required|string|max:100',
             'order_date' => 'required|date',
             'notes' => 'nullable|string',
             'lines' => 'required|array|min:1',
