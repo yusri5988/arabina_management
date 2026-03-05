@@ -16,6 +16,8 @@ export default function Stock({ items, packages, salesOrders = [], type = 'in', 
   const [history, setHistory] = useState(historyData || []);
   const [loadingHistory, setLoadingHistory] = useState(false);
   const [doneConfirmed, setDoneConfirmed] = useState(false);
+  const [showOutHistory, setShowOutHistory] = useState(false);
+  const [showPendingDelivery, setShowPendingDelivery] = useState(false);
 
   const fetchHistory = async () => {
     setLoadingHistory(true);
@@ -35,6 +37,17 @@ export default function Stock({ items, packages, salesOrders = [], type = 'in', 
 
   useEffect(() => {
     fetchHistory();
+  }, [isOut]);
+
+  useEffect(() => {
+    if (!isOut) return;
+    const partialDoneSuccess = window.sessionStorage.getItem('stock_out_partial_done_success');
+    if (partialDoneSuccess === '1') {
+      setNotification({ type: 'success', message: 'Partial delivery saved successfully.' });
+      setShowOutHistory(true);
+      setShowPendingDelivery(true);
+      window.sessionStorage.removeItem('stock_out_partial_done_success');
+    }
   }, [isOut]);
 
   const [packageData, setPackageData] = useState({
@@ -106,8 +119,35 @@ export default function Stock({ items, packages, salesOrders = [], type = 'in', 
       return;
     }
 
-    setAlacarteLines([]);
-  }, [isOut, packageData.sales_order_id]);
+    if (!selectedSalesOrder) {
+      setAlacarteLines([]);
+      return;
+    }
+
+    const autoLines = (selectedSalesOrder.pending_sku_lines ?? [])
+      .map((line) => {
+        const matchedItem = (items ?? []).find((item) => String(item.sku) === String(line.sku));
+        if (!matchedItem) {
+          return null;
+        }
+
+        const availableStock = Number(itemStockById.get(String(matchedItem.id)) ?? 0);
+        const pendingQty = Number(line.pending_quantity ?? 0);
+        const fillQty = Math.min(pendingQty, availableStock);
+
+        if (fillQty <= 0) {
+          return null;
+        }
+
+        return {
+          item_id: String(matchedItem.id),
+          quantity: String(fillQty),
+        };
+      })
+      .filter(Boolean);
+
+    setAlacarteLines(autoLines);
+  }, [isOut, selectedSalesOrder, items, itemStockById]);
 
   useEffect(() => {
     if (!isOut) {
@@ -258,9 +298,17 @@ export default function Stock({ items, packages, salesOrders = [], type = 'in', 
         setPackageData(prev => ({ ...prev, package_quantity: '', notes: '' }));
         setAlacarteLines(isOut ? [] : [{ ...initialAlacarteLine, item_id: items?.[0]?.id?.toString() ?? '' }]);
         if (isOut) {
-          fetchHistory();
+          if (completionAction === 'partial_done') {
+            window.sessionStorage.setItem('stock_out_partial_done_success', '1');
+            router.reload();
+            return;
+          } else {
+            router.reload();
+            return;
+          }
+        } else {
+          router.reload();
         }
-        router.reload();
       } else if (response.status === 422) {
         setErrors(result.errors ?? {});
       } else {
@@ -286,9 +334,19 @@ export default function Stock({ items, packages, salesOrders = [], type = 'in', 
         )}
 
         <div className="bg-white rounded-[2rem] shadow-sm border border-slate-100 p-6 md:p-8">
-          <h2 className="text-lg font-bold text-slate-800 border-b border-slate-100 pb-4">
-            {isOut ? 'Delivery Order by Package / Ala Carte + Customer Tag' : 'Stock In by Package / Ala Carte'}
-          </h2>
+          <div className="border-b border-slate-100 pb-4 flex items-center justify-between gap-3">
+            <h2 className="text-lg font-bold text-slate-800">
+              {isOut ? 'Delivery Order' : 'Stock In by Package / Ala Carte'}
+            </h2>
+            {isOut && (
+              <Link
+                href="/items/stock/out/delivery-orders"
+                className="inline-flex items-center rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-700 hover:bg-slate-50"
+              >
+                DO History List
+              </Link>
+            )}
+          </div>
 
           <form onSubmit={submit} className="mt-5 space-y-6">
             {!isOut && (
@@ -319,6 +377,8 @@ export default function Stock({ items, packages, salesOrders = [], type = 'in', 
                     onChange={e => {
                       setNotification(null);
                       setDoneConfirmed(false);
+                      setShowOutHistory(false);
+                      setShowPendingDelivery(false);
                       setPackageData(prev => ({ ...prev, sales_order_id: e.target.value }));
                     }}
                     className="w-full rounded-2xl border border-slate-200 px-4 py-3.5 text-sm focus:ring-2 focus:ring-arabina-accent focus:outline-none bg-slate-50"
@@ -336,7 +396,7 @@ export default function Stock({ items, packages, salesOrders = [], type = 'in', 
                   {salesOrders.length === 0 && <p className="text-xs text-amber-600 mt-1">Create sales order first before stock out.</p>}
                 </div>
 
-                {selectedSalesOrder && (
+                {selectedSalesOrder && showPendingDelivery && (
                   <div className="col-span-2 rounded-2xl border border-slate-200 bg-slate-50 p-4">
                     <p className="text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">Pending Delivery Items</p>
                     {pendingDeliveryStatus.length > 0 && (
@@ -506,7 +566,7 @@ export default function Stock({ items, packages, salesOrders = [], type = 'in', 
                   onChange={(e) => setDoneConfirmed(e.target.checked)}
                   className="mt-0.5"
                 />
-                Confirm tiada lagi delivery order untuk sales order ini (baru boleh tekan Done).
+                Confirm there are no further delivery orders for this sales order (required before marking as Done).
               </label>
             )}
 
@@ -565,16 +625,10 @@ export default function Stock({ items, packages, salesOrders = [], type = 'in', 
               </button>
             )}
 
-            <Link
-              href="/items"
-              className="block w-full text-center bg-slate-100 border border-slate-200 text-slate-700 py-3 rounded-2xl text-sm font-bold hover:bg-slate-200 transition-colors"
-            >
-              Back to Register Item
-            </Link>
           </form>
         </div>
 
-        {isOut && (
+        {isOut && showOutHistory && (
           <div className="bg-white rounded-[2rem] shadow-sm border border-slate-100 p-6 md:p-8">
             <div className="flex items-center justify-between border-b border-slate-100 pb-4">
               <h2 className="text-lg font-bold text-slate-800">
@@ -596,7 +650,7 @@ export default function Stock({ items, packages, salesOrders = [], type = 'in', 
                     <th className="px-4 py-3 font-bold text-slate-500 uppercase tracking-wider text-[10px]">DO Code</th>
                     <th className="px-4 py-3 font-bold text-slate-500 uppercase tracking-wider text-[10px]">SO / Customer</th>
                     <th className="px-4 py-3 font-bold text-slate-500 uppercase tracking-wider text-[10px]">Items Summary</th>
-                    <th className="px-4 py-3 font-bold text-slate-500 uppercase tracking-wider text-[10px]">Date</th>
+                    <th className="px-4 py-3 font-bold text-slate-500 uppercase tracking-wider text-[10px]">DO Dates</th>
                     <th className="px-4 py-3 font-bold text-slate-500 uppercase tracking-wider text-[10px] text-right">Action</th>
                   </tr>
                 </thead>
@@ -618,8 +672,8 @@ export default function Stock({ items, packages, salesOrders = [], type = 'in', 
                       <td className="px-4 py-4 text-xs text-slate-600 max-w-[200px] truncate" title={item.items_summary}>
                         {item.items_summary}
                       </td>
-                      <td className="px-4 py-4 text-xs text-slate-500">
-                        {item.created_at}
+                      <td className="px-4 py-4 text-xs text-slate-500 max-w-[280px]">
+                        {item.do_dates_text || item.created_at}
                       </td>
                       <td className="px-4 py-4 text-right">
                         <a

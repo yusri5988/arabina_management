@@ -2,6 +2,7 @@ import { MinusIcon, PlusIcon } from '@heroicons/react/24/outline/index.js';
 
 export default function QtyInput({ value, onChange, min = 0, max, label, className = '' }) {
   const displayValue = value === '' ? '' : Math.max(min, Math.min(Number(value || 0), max || Infinity));
+  const normalizedValue = Number(displayValue || 0);
 
   return (
     <div className="space-y-1.5">

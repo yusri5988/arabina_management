@@ -56,6 +56,7 @@ Route::middleware('auth')->group(function () {
     Route::get('/items/stock/in/history', [ItemController::class, 'stockInHistory'])->name('items.stock.in.history');
     Route::get('/items/stock/out/history', [ItemController::class, 'stockOutHistory'])->name('items.stock.out.history');
     Route::post('/items/stock/out', [ItemController::class, 'stockOutStore'])->name('items.stock.out');
+    Route::get('/items/stock/out/delivery-orders', [ItemController::class, 'deliveryOrdersIndex'])->name('items.stock.out.delivery-orders');
     Route::get('/items/stock/out/do/{id}', [ItemController::class, 'downloadDoPdf'])->name('items.stock.out.do');
     Route::get('/orders', [SalesOrderController::class, 'index'])->name('sales.orders.index');
     Route::get('/orders/history', [SalesOrderController::class, 'history'])->name('sales.orders.history');

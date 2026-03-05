@@ -485,29 +485,15 @@ class ItemController extends Controller
 
     public function stockOutHistory(): JsonResponse
     {
-        $transactions = InventoryTransaction::query()
-            ->with(['lines.item', 'salesOrder', 'creator'])
-            ->where('type', 'out')
-            ->latest()
-            ->limit(20)
-            ->get();
-
         return response()->json([
-            'data' => $transactions->map(function ($t) {
-                return [
-                    'id' => $t->id,
-                    'code' => $this->buildDeliveryOrderCode($t),
-                    'sales_order_code' => $t->salesOrder?->code ?? 'N/A',
-                    'customer_name' => $t->salesOrder?->customer_name ?? 'N/A',
-                    'created_at' => $t->created_at->format('Y-m-d H:i:s'),
-                    'creator' => $t->creator?->name ?? 'System',
-                    'notes' => $t->notes,
-                    'lines_count' => $t->lines->count(),
-                    'items_summary' => $t->lines->take(3)->map(function ($l) {
-                        return $l->item?->sku . ' (x' . $l->quantity . ')';
-                    })->implode(', ') . ($t->lines->count() > 3 ? '...' : ''),
-                ];
-            }),
+            'data' => $this->buildGroupedDeliveryOrders(200),
+        ]);
+    }
+
+    public function deliveryOrdersIndex(): Response
+    {
+        return Inertia::render('Inventory/DeliveryOrders', [
+            'orders' => $this->buildGroupedDeliveryOrders(500),
         ]);
     }
 
@@ -521,9 +507,54 @@ class ItemController extends Controller
             abort(404, 'Transaction is not a delivery order.');
         }
 
+        $doCode = $this->buildDeliveryOrderCode($transaction);
+
+        $relatedTransactions = InventoryTransaction::query()
+            ->with(['lines.item', 'salesOrder', 'creator'])
+            ->where('type', 'out')
+            ->when(
+                !empty($transaction->sales_order_id),
+                fn ($query) => $query->where('sales_order_id', $transaction->sales_order_id),
+                fn ($query) => $query->where('id', $transaction->id)
+            )
+            ->orderBy('created_at')
+            ->orderBy('id')
+            ->get();
+
+        $shipmentGroups = $relatedTransactions->map(function ($tx) {
+            $lines = $tx->lines
+                ->map(function ($line) {
+                    return [
+                        'sku' => $line->item?->sku ?? 'N/A',
+                        'name' => $line->item?->name ?? 'Unknown Item',
+                        'unit' => $line->item?->unit ?? '',
+                        'quantity' => (int) $line->quantity,
+                    ];
+                })
+                ->sortBy('sku')
+                ->values();
+
+            return [
+                'transaction_id' => $tx->id,
+                'date' => optional($tx->created_at)->format('d/m/Y H:i'),
+                'creator' => $tx->creator?->name ?? 'System',
+                'lines' => $lines,
+            ];
+        })->values();
+
+        $doDates = $relatedTransactions
+            ->pluck('created_at')
+            ->map(fn ($dt) => optional($dt)->format('d/m/Y H:i'))
+            ->filter()
+            ->unique()
+            ->values();
+
         $pdf = Pdf::loadView('inventory.do-pdf', [
             'transaction' => $transaction,
-            'doCode' => $this->buildDeliveryOrderCode($transaction),
+            'doCode' => $doCode,
+            'transactions' => $relatedTransactions,
+            'shipmentGroups' => $shipmentGroups,
+            'doDates' => $doDates,
             'generatedAt' => now()->format('d/m/Y H:i:s'),
         ]);
 
@@ -537,6 +568,72 @@ class ItemController extends Controller
         }
 
         return 'DO-' . str_pad((int) $transaction->id, 6, '0', STR_PAD_LEFT);
+    }
+
+    private function buildGroupedDeliveryOrders(int $limit = 200)
+    {
+        $transactions = InventoryTransaction::query()
+            ->with(['lines.item', 'salesOrder', 'creator'])
+            ->where('type', 'out')
+            ->latest()
+            ->limit($limit)
+            ->get();
+
+        return $transactions
+            ->groupBy(function ($transaction) {
+                return $this->buildDeliveryOrderCode($transaction);
+            })
+            ->map(function ($group, $doCode) {
+                $latest = $group->sortByDesc('created_at')->first();
+                $first = $group->first();
+
+                $linesBySku = [];
+                foreach ($group as $transaction) {
+                    foreach ($transaction->lines as $line) {
+                        $sku = $line->item?->sku ?? 'N/A';
+                        if (!isset($linesBySku[$sku])) {
+                            $linesBySku[$sku] = [
+                                'sku' => $sku,
+                                'quantity' => 0,
+                            ];
+                        }
+                        $linesBySku[$sku]['quantity'] += (int) $line->quantity;
+                    }
+                }
+
+                $lineSummary = collect($linesBySku)
+                    ->values()
+                    ->take(5)
+                    ->map(function ($line) {
+                        return $line['sku'] . ' (x' . $line['quantity'] . ')';
+                    })
+                    ->implode(', ');
+
+                $hasMoreLines = count($linesBySku) > 5;
+
+                $dates = $group
+                    ->pluck('created_at')
+                    ->map(function ($dt) {
+                        return optional($dt)->format('Y-m-d H:i:s');
+                    })
+                    ->filter()
+                    ->unique()
+                    ->values();
+
+                return [
+                    'id' => $latest->id,
+                    'code' => $doCode,
+                    'sales_order_code' => $first->salesOrder?->code ?? 'N/A',
+                    'customer_name' => $first->salesOrder?->customer_name ?? 'N/A',
+                    'created_at' => $latest->created_at->format('Y-m-d H:i:s'),
+                    'creator' => $latest->creator?->name ?? 'System',
+                    'items_summary' => $lineSummary . ($hasMoreLines ? '...' : ''),
+                    'do_dates' => $dates,
+                    'do_dates_text' => $dates->implode(' | '),
+                ];
+            })
+            ->sortByDesc('created_at')
+            ->values();
     }
 
     private function stockForm(string $type): Response
@@ -669,7 +766,11 @@ class ItemController extends Controller
                 $order->setAttribute('pending_sku_lines', $pendingSkuLines);
 
                 return $order;
-            })->values();
+            })
+                ->filter(function ($order) {
+                    return !empty($order->pending_sku_lines);
+                })
+                ->values();
         }
 
         $historyData = collect();

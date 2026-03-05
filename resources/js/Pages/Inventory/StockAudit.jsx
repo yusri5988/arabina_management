@@ -7,7 +7,7 @@ export default function StockAudit({ items = [], auditHistories = [] }) {
     const [lines, setLines] = useState(
         (items ?? []).map((item) => ({
             item_id: item.item_id,
-            audited_stock: Number(item.audited_stock ?? item.stock_current ?? 0),
+            audited_stock: null,
         })),
     );
     const [notes, setNotes] = useState('');
@@ -17,11 +17,20 @@ export default function StockAudit({ items = [], auditHistories = [] }) {
 
     const lineMap = useMemo(() => {
         const map = new Map();
-        lines.forEach((line) => map.set(String(line.item_id), Number(line.audited_stock ?? 0)));
+        lines.forEach((line) => map.set(String(line.item_id), line.audited_stock));
         return map;
     }, [lines]);
 
     const updateAuditedStock = (itemId, value) => {
+        if (value === '') {
+            setLines((prev) => prev.map((line) => (
+                String(line.item_id) === String(itemId)
+                    ? { ...line, audited_stock: null }
+                    : line
+            )));
+            return;
+        }
+
         const qty = Math.max(Number(value || 0), 0);
         setLines((prev) => prev.map((line) => (
             String(line.item_id) === String(itemId)
@@ -52,7 +61,7 @@ export default function StockAudit({ items = [], auditHistories = [] }) {
         if (response.ok) {
             setNotification({ type: 'success', message: result.message ?? 'Stock audit saved.' });
             setNotes('');
-            router.reload();
+            router.visit('/items/stocks');
         } else if (response.status === 422) {
             setErrors(result.errors ?? {});
         } else {
@@ -95,8 +104,9 @@ export default function StockAudit({ items = [], auditHistories = [] }) {
                             <tbody className="divide-y divide-slate-50">
                                 {(items ?? []).map((item) => {
                                     const current = Number(item.stock_current ?? 0);
-                                    const audited = Number(lineMap.get(String(item.item_id)) ?? 0);
-                                    const diff = audited - current;
+                                    const rawAudited = lineMap.get(String(item.item_id));
+                                    const audited = rawAudited ?? '';
+                                    const diff = audited === '' ? null : Number(audited) - current;
 
                                     return (
                                         <tr key={item.item_id}>
@@ -113,7 +123,7 @@ export default function StockAudit({ items = [], auditHistories = [] }) {
                                                 />
                                             </td>
                                             <td className={`px-3 py-2 text-sm text-right font-bold ${diff < 0 ? 'text-red-600' : diff > 0 ? 'text-emerald-600' : 'text-slate-600'}`}>
-                                                {diff}
+                                                {diff === null ? '-' : diff}
                                             </td>
                                         </tr>
                                     );

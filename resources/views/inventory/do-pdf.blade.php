@@ -34,7 +34,7 @@
             <td style="width: 50%; text-align: right;">
                 <strong>DO Number:</strong> {{ $doCode }}<br>
                 <strong>SO Number:</strong> {{ $transaction->salesOrder?->code ?? 'N/A' }}<br>
-                <strong>Date:</strong> {{ $transaction->created_at->format('d/m/Y H:i') }}<br>
+                <strong>DO Date(s):</strong> {{ isset($doDates) ? $doDates->implode(' | ') : $transaction->created_at->format('d/m/Y H:i') }}<br>
                 <strong>Created By:</strong> {{ $transaction->creator?->name ?? 'System' }}
             </td>
         </tr>
@@ -47,6 +47,11 @@
     </div>
     @endif
 
+    @foreach(($shipmentGroups ?? collect()) as $sIndex => $shipment)
+    <div style="margin-bottom: 12px; padding: 8px 10px; background: #f9fafb; border: 1px solid #e5e7eb;">
+        <strong>Shipment {{ $sIndex + 1 }}:</strong>
+        {{ $shipment['date'] }} | By: {{ $shipment['creator'] }}
+    </div>
     <table class="items-table">
         <thead>
             <tr>
@@ -57,16 +62,17 @@
             </tr>
         </thead>
         <tbody>
-            @foreach($transaction->lines as $index => $line)
+            @foreach(($shipment['lines'] ?? []) as $index => $line)
             <tr>
                 <td>{{ $index + 1 }}</td>
-                <td>{{ $line->item?->sku }}</td>
-                <td>{{ $line->item?->name }}</td>
-                <td style="text-align: right;">{{ $line->quantity }} {{ $line->item?->unit }}</td>
+                <td>{{ $line['sku'] }}</td>
+                <td>{{ $line['name'] }}</td>
+                <td style="text-align: right;">{{ $line['quantity'] }} {{ $line['unit'] }}</td>
             </tr>
             @endforeach
         </tbody>
     </table>
+    @endforeach
 
     <table class="signatures">
         <tr>
