@@ -3,226 +3,304 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Procurement Order {{ $order->code }}</title>
+    <title>Purchase Order - {{ $order->code }}</title>
     <style>
-        :root {
-            color-scheme: light;
+        @page {
+            margin: 0;
         }
-
-        * {
-            box-sizing: border-box;
-        }
-
         body {
-            font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+            font-family: 'Helvetica', 'Arial', sans-serif;
             margin: 0;
-            color: #0f172a;
-            background: #f8fafc;
+            padding: 0;
+            color: #1e293b;
+            line-height: 1.5;
+            background-color: #ffffff;
         }
-
-        .page {
-            max-width: 960px;
-            margin: 24px auto;
-            background: #ffffff;
-            border: 1px solid #e2e8f0;
-            border-radius: 16px;
-            overflow: hidden;
+        .container {
+            padding: 40px;
         }
-
         .header {
-            padding: 24px;
-            background: linear-gradient(135deg, #0f5132, #166534);
-            color: #ffffff;
+            border-bottom: 2px solid #0f5132;
+            padding-bottom: 20px;
+            margin-bottom: 30px;
         }
-
-        .header h1 {
+        .header-content {
+            display: table;
+            width: 100%;
+        }
+        .brand {
+            display: table-cell;
+            vertical-align: middle;
+        }
+        .brand h1 {
             margin: 0;
-            font-size: 24px;
-            letter-spacing: 0.02em;
+            color: #0f5132;
+            font-size: 28px;
+            letter-spacing: -0.02em;
+            font-weight: 900;
         }
-
-        .header p {
-            margin: 8px 0 0;
-            opacity: 0.9;
-            font-size: 13px;
+        .brand p {
+            margin: 0;
+            font-size: 10px;
+            text-transform: uppercase;
+            letter-spacing: 0.2em;
+            color: #64748b;
+            font-weight: bold;
         }
-
-        .meta {
-            padding: 20px 24px;
-            display: grid;
-            grid-template-columns: repeat(4, minmax(0, 1fr));
-            gap: 12px;
-            border-bottom: 1px solid #e2e8f0;
-            background: #f8fafc;
+        .po-title {
+            display: table-cell;
+            text-align: right;
+            vertical-align: middle;
         }
-
-        .meta-card {
-            background: #ffffff;
-            border: 1px solid #e2e8f0;
-            border-radius: 10px;
-            padding: 10px 12px;
+        .po-title h2 {
+            margin: 0;
+            font-size: 20px;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            color: #0f5132;
         }
-
-        .meta-card .label {
+        .meta-info {
+            display: table;
+            width: 100%;
+            margin-bottom: 40px;
+        }
+        .meta-col {
+            display: table-cell;
+            width: 50%;
+        }
+        .meta-item {
+            margin-bottom: 8px;
+            font-size: 12px;
+        }
+        .meta-label {
+            color: #64748b;
+            font-weight: bold;
+            width: 100px;
+            display: inline-block;
+        }
+        .meta-value {
+            color: #0f172a;
+            font-weight: bold;
+        }
+        .section-title {
             font-size: 11px;
             text-transform: uppercase;
-            letter-spacing: 0.06em;
-            color: #64748b;
-            margin-bottom: 6px;
+            letter-spacing: 0.15em;
+            color: #0f5132;
+            border-bottom: 1px solid #f1f5f9;
+            padding-bottom: 8px;
+            margin-bottom: 15px;
+            font-weight: 900;
         }
-
-        .meta-card .value {
-            font-size: 13px;
-            font-weight: 600;
-        }
-
-        .section {
-            padding: 20px 24px;
-        }
-
-        .section h2 {
-            margin: 0 0 12px;
-            font-size: 14px;
-            text-transform: uppercase;
-            letter-spacing: 0.06em;
-            color: #334155;
-        }
-
         table {
             width: 100%;
             border-collapse: collapse;
-            border: 1px solid #e2e8f0;
-            border-radius: 10px;
-            overflow: hidden;
+            margin-bottom: 30px;
         }
-
-        th,
-        td {
-            padding: 10px 12px;
-            border-bottom: 1px solid #e2e8f0;
-            font-size: 12px;
-            vertical-align: top;
-        }
-
         th {
-            background: #f1f5f9;
-            text-transform: uppercase;
-            letter-spacing: 0.04em;
-            color: #334155;
             text-align: left;
-            font-size: 11px;
+            font-size: 10px;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: #64748b;
+            padding: 10px 15px;
+            border-bottom: 1px solid #e2e8f0;
+            background-color: #f8fafc;
         }
-
-        .text-right {
-            text-align: right;
+        td {
+            padding: 12px 15px;
+            font-size: 12px;
+            border-bottom: 1px solid #f1f5f9;
         }
-
-        .muted {
+        .item-code {
+            font-weight: bold;
+            color: #0f172a;
+        }
+        .item-name {
             color: #64748b;
             font-size: 11px;
         }
-
-        @media (max-width: 900px) {
-            .meta {
-                grid-template-columns: 1fr 1fr;
-            }
+        .qty-badge {
+            font-weight: 900;
+            color: #0f5132;
+            text-align: right;
+        }
+        .footer {
+            position: fixed;
+            bottom: 40px;
+            left: 40px;
+            right: 40px;
+        }
+        .notes-section {
+            margin-top: 20px;
+            background-color: #f8fafc;
+            padding: 15px;
+            border-radius: 8px;
+            border-left: 4px solid #e2e8f0;
+        }
+        .notes-title {
+            font-size: 10px;
+            font-weight: bold;
+            text-transform: uppercase;
+            color: #64748b;
+            margin-bottom: 5px;
+        }
+        .notes-content {
+            font-size: 11px;
+            color: #475569;
+            font-style: italic;
+        }
+        .signature-table {
+            width: 100%;
+            margin-top: 50px;
+        }
+        .sig-cell {
+            width: 50%;
+            padding-top: 40px;
+            border-top: 1px solid #e2e8f0;
+            text-align: center;
+            font-size: 10px;
+            color: #64748b;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
         }
     </style>
 </head>
 <body>
-    <div class="page">
+    @php
+        // Logic to extract loose SKUs (same as frontend)
+        $pkgLines = $order->packageLines;
+        $allLines = $order->lines;
+        
+        $looseLines = $allLines->map(function($line) use ($pkgLines) {
+            $looseQty = (int)$line->ordered_quantity;
+            foreach ($pkgLines as $pLine) {
+                if ($pLine->package && $pLine->package->packageItems) {
+                    $pItem = $pLine->package->packageItems->firstWhere('item_id', $line->item_id);
+                    if ($pItem) {
+                        $looseQty -= ($pLine->quantity * (int)$pItem->quantity);
+                    }
+                }
+            }
+            return (object)[
+                'sku' => $line->item->sku ?? '-',
+                'name' => $line->item->name ?? '-',
+                'qty' => $looseQty
+            ];
+        })->filter(fn($l) => $l->qty > 0);
+    @endphp
+
+    <div class="container">
         <div class="header">
-            <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 12px;">
-                <svg xmlns="http://www.w3.org/2000/svg" fill="#ffffff" viewBox="0 0 48 48" style="width: 48px; height: 48px;">
-                    <path d="M6 12h36v24H6zm4 4v16h32V16zm28 4h-8v8h8zm-12 0h-8v8h8z"/>
-                </svg>
-                <div>
-                    <div style="font-size: 20px; font-weight: bold; letter-spacing: -0.02em;">ARABINA</div>
-                    <div style="font-size: 11px; opacity: 0.9;">Inventory Management</div>
+            <div class="header-content">
+                <div class="brand">
+                    <h1>ARABINA</h1>
+                    <p>Inventory Management System</p>
+                </div>
+                <div class="po-title">
+                    <h2>Purchase Order</h2>
                 </div>
             </div>
-            <h1 style="margin-top: 0;">Bulk Procurement Order</h1>
-            <p>Order No: {{ $order->code }}</p>
         </div>
 
-        <div class="meta">
-            <div class="meta-card">
-                <div class="label">Status</div>
-                <div class="value">{{ strtoupper($order->status) }}</div>
+        <div class="meta-info">
+            <div class="meta-col">
+                <div class="meta-item">
+                    <span class="meta-label">PO Number:</span>
+                    <span class="meta-value">{{ $order->code }}</span>
+                </div>
+                <div class="meta-item">
+                    <span class="meta-label">Date:</span>
+                    <span class="meta-value">{{ optional($order->created_at)->format('d F Y') }}</span>
+                </div>
             </div>
-            <div class="meta-card">
-                <div class="label">Created Date</div>
-                <div class="value">{{ optional($order->created_at)->format('d M Y') }}</div>
-            </div>
-            <div class="meta-card">
-                <div class="label">Printed At</div>
-                <div class="value">{{ $printedAt->format('d M Y H:i') }}</div>
-            </div>
-            <div class="meta-card">
-                <div class="label">Total SKU Lines</div>
-                <div class="value">{{ $order->lines->count() }}</div>
+            <div class="meta-col" style="text-align: right;">
+                <div class="meta-item">
+                    <span class="meta-label">Status:</span>
+                    <span class="meta-value" style="text-transform: uppercase;">{{ $order->status }}</span>
+                </div>
             </div>
         </div>
 
-        <div class="section">
-            <h2>Packages Ordered</h2>
-            @if($order->packageLines->count() > 0)
-            @foreach($order->packageLines as $pLine)
-            <div style="margin: 12px 0; padding: 12px; background: #f0fdf4; border-left: 4px solid #10b981; border-radius: 0 8px 8px 0;">
-                <h3 style="margin: 0 0 8px 0; font-size: 14px; font-weight: bold;">{{ $pLine->package->code ?? 'N/A' }} x {{ $pLine->quantity }}</h3>
-                @if($pLine->package->packageItems && $pLine->package->packageItems->count() > 0)
-                <ul style="margin: 0; padding-left: 20px; font-size: 12px;">
-                    @foreach($pLine->package->packageItems as $pItem)
-                    <li style="margin-bottom: 4px;">{{ $pItem->item->sku ?? 'N/A' }} × {{ $pItem->quantity * $pLine->quantity }}</li>
-                    @endforeach
-                </ul>
-                @else
-                <p style="font-size: 11px; color: #64748b; font-style: italic;">No items in package</p>
-                @endif
-            </div>
-            @endforeach
-            @else
-            <p style="color: #64748b; font-style: italic;">No packages ordered</p>
-            @endif
-        </div>
-
-        <div class="section">
-            <h2>Total SKU Lines</h2>
-            <table>
-                <thead>
+        <div class="section-title">Order Summary (Packages & Loose Items)</div>
+        <table>
+            <thead>
+                <tr>
+                    <th>Item Description</th>
+                    <th>Type</th>
+                    <th style="text-align: right;">Quantity</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach ($order->packageLines as $pLine)
                     <tr>
-                        <th style="width: 46px;">#</th>
-                        <th>SKU</th>
-                        <th>Item Name</th>
-                        <th>Unit</th>
-                        <th class="text-right">Ordered Qty</th>
+                        <td>
+                            <div class="item-code">{{ $pLine->package->code ?? '-' }}</div>
+                            <div class="item-name">{{ $pLine->package->name ?? '-' }}</div>
+                        </td>
+                        <td style="color: #3b82f6; font-weight: bold; font-size: 10px; text-transform: uppercase;">Package</td>
+                        <td class="qty-badge">x{{ $pLine->quantity }}</td>
                     </tr>
-                </thead>
-                <tbody>
-                    @forelse ($order->lines as $index => $line)
-                        <tr>
-                            <td>{{ $index + 1 }}</td>
-                            <td>{{ $line->item?->sku }}</td>
-                            <td>{{ $line->item?->name }}</td>
-                            <td>{{ $line->item?->unit }}</td>
-                            <td class="text-right">{{ $line->ordered_quantity }}</td>
-                        </tr>
-                    @empty
-                        <tr>
-                            <td colspan="5" class="muted">No SKU line found.</td>
-                        </tr>
-                    @endforelse
-                </tbody>
-            </table>
-        </div>
+                @endforeach
 
-        @if ($order->notes)
-            <div class="section">
-                <h2>Notes</h2>
-                <p class="muted">{{ $order->notes }}</p>
+                @foreach ($looseLines as $lLine)
+                    <tr>
+                        <td>
+                            <div class="item-code">{{ $lLine->sku }}</div>
+                            <div class="item-name">{{ $lLine->name }}</div>
+                        </td>
+                        <td style="color: #10b981; font-weight: bold; font-size: 10px; text-transform: uppercase;">Loose SKU</td>
+                        <td class="qty-badge">x{{ $lLine->qty }}</td>
+                    </tr>
+                @endforeach
+            </tbody>
+        </table>
+
+        <div class="section-title">Technical Detail (All Component SKUs)</div>
+        <table>
+            <thead>
+                <tr>
+                    <th>SKU Code</th>
+                    <th>Full Item Name</th>
+                    <th>Unit</th>
+                    <th style="text-align: right;">Total Qty</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach ($order->lines as $line)
+                    <tr>
+                        <td class="item-code">{{ $line->item->sku ?? '-' }}</td>
+                        <td class="item-name">{{ $line->item->name ?? '-' }}</td>
+                        <td style="font-size: 10px; color: #64748b;">{{ $line->item->unit ?? 'PCS' }}</td>
+                        <td class="qty-badge">{{ $line->ordered_quantity }}</td>
+                    </tr>
+                @endforeach
+            </tbody>
+        </table>
+
+        @if($order->notes)
+            <div class="notes-section">
+                <div class="notes-title">Internal Notes</div>
+                <div class="notes-content">"{{ $order->notes }}"</div>
             </div>
         @endif
 
+        <div class="footer">
+            <table class="signature-table">
+                <tr>
+                    <td class="sig-cell" style="border-bottom: none;">
+                        Authorized Signature
+                    </td>
+                    <td style="width: 10%; border-bottom: none;"></td>
+                    <td class="sig-cell" style="border-bottom: none;">
+                        Supplier Acknowledgment
+                    </td>
+                </tr>
+            </table>
+            <div style="text-align: center; font-size: 9px; color: #cbd5e1; margin-top: 20px;">
+                Generated by Arabina Inventory System on {{ now()->format('d/m/Y H:i') }}
+            </div>
+        </div>
     </div>
 </body>
 </html>

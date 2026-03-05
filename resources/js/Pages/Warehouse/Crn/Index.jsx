@@ -53,39 +53,6 @@ export default function CrnIndex({ pendingProcurements = [], activeCrns = [], no
     });
   };
 
-  const submitSingleLine = async (order, line) => {
-    const current = forms?.[order.id]?.[line.line_id] ?? {
-      received_qty: Number(line.remaining_qty ?? 0),
-      rejected_qty: 0,
-      rejection_reason: '',
-    };
-    setNotification(null);
-    setProcessingId(`line-${order.id}-${line.line_id}`);
-    try {
-      const { response, payload } = await apiFetchJson(`/warehouse/crn/procurement/${order.id}/receive`, {
-        method: 'POST',
-        body: JSON.stringify({
-          lines: [{
-            line_id: line.line_id,
-            received_qty: Number(current.received_qty || 0),
-            rejected_qty: Number(current.rejected_qty || 0),
-            rejection_reason: current.rejection_reason || null,
-          }]
-        }),
-      });
-      if (response.ok) {
-        setNotification({ type: 'success', message: payload.message ?? 'SKU submitted.' });
-        window.location.reload();
-      } else {
-        setNotification({ type: 'error', message: payload.message });
-      }
-    } catch (_) {
-      setNotification({ type: 'error', message: 'Network error.' });
-    } finally {
-      setProcessingId(null);
-    }
-  };
-
   const submitAllLines = async (order) => {
     const linesPayload = (order.lines ?? []).map(line => {
       const current = forms?.[order.id]?.[line.line_id] ?? { received_qty: Number(line.remaining_qty ?? 0), rejected_qty: 0, rejection_reason: '' };
@@ -238,12 +205,11 @@ export default function CrnIndex({ pendingProcurements = [], activeCrns = [], no
                       return (
                         <div key={line.line_id} className="rounded-xl border border-slate-200 bg-slate-50 p-3">
                           <div className="flex items-center justify-between gap-3 mb-2"><p className="text-xs font-bold text-slate-700">{line.sku}</p></div>
-                          <div className="grid grid-cols-1 md:grid-cols-5 gap-2 items-end">
+                          <div className="grid grid-cols-1 md:grid-cols-4 gap-2 items-end">
                             <div><p className="text-[10px] font-bold text-slate-400 uppercase">Expected</p><p className="text-sm font-bold text-slate-700">{line.remaining_qty}</p></div>
                             <QtyInput label="Received" value={current.received_qty} onChange={(val) => setLineValue(order.id, line.line_id, 'received_qty', val, line.remaining_qty)} min={0} max={line.remaining_qty} />
                             <QtyInput label="Rejected" value={current.rejected_qty} onChange={(val) => setLineValue(order.id, line.line_id, 'rejected_qty', val, line.remaining_qty)} min={0} max={line.remaining_qty} />
                             <div><label className="text-[10px] font-bold text-slate-400 uppercase">Reason</label><input type="text" value={current.rejection_reason} onChange={(e) => setLineValue(order.id, line.line_id, 'rejection_reason', e.target.value, line.remaining_qty)} placeholder="If rejected" className="w-full rounded-lg border border-slate-200 px-2 py-1.5 text-xs bg-white" /></div>
-                            <div><button type="button" onClick={() => submitSingleLine(order, line)} disabled={!canManage || processingId === `line-${order.id}-${line.line_id}`} className="w-full rounded-lg bg-emerald-600 text-white text-xs font-bold py-2 hover:bg-emerald-700 disabled:opacity-50">{processingId === `line-${order.id}-${line.line_id}` ? '...' : 'Submit'}</button></div>
                           </div>
                         </div>
                       );
@@ -294,7 +260,7 @@ export default function CrnIndex({ pendingProcurements = [], activeCrns = [], no
                         <div className="flex justify-end gap-2">
                           <button
                             onClick={() => setSelectedNote(note)}
-                            className="text-xs font-bold text-slate-600 hover:text-slate-900 underline"
+                            className="inline-flex items-center justify-center rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-700 hover:bg-slate-100 hover:border-slate-300 transition-colors"
                           >
                             View Details
                           </button>
@@ -302,7 +268,7 @@ export default function CrnIndex({ pendingProcurements = [], activeCrns = [], no
                             href={`/warehouse/crn/${note.id}/pdf`}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="text-xs font-bold text-rose-600 hover:text-rose-900 underline"
+                            className="inline-flex items-center justify-center rounded-lg border border-rose-200 bg-rose-50 px-3 py-1.5 text-xs font-bold text-rose-700 hover:bg-rose-100 hover:border-rose-300 transition-colors"
                           >
                             PDF
                           </a>
