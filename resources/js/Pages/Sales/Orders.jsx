@@ -106,18 +106,18 @@ export default function Orders({ packages = [], items = [], orders = [], availab
             <p className="text-emerald-100/60 text-sm mt-1">Ready-to-ship sets based on current inventory.</p>
           </div>
 
-          <div className="p-6 md:p-8 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="p-6 md:p-8 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
             {availability.map((pkg) => (
-              <div key={pkg.id} className="rounded-2xl border border-slate-100 p-4 bg-slate-50 flex flex-col justify-between group hover:border-emerald-200 transition-all">
+              <div key={pkg.id} className="rounded-xl border border-slate-100 p-3 bg-slate-50 flex flex-col justify-between group hover:border-emerald-200 transition-all">
                 <div>
-                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{pkg.code}</p>
-                  <p className="text-sm font-bold text-slate-800 line-clamp-1">{pkg.name}</p>
+                  <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">{pkg.code}</p>
+                  <p className="text-xs font-bold text-slate-800 line-clamp-1">{pkg.name}</p>
                 </div>
-                <div className="mt-4 flex items-end justify-between">
-                  <span className={`text-xs font-medium ${pkg.available_qty > 0 ? 'text-emerald-600' : 'text-red-600'}`}>
+                <div className="mt-2 flex items-end justify-between">
+                  <span className={`text-[10px] font-medium ${pkg.available_qty > 0 ? 'text-emerald-600' : 'text-red-600'}`}>
                     {pkg.available_qty > 0 ? 'Available' : 'Unavailable'}
                   </span>
-                  <span className={`text-2xl font-black ${pkg.available_qty < 0 ? 'text-red-600' : pkg.available_qty > 0 ? 'text-emerald-600' : 'text-slate-300'}`}>
+                  <span className={`text-xl font-black ${pkg.available_qty < 0 ? 'text-red-600' : pkg.available_qty > 0 ? 'text-emerald-600' : 'text-slate-300'}`}>
                     {pkg.available_qty}
                   </span>
                 </div>
@@ -211,9 +211,9 @@ export default function Orders({ packages = [], items = [], orders = [], availab
 
               <div className="space-y-3">
                 {lines.map((line, index) => (
-                  <div key={index} className="bg-slate-50 rounded-2xl p-4 border border-slate-100 transition-all hover:border-slate-200">
-                    <div className="flex items-center justify-between mb-3">
-                      <span className={`text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-md ${line.type === 'package' ? 'bg-emerald-100 text-emerald-700' : 'bg-blue-100 text-blue-700'}`}>
+                  <div key={index} className="bg-slate-50 rounded-xl p-3 border border-slate-100 transition-all hover:border-slate-200">
+                    <div className="flex items-center justify-between mb-2">
+                      <span className={`text-[9px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-md ${line.type === 'package' ? 'bg-emerald-100 text-emerald-700' : 'bg-blue-100 text-blue-700'}`}>
                         {line.type === 'package' ? 'Package' : 'Loose SKU'}
                       </span>
                       <button type="button" onClick={() => removeLine(index)} className="text-slate-400 hover:text-red-500 transition-colors">
@@ -223,13 +223,13 @@ export default function Orders({ packages = [], items = [], orders = [], availab
                       </button>
                     </div>
 
-                    <div className="grid grid-cols-12 gap-3">
+                    <div className="grid grid-cols-12 gap-2">
                       <div className="col-span-8">
                         {line.type === 'package' ? (
                           <select
                             value={line.package_id}
                             onChange={(e) => updateLine(index, 'package_id', e.target.value)}
-                            className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm bg-white focus:ring-2 focus:ring-arabina-accent focus:outline-none"
+                            className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm bg-white focus:ring-2 focus:ring-arabina-accent focus:outline-none"
                             required
                           >
                             <option value="">Select Package</option>
@@ -243,7 +243,7 @@ export default function Orders({ packages = [], items = [], orders = [], availab
                           <select
                             value={line.item_sku}
                             onChange={(e) => updateLine(index, 'item_sku', e.target.value)}
-                            className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm bg-white focus:ring-2 focus:ring-arabina-accent focus:outline-none"
+                            className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm bg-white focus:ring-2 focus:ring-arabina-accent focus:outline-none"
                             required
                           >
                             <option value="">Select SKU</option>
@@ -261,7 +261,7 @@ export default function Orders({ packages = [], items = [], orders = [], availab
                           min="1"
                           value={line.type === 'package' ? line.package_quantity : line.item_quantity}
                           onChange={(e) => updateLine(index, line.type === 'package' ? 'package_quantity' : 'item_quantity', e.target.value)}
-                          className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm font-bold text-right bg-white focus:ring-2 focus:ring-arabina-accent focus:outline-none"
+                          className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm font-bold text-right bg-white focus:ring-2 focus:ring-arabina-accent focus:outline-none"
                           placeholder="Qty"
                           required
                         />
@@ -305,10 +305,10 @@ export default function Orders({ packages = [], items = [], orders = [], availab
           </h3>
           <div className="space-y-3">
             {list.map((order) => (
-              <div key={order.id} className="rounded-2xl border border-slate-200 bg-slate-50 p-4 transition-all hover:bg-white hover:shadow-md hover:border-slate-100">
+              <div key={order.id} className="rounded-xl border border-slate-200 bg-slate-50 p-3 transition-all hover:bg-white hover:shadow-md hover:border-slate-100">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <p className="text-sm font-bold text-slate-800">{order.code}</p>
-                  <span className={`text-[10px] font-bold uppercase tracking-wider px-2.5 py-1 rounded-full ${order.status === 'fulfilled'
+                  <span className={`text-[9px] font-bold uppercase tracking-wider px-2.5 py-1 rounded-full ${order.status === 'fulfilled'
                     ? 'bg-emerald-100 text-emerald-700'
                     : order.status === 'partial'
                       ? 'bg-amber-100 text-amber-700'
@@ -317,14 +317,16 @@ export default function Orders({ packages = [], items = [], orders = [], availab
                     {order.status === 'fulfilled' ? 'Shipped' : order.status}
                   </span>
                 </div>
-                <p className="text-sm text-slate-700 mt-1 font-medium">{order.customer_name}</p>
-                {order.site_id && (
-                  <p className="text-[10px] text-slate-500 font-bold uppercase tracking-tighter mt-0.5">Site ID: {order.site_id}</p>
-                )}
-                <p className="text-[10px] text-slate-400 font-bold uppercase tracking-tighter mt-0.5">Order Date: {order.order_date}</p>
-                <ul className="mt-3 space-y-1.5 border-t border-slate-100 pt-3">
+                <p className="text-sm text-slate-700 mt-0.5 font-medium">{order.customer_name}</p>
+                <div className="flex flex-wrap gap-x-4 gap-y-1 mt-1">
+                  {order.site_id && (
+                    <p className="text-[9px] text-slate-500 font-bold uppercase tracking-tighter">Site ID: {order.site_id}</p>
+                  )}
+                  <p className="text-[9px] text-slate-400 font-bold uppercase tracking-tighter">Date: {order.order_date}</p>
+                </div>
+                <ul className="mt-2 space-y-1 border-t border-slate-100 pt-2">
                   {order.lines?.map((line) => (
-                    <li key={line.id} className="text-xs text-slate-600 flex items-center justify-between">
+                    <li key={line.id} className="text-[11px] text-slate-600 flex items-center justify-between">
                       <span className="flex items-center gap-2">
                         <span className={`w-1 h-1 rounded-full ${line.package_id ? 'bg-emerald-400' : 'bg-blue-400'}`} />
                         {line.package_id

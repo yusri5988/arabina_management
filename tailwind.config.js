@@ -9,7 +9,7 @@ export default {
     extend: {
       colors: {
         'arabina-green': '#064e3b',
-        'arabina-logo': '#2d5a27',
+        'arabina-logo': '#1b580e',
         'arabina-accent': '#10b981',
       }
     },

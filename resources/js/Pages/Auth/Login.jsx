@@ -18,7 +18,7 @@ export default function Login() {
   return (
     <>
       <Head title="Login" />
-      <div className="min-h-screen bg-[#2D5A27] flex flex-col justify-center items-center p-6 text-slate-900">
+      <div className="min-h-screen bg-[#1b580e] flex flex-col justify-center items-center p-6 text-slate-900">
         <div className="w-full max-w-md">
           {/* Logo / Branding */}
           <div className="text-center mb-10">
@@ -56,7 +56,7 @@ export default function Login() {
               <div>
                 <label htmlFor="email" className="block text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-2 ml-2">Email Address</label>
                 <div className="relative group">
-                  <div className="absolute inset-y-0 left-0 pl-5 flex items-center pointer-events-none group-focus-within:text-[#2D5A27] text-slate-300 transition-colors">
+                  <div className="absolute inset-y-0 left-0 pl-5 flex items-center pointer-events-none group-focus-within:text-[#1b580e] text-slate-300 transition-colors">
                     <EnvelopeIcon className="w-5 h-5" />
                   </div>
                   <input
@@ -76,7 +76,7 @@ export default function Login() {
               <div>
                 <label htmlFor="password" className="block text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-2 ml-2">Password</label>
                 <div className="relative group">
-                  <div className="absolute inset-y-0 left-0 pl-5 flex items-center pointer-events-none group-focus-within:text-[#2D5A27] text-slate-300 transition-colors">
+                  <div className="absolute inset-y-0 left-0 pl-5 flex items-center pointer-events-none group-focus-within:text-[#1b580e] text-slate-300 transition-colors">
                     <LockClosedIcon className="w-5 h-5" />
                   </div>
                   <input
@@ -104,7 +104,7 @@ export default function Login() {
           </div>
 
           <p className="text-center mt-12 text-white/30 text-[10px] font-black uppercase tracking-[0.4em]">
-            &copy; 2024 Arabina Sdn Bhd
+            Copyright &copy; 2025 Arabina - All Rights Reserved
           </p>
         </div>
       </div>
