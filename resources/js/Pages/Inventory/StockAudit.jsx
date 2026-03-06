@@ -147,7 +147,7 @@ export default function StockAudit({ items = [], auditHistories = [] }) {
                     <button
                         type="submit"
                         disabled={processing}
-                        className="w-full rounded-2xl bg-[#1E3D1A] text-white py-3 text-sm font-bold disabled:opacity-50"
+                        className="w-full rounded-2xl bg-[#1b580e] text-white py-3 text-sm font-bold disabled:opacity-50"
                     >
                         {processing ? 'Saving...' : 'Submit Stock Audit'}
                     </button>

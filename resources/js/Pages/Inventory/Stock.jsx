@@ -619,7 +619,7 @@ export default function Stock({ items, packages, salesOrders = [], type = 'in', 
                   || (mode === 'package' && noPackages)
                   || (mode === 'alacarte' && noItems)
                 }
-                className="w-full bg-[#1E3D1A] hover:bg-emerald-950 text-white py-4 rounded-2xl text-sm font-bold disabled:opacity-50 active:scale-[0.98] transition-all shadow-md"
+                className="w-full bg-[#1b580e] hover:bg-emerald-950 text-white py-4 rounded-2xl text-sm font-bold disabled:opacity-50 active:scale-[0.98] transition-all shadow-md"
               >
                 {processing ? 'Saving...' : 'Submit Stock In'}
               </button>

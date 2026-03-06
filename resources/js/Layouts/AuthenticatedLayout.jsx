@@ -65,7 +65,7 @@ export default function AuthenticatedLayout({ children, title, showWelcome = fal
       )}
 
       {/* Sidebar */}
-      <aside className={`fixed inset-y-0 left-0 z-50 w-72 bg-[#064e3b] text-white shadow-2xl transform transition-transform duration-300 ease-in-out lg:translate-x-0 lg:static lg:flex flex-col ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
+      <aside className={`fixed inset-y-0 left-0 z-50 w-72 bg-[#1b580e] text-white shadow-2xl transform transition-transform duration-300 ease-in-out lg:translate-x-0 lg:static lg:flex flex-col ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
         <div className="p-6 flex items-center justify-between border-b border-emerald-800/50">
           <div className="flex items-center space-x-3">
             <img 
@@ -101,9 +101,9 @@ export default function AuthenticatedLayout({ children, title, showWelcome = fal
           ))}
         </nav>
 
-        <div className="p-4 border-t border-emerald-800/50 bg-[#053e2f]/50">
+        <div className="p-4 border-t border-emerald-800/50 bg-[#123a09]/50">
           <div className="flex items-center space-x-3 px-4 py-3 mb-2">
-             <div className="w-10 h-10 bg-emerald-100 rounded-xl flex items-center justify-center text-[#064e3b] font-black text-lg shadow-inner">
+             <div className="w-10 h-10 bg-emerald-100 rounded-xl flex items-center justify-center text-[#1b580e] font-black text-lg shadow-inner">
                 {auth?.user?.name?.charAt(0)}
              </div>
              <div className="flex-1 overflow-hidden">
@@ -157,7 +157,7 @@ export default function AuthenticatedLayout({ children, title, showWelcome = fal
         <main className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8">
           <div className="max-w-5xl mx-auto">
             {showWelcome && (
-              <div className="mb-8 relative overflow-hidden bg-gradient-to-br from-[#064e3b] to-emerald-800 rounded-[2.5rem] p-8 sm:p-10 text-white shadow-xl border border-emerald-700/50">
+              <div className="mb-8 relative overflow-hidden bg-gradient-to-br from-[#1b580e] to-emerald-800 rounded-[2.5rem] p-8 sm:p-10 text-white shadow-xl border border-emerald-700/50">
                 {/* Decorative background shapes */}
                 <div className="absolute top-0 right-0 -mt-8 -mr-8 w-64 h-64 bg-white opacity-5 rounded-full blur-3xl"></div>
                 <div className="absolute bottom-0 left-0 -mb-8 -ml-8 w-48 h-48 bg-emerald-400 opacity-10 rounded-full blur-2xl"></div>

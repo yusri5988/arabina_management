@@ -1,5 +1,5 @@
 import { Head } from '@inertiajs/react';
-import { useMemo, useState, useRef, useCallback, useEffect } from 'react';
+import { useMemo, useState, useRef, useCallback } from 'react';
 import AuthenticatedLayout from '../../Layouts/AuthenticatedLayout';
 
 export default function Index({ items }) {
@@ -12,6 +12,7 @@ export default function Index({ items }) {
   const [editErrors, setEditErrors] = useState({});
   const [deleteConfirmId, setDeleteConfirmId] = useState(null);
   const [search, setSearch] = useState('');
+  const [sortConfig, setSortConfig] = useState({ key: null, direction: 'asc' });
   const [bulkRows, setBulkRows] = useState([]);
   const [bulkError, setBulkError] = useState(null);
   const [bulkUploading, setBulkUploading] = useState(false);
@@ -30,11 +31,62 @@ export default function Index({ items }) {
     [],
   );
 
+  const requestSort = (key) => {
+    let direction = 'asc';
+    if (sortConfig.key === key && sortConfig.direction === 'asc') {
+      direction = 'desc';
+    } else if (sortConfig.key === key && sortConfig.direction === 'desc') {
+      direction = null;
+    }
+    setSortConfig({ key, direction });
+  };
+
   const filtered = useMemo(() => {
-    if (!search.trim()) return inventory;
-    const q = search.toLowerCase();
-    return inventory.filter(i => i.sku?.toLowerCase().includes(q) || i.name?.toLowerCase().includes(q));
-  }, [inventory, search]);
+    let result = [...inventory];
+
+    // Search filter
+    if (search.trim()) {
+      const q = search.toLowerCase();
+      result = result.filter(i => 
+        i.sku?.toLowerCase().includes(q) || 
+        i.name?.toLowerCase().includes(q)
+      );
+    }
+
+    // Sort logic
+    if (sortConfig.key && sortConfig.direction) {
+      result.sort((a, b) => {
+        let valA = a[sortConfig.key];
+        let valB = b[sortConfig.key];
+
+        if (sortConfig.key === 'length_m') {
+          // Numeric sort for length
+          valA = valA === null || valA === '' ? 0 : Number(valA);
+          valB = valB === null || valB === '' ? 0 : Number(valB);
+        } else {
+          // String sort for others (name, sku, unit)
+          valA = (valA || '').toString().toLowerCase();
+          valB = (valB || '').toString().toLowerCase();
+        }
+
+        if (valA < valB) return sortConfig.direction === 'asc' ? -1 : 1;
+        if (valA > valB) return sortConfig.direction === 'asc' ? 1 : -1;
+        return 0;
+      });
+    }
+
+    return result;
+  }, [inventory, search, sortConfig]);
+
+  const SortIndicator = ({ columnKey }) => {
+    const isSorted = sortConfig.key === columnKey;
+    return (
+      <span className="flex flex-col text-[8px] leading-none text-slate-300 ml-1">
+        <span className={isSorted && sortConfig.direction === 'asc' ? 'text-slate-900 font-bold' : ''}>▲</span>
+        <span className={isSorted && sortConfig.direction === 'desc' ? 'text-slate-900 font-bold' : ''}>▼</span>
+      </span>
+    );
+  };
 
   const showNotification = (type, message) => {
     setNotification({ type, message });
@@ -239,7 +291,7 @@ export default function Index({ items }) {
     <AuthenticatedLayout title="Inventory Stock" backUrl="__back__">
       <Head title="Inventory" />
 
-      <div className="space-y-6">
+      <div className="space-y-8">
         {notification && (
           <div className={`rounded-2xl border px-4 py-3 text-sm shadow-sm ${notification.type === 'success' ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-red-200 bg-red-50 text-red-700'
             }`}>
@@ -302,7 +354,7 @@ export default function Index({ items }) {
             <button
               type="submit"
               disabled={processing}
-              className="w-full bg-[#1E3D1A] text-white py-4 rounded-2xl text-sm font-bold hover:bg-emerald-950 disabled:opacity-50 active:scale-[0.98] transition-all shadow-md"
+              className="w-full bg-[#1b580e] text-white py-4 rounded-2xl text-sm font-bold hover:bg-emerald-950 disabled:opacity-50 active:scale-[0.98] transition-all shadow-md"
             >
               {processing ? 'Registering...' : 'Register Item'}
             </button>
@@ -328,7 +380,7 @@ export default function Index({ items }) {
                 <div className="overflow-x-auto border border-slate-100 rounded-2xl">
                   <table className="w-full text-sm">
                     <thead>
-                      <tr className="text-left text-xs font-bold text-slate-400 uppercase tracking-wider bg-slate-50">
+                      <tr className="text-left text-[10px] font-bold text-slate-500 uppercase tracking-wider bg-slate-50">
                         <th className="px-4 py-2.5">#</th>
                         <th className="px-4 py-2.5">SKU</th>
                         <th className="px-4 py-2.5">Item Name</th>
@@ -358,7 +410,7 @@ export default function Index({ items }) {
                   <button
                     onClick={submitBulk}
                     disabled={bulkUploading}
-                    className="flex-1 bg-[#1E3D1A] text-white py-3.5 rounded-2xl text-sm font-bold hover:bg-emerald-950 disabled:opacity-50 active:scale-[0.98] transition-all shadow-md"
+                    className="flex-1 bg-[#1b580e] text-white py-3.5 rounded-2xl text-sm font-bold hover:bg-emerald-950 disabled:opacity-50 active:scale-[0.98] transition-all shadow-md"
                   >
                     {bulkUploading ? 'Uploading...' : `Upload ${bulkRows.length} Item(s)`}
                   </button>
@@ -375,106 +427,139 @@ export default function Index({ items }) {
         </div>
 
         {/* SKU List */}
-        <div className="bg-white rounded-[2rem] shadow-sm border border-slate-100 p-6 md:p-8">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-slate-100 pb-4 gap-3">
-            <h2 className="text-lg font-bold text-slate-800">All SKUs</h2>
-            <div className="flex items-center gap-3">
+        <div className="space-y-4">
+          <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between px-2">
+            <div>
+              <h3 className="text-sm font-bold text-slate-800">All Registered SKUs ({filtered.length})</h3>
+              <p className="text-xs text-slate-500">Manage your product catalog and SKUs.</p>
+            </div>
+
+            <div className="flex flex-col sm:flex-row gap-2 sm:items-center">
               <input
                 type="text"
                 value={search}
                 onChange={e => setSearch(e.target.value)}
                 placeholder="Search SKU or name..."
-                className="rounded-xl border border-slate-200 px-3.5 py-2 text-sm focus:ring-2 focus:ring-arabina-accent focus:outline-none bg-slate-50 w-56"
+                className="w-full sm:w-80 lg:w-96 rounded-xl border border-slate-200 px-3 py-2 text-sm bg-white focus:ring-2 focus:ring-arabina-accent focus:outline-none"
               />
-              <span className="text-xs text-slate-400 font-medium whitespace-nowrap">{filtered.length} / {inventory.length}</span>
             </div>
           </div>
 
-          {inventory.length === 0 ? (
-            <p className="text-sm text-slate-400 mt-6 text-center py-8">No items registered yet.</p>
-          ) : (
-            <div className="mt-4 overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="text-left text-xs font-bold text-slate-400 uppercase tracking-wider">
-                    <th className="px-4 py-3">#</th>
-                    <th className="px-4 py-3">SKU</th>
-                    <th className="px-4 py-3">Name</th>
-                    <th className="px-4 py-3">Length (m)</th>
-                    <th className="px-4 py-3">Unit</th>
-                    <th className="px-4 py-3 text-right">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-50">
-                  {filtered.map((item, idx) => (
-                    <tr key={item.id ?? idx} className="hover:bg-slate-50/60 transition-colors">
-                      {editingId === item.id ? (
-                        <>
-                          <td className="px-4 py-2 text-slate-400 font-medium">{idx + 1}</td>
-                          <td className="px-4 py-2">
-                            <input type="text" value={editData.sku} onChange={e => setEditData(prev => ({ ...prev, sku: e.target.value }))} className={inputClass} />
-                            {editErrors.sku && <p className="text-xs text-red-500 mt-0.5">{editErrors.sku[0]}</p>}
-                          </td>
-                          <td className="px-4 py-2">
-                            <input type="text" value={editData.name} onChange={e => setEditData(prev => ({ ...prev, name: e.target.value }))} className={inputClass} />
-                            {editErrors.name && <p className="text-xs text-red-500 mt-0.5">{editErrors.name[0]}</p>}
-                          </td>
-                          <td className="px-4 py-2">
-                            <input type="number" step="0.01" value={editData.length_m} onChange={e => setEditData(prev => ({ ...prev, length_m: e.target.value }))} className={inputClass} />
-                            {editErrors.length_m && <p className="text-xs text-red-500 mt-0.5">{editErrors.length_m[0]}</p>}
-                          </td>
-                          <td className="px-4 py-2">
-                            <select value={editData.unit} onChange={e => setEditData(prev => ({ ...prev, unit: e.target.value }))} className={inputClass}>
-                              <option value="pcs">pcs</option>
-                              <option value="set">set</option>
-                              <option value="roll">roll</option>
-                            </select>
-                          </td>
-                          <td className="px-4 py-2 text-right whitespace-nowrap">
-                            <button onClick={() => saveEdit(item.id)} disabled={processing} className="inline-flex items-center px-3 py-1.5 rounded-xl bg-emerald-600 text-white text-xs font-semibold hover:bg-emerald-700 disabled:opacity-50 transition-colors mr-1.5">
-                              Save
-                            </button>
-                            <button onClick={cancelEdit} className="inline-flex items-center px-3 py-1.5 rounded-xl bg-slate-200 text-slate-600 text-xs font-semibold hover:bg-slate-300 transition-colors">
-                              Cancel
-                            </button>
-                          </td>
-                        </>
-                      ) : (
-                        <>
-                          <td className="px-4 py-3 text-slate-400 font-medium">{idx + 1}</td>
-                          <td className="px-4 py-3 font-mono font-semibold text-slate-700">{item.sku}</td>
-                          <td className="px-4 py-3 text-slate-600">{item.name}</td>
-                          <td className="px-4 py-3 text-slate-500">{item.length_m ?? '—'}</td>
-                          <td className="px-4 py-3">
-                            <span className="inline-block bg-slate-100 text-slate-600 text-xs font-semibold px-2.5 py-1 rounded-full">{item.unit}</span>
-                          </td>
-                          <td className="px-4 py-3 text-right whitespace-nowrap">
-                            <button onClick={() => startEdit(item)} className="inline-flex items-center px-3 py-1.5 rounded-xl bg-amber-50 text-amber-700 text-xs font-semibold hover:bg-amber-100 border border-amber-200 transition-colors mr-1.5">
-                              Edit
-                            </button>
-                            {deleteConfirmId === item.id ? (
-                              <>
-                                <button onClick={() => deleteItem(item.id)} disabled={processing} className="inline-flex items-center px-3 py-1.5 rounded-xl bg-red-600 text-white text-xs font-semibold hover:bg-red-700 disabled:opacity-50 transition-colors mr-1.5">
-                                  Confirm
-                                </button>
-                                <button onClick={() => setDeleteConfirmId(null)} className="inline-flex items-center px-3 py-1.5 rounded-xl bg-slate-200 text-slate-600 text-xs font-semibold hover:bg-slate-300 transition-colors">
-                                  No
-                                </button>
-                              </>
-                            ) : (
-                              <button onClick={() => setDeleteConfirmId(item.id)} className="inline-flex items-center px-3 py-1.5 rounded-xl bg-red-50 text-red-600 text-xs font-semibold hover:bg-red-100 border border-red-200 transition-colors">
-                                Delete
-                              </button>
-                            )}
-                          </td>
-                        </>
-                      )}
+          <div className="bg-white rounded-[2rem] shadow-sm border border-slate-100 overflow-hidden">
+            {inventory.length === 0 ? (
+              <p className="text-sm text-slate-400 text-center py-12 font-medium">No items registered yet.</p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="min-w-full divide-y divide-slate-100">
+                  <thead className="bg-slate-50">
+                    <tr>
+                      <th className="px-4 py-3 text-left text-[10px] font-bold text-slate-500 uppercase tracking-wider">#</th>
+                      <th
+                        className="px-4 py-3 text-left text-[10px] font-bold text-slate-500 uppercase tracking-wider cursor-pointer hover:bg-slate-100 group transition-colors"
+                        onClick={() => requestSort('sku')}
+                      >
+                        <div className="flex items-center gap-1">
+                          SKU <SortIndicator columnKey="sku" />
+                        </div>
+                      </th>
+                      <th
+                        className="px-4 py-3 text-left text-[10px] font-bold text-slate-500 uppercase tracking-wider cursor-pointer hover:bg-slate-100 group transition-colors"
+                        onClick={() => requestSort('name')}
+                      >
+                        <div className="flex items-center gap-1">
+                          Name <SortIndicator columnKey="name" />
+                        </div>
+                      </th>
+                      <th
+                        className="px-4 py-3 text-left text-[10px] font-bold text-slate-500 uppercase tracking-wider cursor-pointer hover:bg-slate-100 group transition-colors"
+                        onClick={() => requestSort('length_m')}
+                      >
+                        <div className="flex items-center gap-1">
+                          Length (m) <SortIndicator columnKey="length_m" />
+                        </div>
+                      </th>
+                      <th
+                        className="px-4 py-3 text-left text-[10px] font-bold text-slate-500 uppercase tracking-wider cursor-pointer hover:bg-slate-100 group transition-colors"
+                        onClick={() => requestSort('unit')}
+                      >
+                        <div className="flex items-center gap-1">
+                          Unit <SortIndicator columnKey="unit" />
+                        </div>
+                      </th>
+                      <th className="px-4 py-3 text-right text-[10px] font-bold text-slate-500 uppercase tracking-wider">Actions</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
+                  </thead>
+                  <tbody className="bg-white divide-y divide-slate-50">
+                    {filtered.map((item, idx) => (
+                      <tr key={item.id ?? idx} className="hover:bg-slate-50 transition-colors">
+                        {editingId === item.id ? (
+                          <>
+                            <td className="px-4 py-3 text-slate-400 font-medium text-xs">{idx + 1}</td>
+                            <td className="px-4 py-2">
+                              <input type="text" value={editData.sku} onChange={e => setEditData(prev => ({ ...prev, sku: e.target.value }))} className={inputClass} />
+                              {editErrors.sku && <p className="text-xs text-red-500 mt-0.5 font-medium">{editErrors.sku[0]}</p>}
+                            </td>
+                            <td className="px-4 py-2">
+                              <input type="text" value={editData.name} onChange={e => setEditData(prev => ({ ...prev, name: e.target.value }))} className={inputClass} />
+                              {editErrors.name && <p className="text-xs text-red-500 mt-0.5 font-medium">{editErrors.name[0]}</p>}
+                            </td>
+                            <td className="px-4 py-2">
+                              <input type="number" step="0.01" value={editData.length_m} onChange={e => setEditData(prev => ({ ...prev, length_m: e.target.value }))} className={inputClass} />
+                              {editErrors.length_m && <p className="text-xs text-red-500 mt-0.5 font-medium">{editErrors.length_m[0]}</p>}
+                            </td>
+                            <td className="px-4 py-2">
+                              <select value={editData.unit} onChange={e => setEditData(prev => ({ ...prev, unit: e.target.value }))} className={inputClass}>
+                                <option value="pcs">pcs</option>
+                                <option value="set">set</option>
+                                <option value="roll">roll</option>
+                              </select>
+                            </td>
+                            <td className="px-4 py-2 text-right whitespace-nowrap">
+                              <button onClick={() => saveEdit(item.id)} disabled={processing} className="inline-flex items-center px-4 py-2 rounded-xl bg-emerald-600 text-white text-[10px] font-black uppercase tracking-wider hover:bg-emerald-700 disabled:opacity-50 transition-all mr-1.5 shadow-sm shadow-emerald-100">
+                                Save
+                              </button>
+                              <button onClick={cancelEdit} className="inline-flex items-center px-4 py-2 rounded-xl bg-slate-100 text-slate-600 text-[10px] font-black uppercase tracking-wider hover:bg-slate-200 transition-all">
+                                Cancel
+                              </button>
+                            </td>
+                          </>
+                        ) : (
+                          <>
+                            <td className="px-4 py-3 text-slate-400 font-medium text-xs">{idx + 1}</td>
+                            <td className="px-4 py-3 text-xs font-bold text-slate-700 font-mono">{item.sku}</td>
+                            <td className="px-4 py-3 text-sm text-slate-800 font-medium">{item.name}</td>
+                            <td className="px-4 py-3 text-xs text-slate-600 font-semibold">{item.length_m ? Number(item.length_m).toFixed(2) : '—'}</td>
+                            <td className="px-4 py-3">
+                              <span className="inline-block bg-slate-100 text-slate-600 text-[10px] font-bold uppercase px-2 py-0.5 rounded-full">{item.unit}</span>
+                            </td>
+                            <td className="px-4 py-3 text-right whitespace-nowrap">
+                              <button onClick={() => startEdit(item)} className="inline-flex items-center px-3 py-1.5 rounded-xl bg-amber-50 text-amber-700 text-[10px] font-bold uppercase tracking-wider hover:bg-amber-100 border border-amber-200 transition-all mr-1.5">
+                                Edit
+                              </button>
+                              {deleteConfirmId === item.id ? (
+                                <>
+                                  <button onClick={() => deleteItem(item.id)} disabled={processing} className="inline-flex items-center px-3 py-1.5 rounded-xl bg-red-600 text-white text-[10px] font-bold uppercase tracking-wider hover:bg-red-700 disabled:opacity-50 transition-all mr-1.5">
+                                    Confirm
+                                  </button>
+                                  <button onClick={() => setDeleteConfirmId(null)} className="inline-flex items-center px-3 py-1.5 rounded-xl bg-slate-200 text-slate-600 text-[10px] font-bold uppercase tracking-wider hover:bg-slate-300 transition-all">
+                                    No
+                                  </button>
+                                </>
+                              ) : (
+                                <button onClick={() => setDeleteConfirmId(item.id)} className="inline-flex items-center px-3 py-1.5 rounded-xl bg-red-50 text-red-600 text-[10px] font-bold uppercase tracking-wider hover:bg-red-100 border border-red-200 transition-all">
+                                  Delete
+                                </button>
+                              )}
+                            </td>
+                          </>
+                        )}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
         </div>
       </div>
     </AuthenticatedLayout>

@@ -8,7 +8,7 @@ export default {
   theme: {
     extend: {
       colors: {
-        'arabina-green': '#064e3b',
+        'arabina-green': '#1b580e',
         'arabina-logo': '#1b580e',
         'arabina-accent': '#10b981',
       }

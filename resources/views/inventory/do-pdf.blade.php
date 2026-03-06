@@ -6,7 +6,7 @@
     <style>
         body { font-family: sans-serif; font-size: 12px; color: #333; }
         .header { text-align: center; margin-bottom: 30px; border-bottom: 2px solid #333; padding-bottom: 10px; }
-        .header h1 { margin: 0; font-size: 24px; color: #1e3d1a; }
+        .header h1 { margin: 0; font-size: 24px; color: #1b580e; }
         .info-table { width: 100%; margin-bottom: 20px; }
         .info-table td { vertical-align: top; padding: 5px; }
         .items-table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
@@ -41,7 +41,7 @@
     </table>
 
     @if($transaction->notes)
-    <div style="margin-bottom: 20px; padding: 10px; background: #f9f9f9; border-left: 4px solid #1e3d1a;">
+    <div style="margin-bottom: 20px; padding: 10px; background: #f9f9f9; border-left: 4px solid #1b580e;">
         <strong>Notes:</strong><br>
         {{ $transaction->notes }}
     </div>

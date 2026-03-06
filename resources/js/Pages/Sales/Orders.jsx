@@ -96,7 +96,7 @@ export default function Orders({ packages = [], items = [], orders = [], availab
 
         {/* Package Availability Section */}
         <div className="bg-white rounded-[2rem] shadow-sm border border-slate-100 overflow-hidden">
-          <div className="bg-[#1E3D1A] p-6 md:p-8">
+          <div className="bg-[#1b580e] p-6 md:p-8">
             <h2 className="text-xl font-bold text-white flex items-center gap-2">
               <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-6 h-6 text-emerald-400">
                 <path strokeLinecap="round" strokeLinejoin="round" d="M20.25 7.5l-.625 10.632a2.25 2.25 0 01-2.247 2.118H6.622a2.25 2.25 0 01-2.247-2.118L3.75 7.5M10 11.25h4M3.375 7.5h17.25c.621 0 1.125-.504 1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125z" />
@@ -291,7 +291,7 @@ export default function Orders({ packages = [], items = [], orders = [], availab
             <button
               type="submit"
               disabled={processing || !databaseReady || !canCreate}
-              className="w-full bg-[#1E3D1A] text-white py-4 rounded-2xl text-sm font-bold disabled:opacity-50 hover:bg-emerald-950 transition-all shadow-lg shadow-emerald-900/10"
+              className="w-full bg-[#1b580e] text-white py-4 rounded-2xl text-sm font-bold disabled:opacity-50 hover:bg-emerald-950 transition-all shadow-lg shadow-emerald-900/10"
             >
               {processing ? 'Saving...' : 'Submit Sales Order'}
             </button>

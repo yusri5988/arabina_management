@@ -89,7 +89,7 @@ export default function Logs({ logs }) {
                 href={link.url || '#'}
                 dangerouslySetInnerHTML={{ __html: link.label }}
                 className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${link.active
-                    ? 'bg-[#1E3D1A] text-white shadow-md'
+                    ? 'bg-[#1b580e] text-white shadow-md'
                     : link.url
                       ? 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
                       : 'text-slate-300 cursor-not-allowed'

@@ -200,7 +200,7 @@ export default function Edit({ user }) {
             <button
               type="submit"
               disabled={passwordProcessing}
-              className="w-full bg-[#1E3D1A] text-white py-4 rounded-2xl text-sm font-bold hover:bg-emerald-950 disabled:opacity-50 active:scale-[0.98] transition-transform shadow-md"
+              className="w-full bg-[#1b580e] text-white py-4 rounded-2xl text-sm font-bold hover:bg-emerald-950 disabled:opacity-50 active:scale-[0.98] transition-transform shadow-md"
             >
               {passwordProcessing ? 'Updating...' : 'Update Password'}
             </button>

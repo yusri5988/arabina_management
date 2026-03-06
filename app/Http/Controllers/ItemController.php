@@ -430,24 +430,27 @@ class ItemController extends Controller
 
     public function destroy(Item $item): JsonResponse
     {
-        $hasStock = $item->variants()->where('stock_current', '>', 0)->exists();
-
-        if ($hasStock) {
-            return response()->json([
-                'message' => 'Cannot delete item with existing stock.',
-            ], 409);
-        }
-
+        // For soft deletion, we don't need to check for DB constraints 
+        // because the record stays in the table (just marked as deleted).
+        
         $logData = ['id' => $item->id, 'sku' => $item->sku, 'name' => $item->name];
 
-        $item->variants()->delete();
-        $item->delete();
+        try {
+            // Soft delete the item. This will set 'deleted_at' column.
+            // Note: We don't delete variants because soft deleting the parent is enough 
+            // to hide it from UI, and keeping variants preserves stock history accurately.
+            $item->delete();
 
-        TransactionLog::record('item_deleted', $logData);
+            TransactionLog::record('item_deleted', $logData);
 
-        return response()->json([
-            'message' => 'Item deleted successfully.',
-        ]);
+            return response()->json([
+                'message' => 'Item archived (deleted) successfully.',
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'message' => 'Failed to delete item due to system error.',
+            ], 500);
+        }
     }
 
     public function stockInForm(): Response

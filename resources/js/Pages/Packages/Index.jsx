@@ -353,7 +353,7 @@ export default function Index({ items, packages, schemaReady = true }) {
                     type="button"
                     onClick={submitBulk}
                     disabled={bulkUploading || !schemaReady}
-                    className="flex-1 bg-[#1E3D1A] text-white py-3.5 rounded-2xl text-sm font-bold hover:bg-emerald-950 disabled:opacity-50 active:scale-[0.98] transition-all shadow-md"
+                    className="flex-1 bg-[#1b580e] text-white py-3.5 rounded-2xl text-sm font-bold hover:bg-emerald-950 disabled:opacity-50 active:scale-[0.98] transition-all shadow-md"
                   >
                     {bulkUploading ? 'Uploading...' : `Upload ${bulkRows.length} Row(s)`}
                   </button>
@@ -483,7 +483,7 @@ export default function Index({ items, packages, schemaReady = true }) {
               type="submit"
               disabled={processing || !schemaReady}
               className={`w-full text-white py-4 rounded-2xl text-sm font-bold disabled:opacity-50 active:scale-[0.98] transition-all shadow-md ${
-                editingId ? 'bg-amber-500 hover:bg-amber-600' : 'bg-[#1E3D1A] hover:bg-emerald-950'
+                editingId ? 'bg-amber-500 hover:bg-amber-600' : 'bg-[#1b580e] hover:bg-emerald-950'
               }`}
             >
               {processing ? 'Saving...' : editingId ? 'Update Package' : 'Save Package'}

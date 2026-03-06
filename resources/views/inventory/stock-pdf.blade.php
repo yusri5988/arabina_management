@@ -5,12 +5,12 @@
     <title>Inventory Stock List</title>
     <style>
         body { font-family: sans-serif; font-size: 12px; color: #333; }
-        .header { text-align: center; margin-bottom: 30px; border-bottom: 2px solid #1E3D1A; padding-bottom: 10px; }
-        .header h1 { margin: 0; color: #1E3D1A; font-size: 24px; }
+        .header { text-align: center; margin-bottom: 30px; border-bottom: 2px solid #1b580e; padding-bottom: 10px; }
+        .header h1 { margin: 0; color: #1b580e; font-size: 24px; }
         .header p { margin: 5px 0 0; color: #666; }
-        .section-title { background: #f8fafc; padding: 8px; font-weight: bold; border-left: 4px solid #1E3D1A; margin: 20px 0 10px; text-transform: uppercase; letter-spacing: 1px; }
+        .section-title { background: #f8fafc; padding: 8px; font-weight: bold; border-left: 4px solid #1b580e; margin: 20px 0 10px; text-transform: uppercase; letter-spacing: 1px; }
         table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
-        th { background: #1E3D1A; color: white; text-align: left; padding: 8px; font-size: 10px; text-transform: uppercase; }
+        th { background: #1b580e; color: white; text-align: left; padding: 8px; font-size: 10px; text-transform: uppercase; }
         td { padding: 8px; border-bottom: 1px solid #eee; }
         .text-right { text-align: right; }
         .font-bold { font-weight: bold; }

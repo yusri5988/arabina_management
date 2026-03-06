@@ -264,7 +264,7 @@ export default function CrnCreate({ procurementOrders = [], items = [] }) {
           <button
             type="submit"
             disabled={processing || form.items.length === 0}
-            className="flex items-center gap-2 bg-[#1E3D1A] text-white px-8 py-3 rounded-xl text-sm font-bold hover:bg-emerald-900 disabled:opacity-50 transition-all shadow-lg active:scale-95"
+            className="flex items-center gap-2 bg-[#1b580e] text-white px-8 py-3 rounded-xl text-sm font-bold hover:bg-emerald-900 disabled:opacity-50 transition-all shadow-lg active:scale-95"
           >
             {processing ? (
               <ArrowPathIcon className="w-5 h-5 animate-spin" />

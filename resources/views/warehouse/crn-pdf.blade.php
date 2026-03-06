@@ -5,8 +5,8 @@
     <title>CRN - {{ $crn->crn_number }}</title>
     <style>
         body { font-family: sans-serif; font-size: 12px; color: #333; line-height: 1.5; }
-        .header { margin-bottom: 30px; border-bottom: 2px solid #1e3d1a; padding-bottom: 10px; }
-        .header h1 { color: #1e3d1a; margin: 0; font-size: 24px; }
+        .header { margin-bottom: 30px; border-bottom: 2px solid #1b580e; padding-bottom: 10px; }
+        .header h1 { color: #1b580e; margin: 0; font-size: 24px; }
         .info-table { width: 100%; margin-bottom: 20px; }
         .info-table td { padding: 4px 0; vertical-align: top; }
         .label { font-weight: bold; color: #666; width: 120px; }

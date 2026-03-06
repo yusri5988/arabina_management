@@ -14,13 +14,13 @@
         .header {
             text-align: center;
             margin-bottom: 20px;
-            border-bottom: 2px solid #1E3D1A;
+            border-bottom: 2px solid #1b580e;
             padding-bottom: 10px;
         }
 
         .header h1 {
             margin: 0;
-            color: #1E3D1A;
+            color: #1b580e;
             font-size: 22px;
         }
 
@@ -36,7 +36,7 @@
         }
 
         th {
-            background: #1E3D1A;
+            background: #1b580e;
             color: #fff;
             text-align: left;
             padding: 8px;
