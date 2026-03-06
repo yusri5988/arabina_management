@@ -1,0 +1,2 @@
+{"timestamp":"2026-03-06T10:06:52.865Z","type":"watcher_start","cwd":"/mnt/c/laragon/www/Arabina-Inventory","notify_script":"/root/.nvm/versions/node/v24.14.0/lib/node_modules/oh-my-codex/scripts/notify-hook.js","poll_ms":700,"once":false}
+{"timestamp":"2026-03-06T10:53:30.584Z","type":"fallback_notify","ok":true,"thread_id":"019cc29d-5d34-7253-b71c-9624b6ebd03d","turn_id":"019cc2c5-2ac6-72a1-bdf1-afde7138f37f","file":"/root/.codex/sessions/2026/03/06/rollout-2026-03-06T18-06-58-019cc29d-5d34-7253-b71c-9624b6ebd03d.jsonl","reason":"sent"}

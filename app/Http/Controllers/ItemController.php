@@ -325,7 +325,7 @@ class ItemController extends Controller
         $validated = $request->validate([
             'sku' => 'required|string|unique:items,sku',
             'name' => 'required|string|max:255',
-            'length_m' => 'nullable|numeric|unique:items,length_m',
+            'length_m' => 'nullable|numeric',
             'unit' => 'required|in:pcs,set,roll',
         ]);
 
@@ -403,10 +403,14 @@ class ItemController extends Controller
 
     public function update(Request $request, Item $item): JsonResponse
     {
+        if ($request->input('length_m') === '') {
+            $request->merge(['length_m' => null]);
+        }
+
         $validated = $request->validate([
             'sku' => ['required', 'string', Rule::unique('items', 'sku')->ignore($item->id)],
             'name' => 'required|string|max:255',
-            'length_m' => ['nullable', 'numeric', Rule::unique('items', 'length_m')->ignore($item->id)],
+            'length_m' => ['nullable', 'numeric'],
             'unit' => 'required|in:pcs,set,roll',
         ]);
 
