@@ -1,5 +1,5 @@
 import { Head } from '@inertiajs/react';
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import AuthenticatedLayout from '../../Layouts/AuthenticatedLayout';
 
 const initialForm = {
@@ -9,6 +9,8 @@ const initialForm = {
   lines: [{ item_id: '', quantity: '' }],
 };
 
+const templateColumns = ['package_code', 'package_name', 'sku', 'quantity'];
+
 export default function Index({ items, packages, schemaReady = true }) {
   const [data, setData] = useState(initialForm);
   const [list, setList] = useState(packages ?? []);
@@ -17,6 +19,11 @@ export default function Index({ items, packages, schemaReady = true }) {
   const [deletingId, setDeletingId] = useState(null);
   const [editingId, setEditingId] = useState(null);
   const [notification, setNotification] = useState(null);
+  const [bulkRows, setBulkRows] = useState([]);
+  const [bulkError, setBulkError] = useState(null);
+  const [bulkUploading, setBulkUploading] = useState(false);
+  const fileRef = useRef(null);
+  const xlsxRef = useRef(null);
 
   const csrfToken = useMemo(
     () => document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') ?? '',
@@ -62,6 +69,126 @@ export default function Index({ items, packages, schemaReady = true }) {
       })),
     });
     window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const loadXlsx = useCallback(async () => {
+    if (xlsxRef.current) return xlsxRef.current;
+
+    const script = document.createElement('script');
+    script.src = 'https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js';
+    document.head.appendChild(script);
+
+    await new Promise((resolve, reject) => {
+      script.onload = resolve;
+      script.onerror = reject;
+    });
+
+    xlsxRef.current = window.XLSX;
+    return window.XLSX;
+  }, []);
+
+  const handleFileChange = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setBulkError(null);
+    setBulkRows([]);
+
+    try {
+      const XLSX = await loadXlsx();
+      const buffer = await file.arrayBuffer();
+      const workbook = XLSX.read(buffer, { type: 'array' });
+      const worksheet = workbook.Sheets[workbook.SheetNames[0]];
+      const json = XLSX.utils.sheet_to_json(worksheet, { defval: '' });
+
+      if (!json.length) {
+        setBulkError('File is empty.');
+        return;
+      }
+
+      const headers = Object.keys(json[0] ?? {}).map((key) => String(key).trim().toLowerCase());
+      const missingColumns = templateColumns.filter((column) => !headers.includes(column));
+
+      if (missingColumns.length) {
+        setBulkError(`Missing required column: ${missingColumns[0]}`);
+        return;
+      }
+
+      const rows = json.map((raw) => {
+        const row = {};
+        Object.keys(raw).forEach((key) => {
+          row[String(key).trim().toLowerCase()] = raw[key];
+        });
+
+        return {
+          package_code: String(row.package_code ?? '').trim(),
+          package_name: String(row.package_name ?? '').trim(),
+          sku: String(row.sku ?? '').trim(),
+          quantity: row.quantity === '' || row.quantity == null ? '' : String(row.quantity).trim(),
+        };
+      }).filter((row) => row.package_code || row.package_name || row.sku || row.quantity);
+
+      if (!rows.length) {
+        setBulkError('No valid rows found. Use the downloaded template columns.');
+        return;
+      }
+
+      const invalidRow = rows.findIndex((row) => !row.package_code || !row.package_name || !row.sku || !row.quantity);
+      if (invalidRow !== -1) {
+        setBulkError(`Row ${invalidRow + 2} is incomplete. Required: package_code, package_name, sku, quantity.`);
+        return;
+      }
+
+      setBulkRows(rows);
+    } catch (error) {
+      setBulkError('Failed to read file. Please use .xlsx, .xls, or .csv format.');
+    }
+  };
+
+  const cancelBulk = () => {
+    setBulkRows([]);
+    setBulkError(null);
+    if (fileRef.current) fileRef.current.value = '';
+  };
+
+  const submitBulk = async () => {
+    if (!bulkRows.length) return;
+
+    setBulkUploading(true);
+    setBulkError(null);
+    setNotification(null);
+
+    try {
+      const response = await fetch('/packages/bulk', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+          'X-CSRF-TOKEN': csrfToken,
+        },
+        body: JSON.stringify({ packages: bulkRows.map(row => ({
+          ...row,
+          quantity: Number(row.quantity),
+        })) }),
+      });
+
+      const payload = await response.json().catch(() => ({}));
+
+      if (response.status === 201) {
+        setList(prev => [...(payload.data ?? []), ...prev]);
+        setNotification({ type: 'success', message: payload.message ?? 'Bulk package upload completed.' });
+        cancelBulk();
+      } else if (response.status === 422) {
+        const firstError = Object.values(payload.errors ?? {}).flat()[0];
+        setBulkError(firstError ?? 'Bulk upload validation failed.');
+      } else {
+        setBulkError(payload.message ?? 'Bulk upload failed.');
+      }
+    } catch (error) {
+      setBulkError('Network error. Please try again.');
+    } finally {
+      setBulkUploading(false);
+    }
   };
 
   const submit = async (e) => {
@@ -159,11 +286,98 @@ export default function Index({ items, packages, schemaReady = true }) {
 
         <div className="bg-white rounded-[2rem] shadow-sm border border-slate-100 p-6 md:p-8">
           <div className="flex items-center justify-between border-b border-slate-100 pb-4 mb-5">
+            <h2 className="text-lg font-bold text-slate-800">Bulk Upload Package</h2>
+            <a
+              href="/packages/bulk/template"
+              className="text-xs font-bold text-arabina-accent uppercase tracking-widest"
+            >
+              Download Template
+            </a>
+          </div>
+
+          <div className="space-y-4">
+            <p className="text-xs text-slate-500">
+              Upload fail <strong>.xlsx</strong>, <strong>.xls</strong>, atau <strong>.csv</strong> dengan kolum:
+              {' '}
+              <code className="bg-slate-100 px-1.5 py-0.5 rounded text-slate-700">package_code</code>,
+              {' '}
+              <code className="bg-slate-100 px-1.5 py-0.5 rounded text-slate-700">package_name</code>,
+              {' '}
+              <code className="bg-slate-100 px-1.5 py-0.5 rounded text-slate-700">sku</code>,
+              {' '}
+              <code className="bg-slate-100 px-1.5 py-0.5 rounded text-slate-700">quantity</code>.
+            </p>
+
+            <input
+              ref={fileRef}
+              type="file"
+              accept=".xlsx,.xls,.csv"
+              onChange={handleFileChange}
+              className="block w-full text-sm text-slate-500 file:mr-4 file:py-2.5 file:px-5 file:rounded-2xl file:border-0 file:text-sm file:font-bold file:bg-slate-100 file:text-slate-700 hover:file:bg-slate-200 cursor-pointer"
+            />
+
+            {bulkError && <p className="text-xs text-red-500">{bulkError}</p>}
+
+            {bulkRows.length > 0 && (
+              <>
+                <div className="overflow-x-auto border border-slate-100 rounded-2xl">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="text-left text-xs font-bold text-slate-400 uppercase tracking-wider bg-slate-50">
+                        <th className="px-4 py-2.5">#</th>
+                        <th className="px-4 py-2.5">Package Code</th>
+                        <th className="px-4 py-2.5">Package Name</th>
+                        <th className="px-4 py-2.5">SKU</th>
+                        <th className="px-4 py-2.5 text-right">Qty</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-50">
+                      {bulkRows.slice(0, 20).map((row, index) => (
+                        <tr key={`${row.package_code}-${row.sku}-${index}`} className="hover:bg-slate-50/60">
+                          <td className="px-4 py-2 text-slate-400">{index + 1}</td>
+                          <td className="px-4 py-2 font-mono font-semibold text-slate-700">{row.package_code}</td>
+                          <td className="px-4 py-2 text-slate-600">{row.package_name}</td>
+                          <td className="px-4 py-2 font-mono text-slate-700">{row.sku}</td>
+                          <td className="px-4 py-2 text-right font-bold text-slate-700">{row.quantity}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  {bulkRows.length > 20 && (
+                    <p className="text-xs text-slate-400 text-center py-2">...and {bulkRows.length - 20} more rows</p>
+                  )}
+                </div>
+
+                <div className="flex gap-3">
+                  <button
+                    type="button"
+                    onClick={submitBulk}
+                    disabled={bulkUploading || !schemaReady}
+                    className="flex-1 bg-[#1E3D1A] text-white py-3.5 rounded-2xl text-sm font-bold hover:bg-emerald-950 disabled:opacity-50 active:scale-[0.98] transition-all shadow-md"
+                  >
+                    {bulkUploading ? 'Uploading...' : `Upload ${bulkRows.length} Row(s)`}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={cancelBulk}
+                    className="px-6 py-3.5 rounded-2xl text-sm font-bold bg-slate-200 text-slate-600 hover:bg-slate-300 transition-colors"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+
+        <div className="bg-white rounded-[2rem] shadow-sm border border-slate-100 p-6 md:p-8">
+          <div className="flex items-center justify-between border-b border-slate-100 pb-4 mb-5">
             <h2 className="text-lg font-bold text-slate-800">
               {editingId ? `Edit Package: ${data.code}` : 'Create Package by SKU'}
             </h2>
             {editingId && (
               <button
+                type="button"
                 onClick={resetForm}
                 className="text-xs font-bold text-slate-400 hover:text-slate-600 uppercase tracking-widest"
               >

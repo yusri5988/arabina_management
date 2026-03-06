@@ -105,7 +105,9 @@ Route::middleware('auth')->group(function () {
 
     Route::middleware('module:create_package')->group(function () {
         Route::get('/packages', [PackageController::class, 'index'])->name('packages.index');
+        Route::get('/packages/bulk/template', [PackageController::class, 'downloadBulkTemplate'])->name('packages.bulk.template');
         Route::post('/packages', [PackageController::class, 'store'])->name('packages.store');
+        Route::post('/packages/bulk', [PackageController::class, 'bulkStore'])->name('packages.bulk.store');
         Route::put('/packages/{package}', [PackageController::class, 'update'])->name('packages.update');
         Route::delete('/packages/{package}', [PackageController::class, 'destroy'])->name('packages.destroy');
     });

@@ -5,5 +5,5 @@
   "notify_script": "/root/.nvm/versions/node/v24.14.0/lib/node_modules/oh-my-codex/scripts/notify-hook.js",
   "poll_ms": 700,
   "tracked_files": 1,
-  "seen_turns": 1
+  "seen_turns": 3
 }
