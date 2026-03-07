@@ -132,16 +132,20 @@ export default function CrnIndex({ pendingProcurements = [], activeCrns = [], no
         )}
 
         {/* ── Incoming Shipments ── */}
-        <div className="bg-white rounded-[2rem] shadow-sm border border-slate-100 pt-2 px-6 pb-6 md:pt-2.5 md:px-8 md:pb-8">
+        <div className="bg-white rounded-[2rem] shadow-sm border border-slate-100 pt-2 px-6 pb-2 md:pt-2.5 md:px-8 md:pb-2">
           <div className="flex items-center justify-between border-b border-slate-100 pb-2">
             <h2 className="text-lg font-bold text-slate-800">Incoming Shipments</h2>
-            <span className="text-xs font-bold uppercase tracking-wider px-2.5 py-1 rounded-full bg-slate-100 text-slate-600">
+            <span className={`text-[10px] font-black uppercase tracking-widest px-3 py-1 rounded-full shadow-sm border transition-colors ${
+              incomingCrns.length > 0 
+                ? 'bg-lime-400 text-lime-950 border-lime-500/20' 
+                : 'bg-slate-100 text-slate-600 border-slate-200'
+            }`}>
               {incomingCrns.length} Active
             </span>
           </div>
 
           {incomingCrns.length === 0 ? (
-            <p className="text-sm text-slate-400 text-center py-10 font-medium">No incoming shipments.</p>
+            <p className="text-sm text-slate-400 text-center py-4 font-medium">No incoming shipments.</p>
           ) : (
             <div className="overflow-x-auto -mx-6 md:-mx-8 mt-1">
               <table className="w-full text-left border-collapse min-w-[600px]">
@@ -185,8 +189,33 @@ export default function CrnIndex({ pendingProcurements = [], activeCrns = [], no
                                 showMonthDropdown
                                 showYearDropdown
                                 dropdownMode="select"
+                                portalId="root-portal"
                               />
-                              <CalendarDaysIcon className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 group-hover:text-arabina-accent transition-colors" />
+                              <style dangerouslySetInnerHTML={{ __html: `
+                                .react-datepicker-popper {
+                                  z-index: 9999 !important;
+                                }
+                                .react-datepicker {
+                                  font-family: inherit;
+                                  border-radius: 1rem !important;
+                                  border: 1px solid #f1f5f9 !important;
+                                  padding: 0.5rem !important;
+                                }
+                                .react-datepicker__header {
+                                  background-color: white !important;
+                                  border-bottom: 1px solid #f1f5f9 !important;
+                                  border-top-left-radius: 1rem !important;
+                                  border-top-right-radius: 1rem !important;
+                                  padding-top: 10px !important;
+                                }
+                                .react-datepicker__day--selected {
+                                  background-color: #10b981 !important;
+                                  border-radius: 0.5rem !important;
+                                }
+                                .react-datepicker__day:hover {
+                                  border-radius: 0.5rem !important;
+                                }
+                              `}} />
                             </div>
                           </div>
                         ) : (
@@ -200,7 +229,7 @@ export default function CrnIndex({ pendingProcurements = [], activeCrns = [], no
                               href={`/procurement/orders/${crn.procurement_order_id}/pdf`}
                               target="_blank"
                               rel="noopener noreferrer"
-                              className="inline-flex items-center gap-1.5 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-bold text-rose-700 hover:bg-rose-100 transition-colors shadow-sm"
+                              className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-rose-600 px-4 py-2 text-xs font-black text-white hover:bg-rose-700 transition-all shadow-md active:scale-95 uppercase tracking-wider h-[36px] min-w-[80px]"
                             >
                               <ArrowDownTrayIcon className="w-3.5 h-3.5" />
                               List
@@ -210,7 +239,7 @@ export default function CrnIndex({ pendingProcurements = [], activeCrns = [], no
                             <button
                               onClick={() => submitEta(crn.id)}
                               disabled={!etaDates[crn.id] || processingId === `eta-${crn.id}`}
-                              className="inline-flex items-center rounded-xl bg-slate-800 text-white text-xs font-black px-4 py-2 hover:bg-slate-900 disabled:opacity-50 transition-all active:scale-95 shadow-md uppercase tracking-wider"
+                              className="inline-flex items-center justify-center rounded-xl bg-slate-800 text-white text-xs font-black px-4 py-2 hover:bg-slate-900 disabled:opacity-50 transition-all active:scale-95 shadow-md uppercase tracking-wider h-[36px] min-w-[80px]"
                             >
                               Set ETA
                             </button>
@@ -218,7 +247,7 @@ export default function CrnIndex({ pendingProcurements = [], activeCrns = [], no
                             <button
                               onClick={() => markArrived(crn.id)}
                               disabled={processingId === `arrived-${crn.id}`}
-                              className="inline-flex items-center rounded-xl bg-emerald-600 text-white text-xs font-black px-4 py-2 hover:bg-emerald-700 disabled:opacity-50 transition-all active:scale-95 shadow-md uppercase tracking-wider"
+                              className="inline-flex items-center justify-center rounded-xl bg-emerald-600 text-white text-xs font-black px-4 py-2 hover:bg-emerald-700 disabled:opacity-50 transition-all active:scale-95 shadow-md uppercase tracking-wider h-[36px] min-w-[80px]"
                             >
                               Mark Arrived
                             </button>
@@ -234,16 +263,20 @@ export default function CrnIndex({ pendingProcurements = [], activeCrns = [], no
         </div>
 
         {/* ── Stock Arrival Checklist ── */}
-        <div className="bg-white rounded-[2rem] shadow-sm border border-slate-100 pt-2 px-6 pb-6 md:pt-2.5 md:px-8 md:pb-8">
+        <div className="bg-white rounded-[2rem] shadow-sm border border-slate-100 pt-2 px-6 pb-2 md:pt-2.5 md:px-8 md:pb-2">
           <div className="flex items-center justify-between border-b border-slate-100 pb-2">
             <h2 className="text-lg font-bold text-slate-800">Stock Arrival Checklist</h2>
-            <span className="text-xs font-bold uppercase tracking-wider px-2.5 py-1 rounded-full bg-slate-100 text-slate-600">
+            <span className={`text-[10px] font-black uppercase tracking-widest px-3 py-1 rounded-full shadow-sm border transition-colors ${
+              pendingList.length > 0 
+                ? 'bg-lime-400 text-lime-950 border-lime-500/20' 
+                : 'bg-slate-100 text-slate-600 border-slate-200'
+            }`}>
               {pendingList.length} Pending PO
             </span>
           </div>
 
           {pendingList.length === 0 ? (
-            <p className="text-sm text-slate-400 text-center py-10 font-medium">No pending procurement order to receive.</p>
+            <p className="text-sm text-slate-400 text-center py-4 font-medium">No pending procurement order to receive.</p>
           ) : (
             <div className="overflow-x-auto -mx-6 md:-mx-8 mt-1">
               <table className="w-full text-left border-collapse min-w-[600px]">
@@ -349,7 +382,7 @@ export default function CrnIndex({ pendingProcurements = [], activeCrns = [], no
 
         {/* ── Latest CRN History ── */}
         {notes.length > 0 && (
-          <div className="bg-white rounded-[2rem] shadow-sm border border-slate-100 pt-2 px-6 pb-6 md:pt-2.5 md:px-8 md:pb-8">
+          <div className="bg-white rounded-[2rem] shadow-sm border border-slate-100 pt-2 px-6 pb-2 md:pt-2.5 md:px-8 md:pb-2">
             <div className="border-b border-slate-100 pb-2">
               <h2 className="text-lg font-bold text-slate-800">Latest CRN History</h2>
             </div>
@@ -388,7 +421,7 @@ export default function CrnIndex({ pendingProcurements = [], activeCrns = [], no
                         <div className="flex justify-end gap-2">
                           <button
                             onClick={() => setSelectedNote(note)}
-                            className="inline-flex items-center justify-center rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-700 hover:bg-slate-100 hover:border-slate-300 transition-colors"
+                            className="inline-flex items-center justify-center rounded-xl bg-slate-800 px-4 py-2 text-xs font-black uppercase tracking-wider text-white transition-all shadow-md hover:bg-slate-900 active:scale-95 h-[36px] min-w-[100px]"
                           >
                             View Details
                           </button>
@@ -396,7 +429,7 @@ export default function CrnIndex({ pendingProcurements = [], activeCrns = [], no
                             href={`/warehouse/crn/${note.id}/pdf`}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="inline-flex items-center justify-center rounded-lg border border-rose-200 bg-rose-50 px-3 py-1.5 text-xs font-bold text-rose-700 hover:bg-rose-100 hover:border-rose-300 transition-colors"
+                            className="inline-flex items-center justify-center rounded-xl bg-rose-600 px-4 py-2 text-xs font-black uppercase tracking-wider text-white transition-all shadow-md hover:bg-rose-700 active:scale-95 h-[36px] min-w-[60px]"
                           >
                             PDF
                           </a>

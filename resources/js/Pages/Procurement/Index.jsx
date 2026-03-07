@@ -1,7 +1,97 @@
 import { Head } from '@inertiajs/react';
-import { useState } from 'react';
+import { useState, useRef, useEffect, useMemo } from 'react';
 import AuthenticatedLayout from '../../Layouts/AuthenticatedLayout';
 import { apiFetchJson } from '../../lib/http';
+
+const CustomSelect = ({ value, onChange, options, placeholder, className = "" }) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const [search, setSearch] = useState('');
+  const containerRef = useRef(null);
+
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (containerRef.current && !containerRef.current.contains(event.target)) {
+        setIsOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const filteredOptions = useMemo(() => {
+    if (!search) return options;
+    const q = search.toLowerCase();
+    return options.filter(o => o.label.toLowerCase().includes(q));
+  }, [options, search]);
+
+  const selectedOption = options.find(o => o.value === value);
+
+  return (
+    <div className={`relative ${className}`} ref={containerRef}>
+      <button
+        type="button"
+        onClick={() => {
+          setIsOpen(!isOpen);
+          if (!isOpen) setSearch('');
+        }}
+        className="w-full flex items-center justify-between rounded-xl border border-slate-200 px-4 py-2.5 text-sm focus:ring-2 focus:ring-arabina-accent focus:outline-none bg-white text-left transition-all hover:border-slate-300 shadow-sm"
+      >
+        <span className={selectedOption ? "font-bold text-slate-700" : "text-slate-400 font-medium"}>
+          {selectedOption ? selectedOption.label : placeholder}
+        </span>
+        <svg
+          className={`w-4 h-4 text-slate-400 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`}
+          fill="none"
+          stroke="currentColor"
+          viewBox="0 0 24 24"
+        >
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" />
+        </svg>
+      </button>
+
+      {isOpen && (
+        <div className="absolute z-50 mt-2 w-full bg-white rounded-2xl shadow-xl border border-slate-100 overflow-hidden flex flex-col py-1 animate-in fade-in slide-in-from-top-2 duration-200">
+          <div className="px-3 py-2 border-b border-slate-50">
+            <input
+              type="text"
+              autoFocus
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              placeholder="Search..."
+              className="w-full px-3 py-1.5 text-xs border border-slate-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-arabina-accent/20 bg-slate-50"
+            />
+          </div>
+          <div className="max-h-60 overflow-y-auto custom-scrollbar">
+            {filteredOptions.length > 0 ? (
+              filteredOptions.map((option) => (
+                <button
+                  key={option.value}
+                  type="button"
+                  onClick={() => {
+                    onChange(option.value);
+                    setIsOpen(false);
+                  }}
+                  className={`w-full px-4 py-2.5 text-xs text-left transition-colors hover:bg-slate-50 flex items-center justify-between ${
+                    value === option.value ? 'bg-emerald-50 text-emerald-700 font-bold' : 'text-slate-600'
+                  }`}
+                >
+                  {option.label}
+                  {value === option.value && (
+                    <svg className="w-4 h-4 text-emerald-600" fill="currentColor" viewBox="0 0 20 20">
+                      <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                    </svg>
+                  )}
+                </button>
+              ))
+            ) : (
+              <p className="px-4 py-3 text-xs text-slate-400 italic text-center">No results found</p>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
 
 export default function ProcurementIndex({ 
     databaseReady = true, 
@@ -21,8 +111,8 @@ export default function ProcurementIndex({
   const [newOrderPackageLines, setNewOrderPackageLines] = useState([]);
   const [newOrderSkuLines, setNewOrderSkuLines] = useState([]);
   const [newOrderNotes, setNewOrderNotes] = useState('');
-  const [newOrderAddPackageForm, setNewOrderAddPackageForm] = useState({ package_id: '', quantity: '' });
-  const [newOrderAddSkuForm, setNewOrderAddSkuForm] = useState({ item_id: '', quantity: '' });
+  const [newOrderAddPackageForm, setNewOrderAddPackageForm] = useState({ package_id: null, quantity: '' });
+  const [newOrderAddSkuForm, setNewOrderAddSkuForm] = useState({ item_id: null, quantity: '' });
 
   const toggleReceiveForm = (orderId) => {
     setExpandedReceiveForms((prev) => ({
@@ -35,18 +125,11 @@ export default function ProcurementIndex({
     let packageId = newOrderAddPackageForm.package_id;
     const quantity = Number(newOrderAddPackageForm.quantity);
 
-    if (typeof packageId === 'string' && isNaN(Number(packageId))) {
-        const found = packages.find(p => `${p.code} — ${p.name}` === packageId || p.code === packageId);
-        if (found) packageId = found.id;
-    } else {
-        packageId = Number(packageId);
-    }
-
     if (packageId && quantity > 0) {
       const pkg = packages.find(p => p.id === packageId);
       if (pkg) {
         setNewOrderPackageLines(prev => [...prev, { package_id: pkg.id, quantity, package_code: pkg.code, package_name: pkg.name }]);
-        setNewOrderAddPackageForm({ package_id: '', quantity: '' });
+        setNewOrderAddPackageForm({ package_id: null, quantity: '' });
       }
     }
   };
@@ -68,18 +151,11 @@ export default function ProcurementIndex({
     let itemId = newOrderAddSkuForm.item_id;
     const quantity = Number(newOrderAddSkuForm.quantity);
 
-    if (typeof itemId === 'string' && isNaN(Number(itemId))) {
-        const found = items.find(i => `${i.sku} — ${i.name}` === itemId || i.sku === itemId);
-        if (found) itemId = found.id;
-    } else {
-        itemId = Number(itemId);
-    }
-
     if (itemId && quantity > 0) {
       const item = items.find(i => i.id === itemId);
       if (item) {
         setNewOrderSkuLines(prev => [...prev, { item_id: item.id, quantity, sku: item.sku, name: item.name }]);
-        setNewOrderAddSkuForm({ item_id: '', quantity: '' });
+        setNewOrderAddSkuForm({ item_id: null, quantity: '' });
       }
     }
   };
@@ -187,7 +263,7 @@ export default function ProcurementIndex({
             <div className="flex flex-col gap-8">
               {/* Row 1: Demand Analysis */}
               <div className="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden">
-                  <div className="p-6 border-b border-slate-100 bg-slate-50/50 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                  <div className="px-6 py-3 border-b border-slate-100 bg-slate-50/50 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                       <div>
                           <h2 className="text-sm font-black text-slate-800 uppercase tracking-widest flex items-center gap-2">
                               <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse"></span>
@@ -206,7 +282,7 @@ export default function ProcurementIndex({
                       )}
                   </div>
                   
-                  <div className="p-6">
+                  <div className="pt-4 px-6 pb-6">
                       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
                           <div className="lg:col-span-8">
                               <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-4">Recommended Replenishment</h3>
@@ -269,12 +345,14 @@ export default function ProcurementIndex({
 
               {/* Row 2: Order Builder */}
               <div className="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden">
-                  <div className="bg-slate-900 p-8 relative overflow-hidden">
+                  <div className="bg-slate-900 py-5 px-8 relative overflow-hidden">
                       <div className="absolute top-0 right-0 w-64 h-64 bg-emerald-500/5 rounded-full -translate-y-32 translate-x-32 blur-3xl"></div>
                       <div className="relative z-10">
                           <h2 className="text-xl font-black text-white flex items-center gap-3">
                               <div className="w-10 h-10 rounded-2xl bg-emerald-500 flex items-center justify-center shadow-lg shadow-emerald-500/20">
-                                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-6 h-6 text-white"><path d="M10.75 4.75a.75.75 0 0 0-1.5 0v4.5h-4.5a.75.75 0 0 0 0 1.5h4.5v4.5a.75.75 0 0 0 1.5 0v-4.5h4.5a.75.75 0 0 0 0-1.5h-4.5v-4.5Z" /></svg>
+                                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" className="w-6 h-6 text-white">
+                                      <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+                                  </svg>
                               </div>
                               Create Procurement Order
                           </h2>
@@ -282,7 +360,7 @@ export default function ProcurementIndex({
                       </div>
                   </div>
 
-                  <div className="p-6 md:p-8 space-y-12">
+                  <div className="pt-4 px-6 md:pt-5 md:px-8 pb-8 space-y-8">
                       {/* Section: Packages */}
                       <div className="space-y-4">
                           <div className="flex items-center justify-between border-b border-slate-100 pb-3">
@@ -291,21 +369,34 @@ export default function ProcurementIndex({
                           </div>
                           <div className="bg-slate-50/50 rounded-3xl border border-slate-100 p-4 md:p-6 space-y-4">
                               <div className="flex flex-col md:flex-row gap-2 items-center">
-                                  <div className="flex-1 w-full relative group">
+                                  <CustomSelect
+                                      className="flex-1 w-full"
+                                      placeholder="Select Package..."
+                                      value={newOrderAddPackageForm.package_id}
+                                      onChange={(val) => setNewOrderAddPackageForm({ ...newOrderAddPackageForm, package_id: val })}
+                                      options={packages.map(pkg => ({
+                                          value: pkg.id,
+                                          label: `${pkg.code} — ${pkg.name}`
+                                      }))}
+                                  />
+                                  <div className="flex items-center gap-1 bg-white border border-slate-200 rounded-xl p-1 shadow-sm h-[46px] w-full md:w-auto">
+                                      <button 
+                                          onClick={() => setNewOrderAddPackageForm(prev => ({ ...prev, quantity: Math.max(0, (Number(prev.quantity) || 0) - 1) }))}
+                                          className="w-8 h-8 flex items-center justify-center bg-slate-50 rounded-lg text-slate-400 hover:text-blue-600 border border-slate-100 transition-all active:scale-90 font-black"
+                                      >-</button>
                                       <input 
-                                          list="package-list" 
-                                          value={newOrderAddPackageForm.package_id} 
-                                          onChange={(e) => setNewOrderAddPackageForm({ ...newOrderAddPackageForm, package_id: e.target.value })} 
-                                          placeholder="Select Package..." 
-                                          className="w-full rounded-xl border-slate-200 text-xs font-bold h-12 pl-4 pr-10 bg-white focus:ring-blue-500/20 focus:border-blue-500 shadow-sm transition-all placeholder:text-slate-400" 
+                                          type="number" 
+                                          value={newOrderAddPackageForm.quantity} 
+                                          onChange={(e) => setNewOrderAddPackageForm({ ...newOrderAddPackageForm, quantity: e.target.value })} 
+                                          placeholder="Qty" 
+                                          className="w-12 border-none text-xs font-black text-center bg-transparent focus:ring-0 p-0 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none" 
                                       />
-                                      <datalist id="package-list">{packages.map((pkg) => <option key={pkg.id} value={`${pkg.code} — ${pkg.name}`} />)}</datalist>
-                                      <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400">
-                                          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4"><path fillRule="evenodd" d="M10.53 3.47a.75.75 0 0 0-1.06 0L6.22 6.72a.75.75 0 0 0 1.06 1.06L10 5.06l2.72 2.72a.75.75 0 1 0 1.06-1.06l-3.25-3.25Zm-4.31 9.81 3.25 3.25a.75.75 0 0 0 1.06 0l3.25-3.25a.75.75 0 1 0-1.06-1.06L10 14.94l-2.72-2.72a.75.75 0 0 0-1.06 1.06Z" clipRule="evenodd" /></svg>
-                                      </div>
+                                      <button 
+                                          onClick={() => setNewOrderAddPackageForm(prev => ({ ...prev, quantity: (Number(prev.quantity) || 0) + 1 }))}
+                                          className="w-8 h-8 flex items-center justify-center bg-slate-50 rounded-lg text-slate-400 hover:text-blue-600 border border-slate-100 transition-all active:scale-90 font-black"
+                                      >+</button>
                                   </div>
-                                  <input type="number" value={newOrderAddPackageForm.quantity} onChange={(e) => setNewOrderAddPackageForm({ ...newOrderAddPackageForm, quantity: e.target.value })} placeholder="Qty" className="w-full md:w-24 rounded-xl border-slate-200 text-xs font-bold text-center h-12 bg-white focus:ring-blue-500/20 shadow-sm" />
-                                  <button onClick={addNewOrderPackageLine} className="bg-blue-600 hover:bg-blue-700 text-white h-12 px-6 rounded-xl text-[10px] font-black uppercase tracking-widest w-full md:w-48 shadow-md active:scale-95 transition-all">Add Package</button>
+                                  <button onClick={addNewOrderPackageLine} className="bg-blue-600 hover:bg-blue-700 text-white h-[46px] px-6 rounded-xl text-[10px] font-black uppercase tracking-widest w-full md:w-48 shadow-md active:scale-95 transition-all">Add Package</button>
                               </div>
                               <div className="flex flex-col gap-2 max-h-80 overflow-y-auto pr-2 custom-scrollbar">
                                   {newOrderPackageLines.map((line, index) => (
@@ -341,21 +432,34 @@ export default function ProcurementIndex({
                           </div>
                           <div className="bg-slate-50/50 rounded-3xl border border-slate-100 p-4 md:p-6 space-y-4">
                               <div className="flex flex-col md:flex-row gap-2 items-center">
-                                  <div className="flex-1 w-full relative group">
+                                  <CustomSelect
+                                      className="flex-1 w-full"
+                                      placeholder="Select individual SKU..."
+                                      value={newOrderAddSkuForm.item_id}
+                                      onChange={(val) => setNewOrderAddSkuForm({ ...newOrderAddSkuForm, item_id: val })}
+                                      options={items.map(item => ({
+                                          value: item.id,
+                                          label: `${item.sku} — ${item.name}`
+                                      }))}
+                                  />
+                                  <div className="flex items-center gap-1 bg-white border border-slate-200 rounded-xl p-1 shadow-sm h-[46px] w-full md:w-auto">
+                                      <button 
+                                          onClick={() => setNewOrderAddSkuForm(prev => ({ ...prev, quantity: Math.max(0, (Number(prev.quantity) || 0) - 1) }))}
+                                          className="w-8 h-8 flex items-center justify-center bg-slate-50 rounded-lg text-slate-400 hover:text-emerald-600 border border-slate-100 transition-all active:scale-90 font-black"
+                                      >-</button>
                                       <input 
-                                          list="sku-list" 
-                                          value={newOrderAddSkuForm.item_id} 
-                                          onChange={(e) => setNewOrderAddSkuForm({ ...newOrderAddSkuForm, item_id: e.target.value })} 
-                                          placeholder="Select individual SKU..." 
-                                          className="w-full rounded-xl border-slate-200 text-xs font-bold h-12 pl-4 pr-10 bg-white focus:ring-emerald-500/20 focus:border-emerald-500 shadow-sm transition-all placeholder:text-slate-400" 
+                                          type="number" 
+                                          value={newOrderAddSkuForm.quantity} 
+                                          onChange={(e) => setNewOrderAddSkuForm({ ...newOrderAddSkuForm, quantity: e.target.value })} 
+                                          placeholder="Qty" 
+                                          className="w-12 border-none text-xs font-black text-center bg-transparent focus:ring-0 p-0 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none" 
                                       />
-                                      <datalist id="sku-list">{items.map((item) => <option key={item.id} value={`${item.sku} — ${item.name}`} />)}</datalist>
-                                      <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400">
-                                          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4"><path fillRule="evenodd" d="M10.53 3.47a.75.75 0 0 0-1.06 0L6.22 6.72a.75.75 0 0 0 1.06 1.06L10 5.06l2.72 2.72a.75.75 0 1 0 1.06-1.06l-3.25-3.25Zm-4.31 9.81 3.25 3.25a.75.75 0 0 0 1.06 0l3.25-3.25a.75.75 0 1 0-1.06-1.06L10 14.94l-2.72-2.72a.75.75 0 0 0-1.06 1.06Z" clipRule="evenodd" /></svg>
-                                      </div>
+                                      <button 
+                                          onClick={() => setNewOrderAddSkuForm(prev => ({ ...prev, quantity: (Number(prev.quantity) || 0) + 1 }))}
+                                          className="w-8 h-8 flex items-center justify-center bg-slate-50 rounded-lg text-slate-400 hover:text-emerald-600 border border-slate-100 transition-all active:scale-90 font-black"
+                                      >+</button>
                                   </div>
-                                  <input type="number" value={newOrderAddSkuForm.quantity} onChange={(e) => setNewOrderAddSkuForm({ ...newOrderAddSkuForm, quantity: e.target.value })} placeholder="Qty" className="w-full md:w-24 rounded-xl border-slate-200 text-xs font-bold text-center h-12 bg-white focus:ring-emerald-500/20 shadow-sm" />
-                                  <button onClick={addNewOrderSkuLine} className="bg-emerald-600 hover:bg-emerald-700 text-white h-12 px-6 rounded-xl text-[10px] font-black uppercase tracking-widest w-full md:w-48 shadow-md active:scale-95 transition-all">Add SKU</button>
+                                  <button onClick={addNewOrderSkuLine} className="bg-emerald-600 hover:bg-emerald-700 text-white h-[46px] px-6 rounded-xl text-[10px] font-black uppercase tracking-widest w-full md:w-48 shadow-md active:scale-95 transition-all">Add SKU</button>
                               </div>
                               <div className="flex flex-col gap-2 max-h-80 overflow-y-auto pr-2 custom-scrollbar">
                                   {newOrderSkuLines.map((line, index) => (
