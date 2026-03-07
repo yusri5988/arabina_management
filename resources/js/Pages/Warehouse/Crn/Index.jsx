@@ -182,6 +182,9 @@ export default function CrnIndex({ pendingProcurements = [], activeCrns = [], no
                                 className="w-full text-xs rounded-xl border border-slate-200 py-2 pl-9 pr-3 bg-white focus:ring-2 focus:ring-arabina-accent/20 focus:border-arabina-accent transition-all cursor-pointer shadow-sm hover:border-slate-300 font-bold text-slate-700"
                                 calendarClassName="!rounded-2xl !border-slate-100 !shadow-2xl !p-2 !font-sans"
                                 popperPlacement="bottom-start"
+                                showMonthDropdown
+                                showYearDropdown
+                                dropdownMode="select"
                               />
                               <CalendarDaysIcon className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 group-hover:text-arabina-accent transition-colors" />
                             </div>
