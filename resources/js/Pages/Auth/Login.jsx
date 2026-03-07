@@ -54,7 +54,7 @@ export default function Login() {
 
             <form onSubmit={submit} className="space-y-6">
               <div>
-                <label htmlFor="email" className="block text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-2 ml-2">Email Address</label>
+                <label htmlFor="email" className="block text-[10px] font-black text-black uppercase tracking-[0.2em] mb-2 ml-2">Email Address</label>
                 <div className="relative group">
                   <div className="absolute inset-y-0 left-0 pl-5 flex items-center pointer-events-none group-focus-within:text-[#1b580e] text-slate-300 transition-colors">
                     <EnvelopeIcon className="w-5 h-5" />
@@ -66,7 +66,7 @@ export default function Login() {
                     autoComplete="email"
                     value={data.email}
                     onChange={(e) => setData('email', e.target.value)}
-                    className="w-full rounded-2xl border border-slate-100 pl-14 pr-5 py-5 text-sm focus:ring-4 focus:ring-emerald-500/10 focus:border-[#10b981] focus:outline-none bg-slate-50 transition-all font-semibold placeholder:text-slate-300"
+                    className="w-full rounded-2xl border border-slate-100 pl-14 pr-5 py-5 text-sm text-black focus:ring-4 focus:ring-emerald-500/10 focus:border-[#10b981] focus:outline-none bg-slate-50 transition-all font-semibold placeholder:text-slate-400"
                     placeholder="name@email.com"
                     required
                   />
@@ -74,7 +74,7 @@ export default function Login() {
               </div>
 
               <div>
-                <label htmlFor="password" className="block text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-2 ml-2">Password</label>
+                <label htmlFor="password" className="block text-[10px] font-black text-black uppercase tracking-[0.2em] mb-2 ml-2">Password</label>
                 <div className="relative group">
                   <div className="absolute inset-y-0 left-0 pl-5 flex items-center pointer-events-none group-focus-within:text-[#1b580e] text-slate-300 transition-colors">
                     <LockClosedIcon className="w-5 h-5" />
@@ -86,7 +86,7 @@ export default function Login() {
                     autoComplete="current-password"
                     value={data.password}
                     onChange={(e) => setData('password', e.target.value)}
-                    className="w-full rounded-2xl border border-slate-100 pl-14 pr-5 py-5 text-sm focus:ring-4 focus:ring-emerald-500/10 focus:border-[#10b981] focus:outline-none bg-slate-50 transition-all font-semibold placeholder:text-slate-300"
+                    className="w-full rounded-2xl border border-slate-100 pl-14 pr-5 py-5 text-sm text-black focus:ring-4 focus:ring-emerald-500/10 focus:border-[#10b981] focus:outline-none bg-slate-50 transition-all font-semibold placeholder:text-slate-400"
                     placeholder="••••••••"
                     required
                   />

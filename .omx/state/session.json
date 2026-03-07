@@ -1,9 +1,9 @@
 {
-  "session_id": "omx-1772818121256-frs9oa",
-  "started_at": "2026-03-06T17:28:41.480Z",
-  "cwd": "/mnt/c/laragon/www/Arabina-Inventory",
-  "pid": 2773,
+  "session_id": "omx-1772837976157-dlgm6o",
+  "started_at": "2026-03-06T22:59:36.316Z",
+  "cwd": "/mnt/c/laragon/www/Arabina-inventory",
+  "pid": 4667,
   "platform": "linux",
-  "pid_start_ticks": 59909,
+  "pid_start_ticks": 74876,
   "pid_cmdline": "node /root/.nvm/versions/node/v24.14.0/bin/omx"
 }

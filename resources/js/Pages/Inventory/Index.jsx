@@ -310,7 +310,7 @@ export default function Index({ items }) {
                   type="text"
                   value={data.sku}
                   onChange={e => setData(prev => ({ ...prev, sku: e.target.value }))}
-                  className="w-full rounded-2xl border border-slate-200 px-4 py-3.5 text-sm focus:ring-2 focus:ring-arabina-accent focus:outline-none bg-slate-50"
+                  className="w-full rounded-2xl border border-slate-200 px-4 py-2.5 text-sm focus:ring-2 focus:ring-arabina-accent focus:outline-none bg-slate-50"
                   required
                 />
                 {errors.sku && <p className="text-xs text-red-500 mt-1">{errors.sku[0]}</p>}
@@ -321,7 +321,7 @@ export default function Index({ items }) {
                   type="text"
                   value={data.name}
                   onChange={e => setData(prev => ({ ...prev, name: e.target.value }))}
-                  className="w-full rounded-2xl border border-slate-200 px-4 py-3.5 text-sm focus:ring-2 focus:ring-arabina-accent focus:outline-none bg-slate-50"
+                  className="w-full rounded-2xl border border-slate-200 px-4 py-2.5 text-sm focus:ring-2 focus:ring-arabina-accent focus:outline-none bg-slate-50"
                   required
                 />
                 {errors.name && <p className="text-xs text-red-500 mt-1">{errors.name[0]}</p>}
@@ -333,7 +333,7 @@ export default function Index({ items }) {
                   step="0.01"
                   value={data.length_m}
                   onChange={e => setData(prev => ({ ...prev, length_m: e.target.value }))}
-                  className="w-full rounded-2xl border border-slate-200 px-4 py-3.5 text-sm focus:ring-2 focus:ring-arabina-accent focus:outline-none bg-slate-50"
+                  className="w-full rounded-2xl border border-slate-200 px-4 py-2.5 text-sm focus:ring-2 focus:ring-arabina-accent focus:outline-none bg-slate-50"
                 />
                 <p className="text-xs text-slate-400 mt-1 ml-1">Leave blank if not applicable.</p>
               </div>
@@ -342,7 +342,7 @@ export default function Index({ items }) {
                 <select
                   value={data.unit}
                   onChange={e => setData(prev => ({ ...prev, unit: e.target.value }))}
-                  className="w-full rounded-2xl border border-slate-200 px-4 py-3.5 text-sm focus:ring-2 focus:ring-arabina-accent focus:outline-none bg-slate-50"
+                  className="w-full rounded-2xl border border-slate-200 px-4 py-2.5 text-sm focus:ring-2 focus:ring-arabina-accent focus:outline-none bg-slate-50"
                 >
                   <option value="pcs">pcs</option>
                   <option value="set">set</option>
@@ -354,7 +354,7 @@ export default function Index({ items }) {
             <button
               type="submit"
               disabled={processing}
-              className="w-full bg-[#1b580e] text-white py-4 rounded-2xl text-sm font-bold hover:bg-emerald-950 disabled:opacity-50 active:scale-[0.98] transition-all shadow-md"
+              className="w-full bg-[#1b580e] text-white py-3 rounded-2xl text-sm font-bold hover:bg-emerald-950 disabled:opacity-50 active:scale-[0.98] transition-all shadow-md"
             >
               {processing ? 'Registering...' : 'Register Item'}
             </button>

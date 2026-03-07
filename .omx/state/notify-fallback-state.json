@@ -1,9 +1,9 @@
 {
-  "pid": 2787,
-  "started_at": "2026-03-06T17:28:41.583Z",
-  "cwd": "/mnt/c/laragon/www/Arabina-Inventory",
+  "pid": 4681,
+  "started_at": "2026-03-06T22:59:36.410Z",
+  "cwd": "/mnt/c/laragon/www/Arabina-inventory",
   "notify_script": "/root/.nvm/versions/node/v24.14.0/lib/node_modules/oh-my-codex/scripts/notify-hook.js",
   "poll_ms": 700,
-  "tracked_files": 0,
-  "seen_turns": 0
+  "tracked_files": 2,
+  "seen_turns": 1
 }
