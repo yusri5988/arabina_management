@@ -1,6 +1,68 @@
 import { Head } from '@inertiajs/react';
-import { useMemo, useState, useRef, useCallback } from 'react';
+import { useMemo, useState, useRef, useCallback, useEffect } from 'react';
 import AuthenticatedLayout from '../../Layouts/AuthenticatedLayout';
+
+const CustomSelect = ({ value, onChange, options, className = "" }) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const containerRef = useRef(null);
+
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (containerRef.current && !containerRef.current.contains(event.target)) {
+        setIsOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const selectedOption = options.find(o => o.value === value) || options[0];
+
+  return (
+    <div className={`relative ${className}`} ref={containerRef}>
+      <button
+        type="button"
+        onClick={() => setIsOpen(!isOpen)}
+        className="w-full flex items-center justify-between rounded-2xl border border-slate-200 px-4 py-2.5 text-sm focus:ring-2 focus:ring-arabina-accent focus:outline-none bg-slate-50 text-left transition-all hover:border-slate-300"
+      >
+        <span className="font-medium text-slate-700">{selectedOption?.label}</span>
+        <svg
+          className={`w-4 h-4 text-slate-400 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`}
+          fill="none"
+          stroke="currentColor"
+          viewBox="0 0 24 24"
+        >
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" />
+        </svg>
+      </button>
+
+      {isOpen && (
+        <div className="absolute z-50 mt-2 w-full bg-white rounded-2xl shadow-xl border border-slate-100 overflow-hidden py-1 animate-in fade-in slide-in-from-top-2 duration-200">
+          {options.map((option) => (
+            <button
+              key={option.value}
+              type="button"
+              onClick={() => {
+                onChange(option.value);
+                setIsOpen(false);
+              }}
+              className={`w-full px-4 py-2.5 text-sm text-left transition-colors hover:bg-slate-50 flex items-center justify-between ${
+                value === option.value ? 'bg-emerald-50 text-emerald-700 font-bold' : 'text-slate-600'
+              }`}
+            >
+              {option.label}
+              {value === option.value && (
+                <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                  <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                </svg>
+              )}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
 
 export default function Index({ items }) {
   const [inventory, setInventory] = useState(items ?? []);
@@ -300,7 +362,7 @@ export default function Index({ items }) {
         )}
 
         {/* Registration Form */}
-        <div className="bg-white rounded-[2rem] shadow-sm border border-slate-100 p-6 md:p-8">
+        <div className="bg-white rounded-[2rem] shadow-sm border border-slate-100 pt-4 px-6 pb-6 md:pt-5 md:px-8 md:pb-8">
           <h2 className="text-lg font-bold text-slate-800 border-b border-slate-100 pb-4">Register New Item</h2>
           <form onSubmit={submit} className="mt-5 space-y-6">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
@@ -339,15 +401,15 @@ export default function Index({ items }) {
               </div>
               <div>
                 <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5 ml-1">Unit</label>
-                <select
+                <CustomSelect
                   value={data.unit}
-                  onChange={e => setData(prev => ({ ...prev, unit: e.target.value }))}
-                  className="w-full rounded-2xl border border-slate-200 px-4 py-2.5 text-sm focus:ring-2 focus:ring-arabina-accent focus:outline-none bg-slate-50"
-                >
-                  <option value="pcs">pcs</option>
-                  <option value="set">set</option>
-                  <option value="roll">roll</option>
-                </select>
+                  onChange={val => setData(prev => ({ ...prev, unit: val }))}
+                  options={[
+                    { value: 'pcs', label: 'pcs' },
+                    { value: 'set', label: 'set' },
+                    { value: 'roll', label: 'roll' }
+                  ]}
+                />
               </div>
             </div>
 
@@ -362,7 +424,7 @@ export default function Index({ items }) {
         </div>
 
         {/* Bulk Upload */}
-        <div className="bg-white rounded-[2rem] shadow-sm border border-slate-100 p-6 md:p-8">
+        <div className="bg-white rounded-[2rem] shadow-sm border border-slate-100 pt-4 px-6 pb-6 md:pt-5 md:px-8 md:pb-8">
           <h2 className="text-lg font-bold text-slate-800 border-b border-slate-100 pb-4">Bulk Upload (Excel)</h2>
           <div className="mt-5 space-y-4">
             <p className="text-xs text-slate-500">Upload an <strong>.xlsx</strong>, <strong>.xls</strong>, or <strong>.csv</strong> file with columns: <code className="bg-slate-100 px-1.5 py-0.5 rounded text-slate-700">sku</code>, <code className="bg-slate-100 px-1.5 py-0.5 rounded text-slate-700">item_name</code>, <code className="bg-slate-100 px-1.5 py-0.5 rounded text-slate-700">length_m</code>, <code className="bg-slate-100 px-1.5 py-0.5 rounded text-slate-700">unit</code></p>
@@ -508,11 +570,16 @@ export default function Index({ items }) {
                               {editErrors.length_m && <p className="text-xs text-red-500 mt-0.5 font-medium">{editErrors.length_m[0]}</p>}
                             </td>
                             <td className="px-4 py-2">
-                              <select value={editData.unit} onChange={e => setEditData(prev => ({ ...prev, unit: e.target.value }))} className={inputClass}>
-                                <option value="pcs">pcs</option>
-                                <option value="set">set</option>
-                                <option value="roll">roll</option>
-                              </select>
+                              <CustomSelect 
+                                value={editData.unit} 
+                                onChange={val => setEditData(prev => ({ ...prev, unit: val }))} 
+                                options={[
+                                  { value: 'pcs', label: 'pcs' },
+                                  { value: 'set', label: 'set' },
+                                  { value: 'roll', label: 'roll' }
+                                ]}
+                                className="w-full"
+                              />
                             </td>
                             <td className="px-4 py-2 text-right whitespace-nowrap">
                               <button onClick={() => saveEdit(item.id)} disabled={processing} className="inline-flex items-center px-4 py-2 rounded-xl bg-emerald-600 text-white text-[10px] font-black uppercase tracking-wider hover:bg-emerald-700 disabled:opacity-50 transition-all mr-1.5 shadow-sm shadow-emerald-100">
