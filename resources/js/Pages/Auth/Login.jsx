@@ -18,23 +18,22 @@ export default function Login() {
   return (
     <>
       <Head title="Login" />
-      <div className="min-h-screen bg-[#1b580e] flex flex-col justify-center items-center p-6 text-slate-900">
+      <div className="min-h-screen bg-gradient-to-t from-[#0d2a07] to-[#1b580e] flex flex-col justify-center items-center p-6 text-slate-900">
         <div className="w-full max-w-md">
           {/* Logo / Branding */}
-          <div className="text-center mb-10">
-            <div className="inline-flex items-center justify-center mb-4 transition-transform hover:scale-105 duration-500">
-              <img 
-                src="/images/logo.jpg" 
-                alt="Arabina Eco Tiny Homes" 
-                className="h-28 w-auto rounded-3xl shadow-2xl border-4 border-white/20"
+          <div className="text-center mb-0">
+            <div className="inline-flex items-center justify-center mb-0 transition-transform hover:scale-105 duration-500">
+              <img
+                src="/images/logo.png"
+                alt="Arabina Eco Tiny Homes"
+                className="h-28 w-auto object-contain"
               />
             </div>
-            <p className="text-white/60 font-black text-[10px] uppercase tracking-[0.4em] mt-2">Inventory System</p>
           </div>
 
           {/* Form Card */}
-          <div className="bg-white rounded-[3rem] shadow-[0_20px_50px_rgba(0,0,0,0.3)] p-8 md:p-12 border border-white/10">
-            <div className="mb-10 text-center">
+          <div className="bg-white rounded-[3rem] shadow-[0_20px_50px_rgba(0,0,0,0.3)] px-8 py-8 md:px-12 md:py-10 border border-white/10">
+            <div className="mb-6 text-center">
               <h2 className="text-2xl font-black text-slate-800 tracking-tight uppercase">Sign In</h2>
               <div className="h-1.5 w-12 bg-[#10b981] mx-auto mt-3 rounded-full"></div>
             </div>

@@ -76,15 +76,11 @@ export default function AuthenticatedLayout({ children, title, showWelcome = fal
       <aside className={`fixed inset-y-0 left-0 z-50 w-72 bg-[#1b580e] text-white shadow-2xl transform transition-transform duration-300 ease-in-out lg:translate-x-0 lg:static lg:flex flex-col ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
         <div className="p-6 flex items-center justify-between border-b border-emerald-800/50">
           <div className="flex items-center space-x-3">
-            <img 
-              src="/images/logo.jpg" 
-              alt="Logo" 
-              className="w-10 h-10 rounded-xl object-cover border-2 border-emerald-400/30 bg-white"
+            <img
+              src="/images/Arabina New Logo-01 (crop, hijau).png"
+              alt="Logo"
+              className="w-10 h-auto object-contain"
             />
-            <div>
-              <p className="text-emerald-300 text-[10px] font-black uppercase tracking-widest leading-none mb-1">Arabina</p>
-              <h1 className="text-lg font-bold leading-none tracking-tight text-white">Inventory</h1>
-            </div>
           </div>
           <button onClick={() => setSidebarOpen(false)} className="lg:hidden p-1.5 hover:bg-emerald-800 rounded-lg transition-colors">
             <XMarkIcon className="w-6 h-6 text-emerald-100" />
