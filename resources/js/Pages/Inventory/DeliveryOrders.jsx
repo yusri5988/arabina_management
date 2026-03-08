@@ -44,14 +44,26 @@ export default function DeliveryOrders({ orders = [] }) {
                     <td className="px-4 py-3 text-xs text-slate-600 max-w-[280px]">{order.do_dates_text || order.created_at}</td>
                     <td className="px-4 py-3 text-xs text-slate-600">{order.creator}</td>
                     <td className="px-4 py-3 text-right">
-                      <a
-                        href={`/items/stock/out/do/${order.id}`}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="inline-flex items-center rounded-lg border border-rose-200 bg-rose-50 px-3 py-1.5 text-xs font-bold text-rose-700 hover:bg-rose-100"
-                      >
-                        PDF
-                      </a>
+                      <div className="inline-flex items-center gap-2">
+                        <a
+                          href={`/items/stock/out/do/${order.id}`}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex items-center rounded-lg border border-rose-200 bg-rose-50 px-3 py-1.5 text-xs font-bold text-rose-700 hover:bg-rose-100"
+                        >
+                          PDF
+                        </a>
+                        <button
+                          type="button"
+                          onClick={() => { window.location.href = `/items/stock/out/do/${order.id}/return`; }}
+                          disabled={order.is_returned}
+                          className="inline-flex items-center rounded-lg border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-bold text-amber-700 hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          {order.is_returned
+                            ? 'Returned'
+                            : 'Return'}
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}

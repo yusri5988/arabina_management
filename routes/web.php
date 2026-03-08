@@ -68,6 +68,10 @@ Route::middleware('auth')->group(function () {
         Route::post('/items/stock/out', [ItemController::class, 'stockOutStore'])->name('items.stock.out');
         Route::get('/items/stock/out/delivery-orders', [ItemController::class, 'deliveryOrdersIndex'])->name('items.stock.out.delivery-orders');
         Route::get('/items/stock/out/do/{id}', [ItemController::class, 'downloadDoPdf'])->name('items.stock.out.do');
+        Route::get('/items/stock/out/do/{id}/return', [ItemController::class, 'returnDeliveryOrderForm'])->name('items.stock.out.do.return.form');
+        Route::post('/items/stock/out/do/{id}/return-items', [ItemController::class, 'returnDeliveryOrderItems'])->name('items.stock.out.do.return.items');
+        Route::post('/items/stock/out/do/{id}/return-sku', [ItemController::class, 'returnDeliveryOrderSku'])->name('items.stock.out.do.return-sku');
+        Route::post('/items/stock/out/do/{id}/return', [ItemController::class, 'returnDeliveryOrder'])->name('items.stock.out.do.return');
     });
 
     Route::middleware('module:sales_orders')->group(function () {
