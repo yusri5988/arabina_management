@@ -18,6 +18,7 @@ export default function Index({ items, packages, schemaReady = true }) {
   const [processing, setProcessing] = useState(false);
   const [deletingId, setDeletingId] = useState(null);
   const [editingId, setEditingId] = useState(null);
+  const [duplicateSourceCode, setDuplicateSourceCode] = useState(null);
   const [notification, setNotification] = useState(null);
   const [bulkRows, setBulkRows] = useState([]);
   const [bulkError, setBulkError] = useState(null);
@@ -51,18 +52,55 @@ export default function Index({ items, packages, schemaReady = true }) {
     }));
   };
 
+  const buildDuplicateCode = useCallback((sourceCode) => {
+    const normalizedExisting = new Set(
+      list.map(pkg => String(pkg.code ?? '').trim().toLowerCase()).filter(Boolean),
+    );
+    const baseCode = `${String(sourceCode ?? '').trim()}-COPY`;
+
+    if (!normalizedExisting.has(baseCode.toLowerCase())) {
+      return baseCode;
+    }
+
+    let suffix = 2;
+    while (normalizedExisting.has(`${baseCode}-${suffix}`.toLowerCase())) {
+      suffix += 1;
+    }
+
+    return `${baseCode}-${suffix}`;
+  }, [list]);
+
   const resetForm = () => {
     setData(initialForm);
     setErrors({});
     setEditingId(null);
+    setDuplicateSourceCode(null);
   };
 
   const startEdit = (pkg) => {
     setEditingId(pkg.id);
+    setDuplicateSourceCode(null);
     setData({
       code: pkg.code,
       name: pkg.name,
       is_active: Boolean(pkg.is_active),
+      lines: pkg.package_items.map(pi => ({
+        item_id: String(pi.item_id),
+        quantity: String(pi.quantity),
+      })),
+    });
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const startDuplicate = (pkg) => {
+    setEditingId(null);
+    setDuplicateSourceCode(pkg.code);
+    setErrors({});
+    setNotification(null);
+    setData({
+      code: buildDuplicateCode(pkg.code),
+      name: `${pkg.name} Copy`,
+      is_active: true,
       lines: pkg.package_items.map(pi => ({
         item_id: String(pi.item_id),
         quantity: String(pi.quantity),
@@ -284,7 +322,7 @@ export default function Index({ items, packages, schemaReady = true }) {
           </div>
         )}
 
-        <div className="bg-white rounded-[2rem] shadow-sm border border-slate-100 p-6 md:p-8">
+        <div className="bg-white rounded-[2rem] shadow-sm border border-slate-100 px-6 pb-6 pt-4 md:px-8 md:pb-8 md:pt-5">
           <div className="flex items-center justify-between border-b border-slate-100 pb-4 mb-5">
             <h2 className="text-lg font-bold text-slate-800">Bulk Upload Package</h2>
             <a
@@ -370,12 +408,12 @@ export default function Index({ items, packages, schemaReady = true }) {
           </div>
         </div>
 
-        <div className="bg-white rounded-[2rem] shadow-sm border border-slate-100 p-6 md:p-8">
+        <div className="bg-white rounded-[2rem] shadow-sm border border-slate-100 px-6 pb-6 pt-4 md:px-8 md:pb-8 md:pt-5">
           <div className="flex items-center justify-between border-b border-slate-100 pb-4 mb-5">
             <h2 className="text-lg font-bold text-slate-800">
-              {editingId ? `Edit Package: ${data.code}` : 'Create Package by SKU'}
+              {editingId ? `Edit Package: ${data.code}` : duplicateSourceCode ? `Duplicate Package: ${duplicateSourceCode}` : 'Create Package by SKU'}
             </h2>
-            {editingId && (
+            {(editingId || duplicateSourceCode) && (
               <button
                 type="button"
                 onClick={resetForm}
@@ -458,9 +496,9 @@ export default function Index({ items, packages, schemaReady = true }) {
                       <button
                         type="button"
                         onClick={() => removeLine(index)}
-                        className="text-red-500 text-xs font-bold"
+                        className="rounded-xl bg-red-600 px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-white hover:bg-red-700"
                       >
-                        X
+                        Delete
                       </button>
                     )}
                   </div>
@@ -507,6 +545,13 @@ export default function Index({ items, packages, schemaReady = true }) {
                     <span className={`px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider ${pkg.is_active ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>
                       {pkg.is_active ? 'Active' : 'Inactive'}
                     </span>
+                    <button
+                      type="button"
+                      onClick={() => startDuplicate(pkg)}
+                      className="text-[10px] font-bold text-sky-600 uppercase tracking-wider px-2.5 py-1 rounded-xl bg-sky-50 hover:bg-sky-100"
+                    >
+                      Duplicate
+                    </button>
                     <button
                       type="button"
                       onClick={() => startEdit(pkg)}
