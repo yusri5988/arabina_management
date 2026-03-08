@@ -74,6 +74,38 @@
     </table>
     @endforeach
 
+    @if(($returnGroups ?? collect())->isNotEmpty())
+    <div style="margin-top: 30px; border-top: 2px dashed #dc2626; padding-top: 15px;">
+        <h2 style="font-size: 16px; color: #dc2626; margin-top: 0;">RETURN RECORDS</h2>
+        @foreach($returnGroups as $rIndex => $return)
+        <div style="margin-bottom: 12px; padding: 8px 10px; background: #fff1f2; border: 1px solid #fecaca;">
+            <strong style="color: #be123c;">Return Transaction {{ $rIndex + 1 }}:</strong>
+            {{ $return['date'] }} | By: {{ $return['creator'] }}
+        </div>
+        <table class="items-table" style="border: 1px solid #fecaca; margin-bottom: 25px;">
+            <thead style="background-color: #fff1f2;">
+                <tr>
+                    <th style="width: 5%; color: #be123c;">No</th>
+                    <th style="width: 25%; color: #be123c;">SKU</th>
+                    <th style="width: 55%; color: #be123c;">Item Name</th>
+                    <th style="width: 15%; text-align: right; color: #be123c;">Returned Qty</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach($return['lines'] as $index => $line)
+                <tr>
+                    <td>{{ $index + 1 }}</td>
+                    <td>{{ $line['sku'] }}</td>
+                    <td>{{ $line['name'] }}</td>
+                    <td style="text-align: right; font-weight: bold; color: #be123c;">{{ $line['quantity'] }} {{ $line['unit'] }}</td>
+                </tr>
+                @endforeach
+            </tbody>
+        </table>
+        @endforeach
+    </div>
+    @endif
+
     <table class="signatures">
         <tr>
             <td>

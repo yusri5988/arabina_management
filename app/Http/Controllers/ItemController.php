@@ -874,11 +874,43 @@ class ItemController extends Controller
             ->unique()
             ->values();
 
+        // Fetch return transactions
+        $returnMarker = $this->buildDeliveryOrderReturnMarker($doCode);
+        $returnTransactions = InventoryTransaction::query()
+            ->with(['lines.item', 'creator'])
+            ->where('type', 'in')
+            ->where('notes', 'like', '%' . $returnMarker . '%')
+            ->orderBy('created_at')
+            ->get();
+
+        $returnGroups = $returnTransactions->map(function ($tx) {
+            $lines = $tx->lines
+                ->map(function ($line) {
+                    return [
+                        'sku' => $line->item?->sku ?? 'N/A',
+                        'name' => $line->item?->name ?? 'Unknown Item',
+                        'unit' => $line->item?->unit ?? '',
+                        'quantity' => (int) $line->quantity,
+                    ];
+                })
+                ->sortBy('sku')
+                ->values();
+
+            return [
+                'transaction_id' => $tx->id,
+                'date' => optional($tx->created_at)->format('d/m/Y H:i'),
+                'creator' => $tx->creator?->name ?? 'System',
+                'lines' => $lines,
+                'notes' => $tx->notes,
+            ];
+        })->values();
+
         $pdf = Pdf::loadView('inventory.do-pdf', [
             'transaction' => $transaction,
             'doCode' => $doCode,
             'transactions' => $relatedTransactions,
             'shipmentGroups' => $shipmentGroups,
+            'returnGroups' => $returnGroups,
             'doDates' => $doDates,
             'generatedAt' => now()->format('d/m/Y H:i:s'),
         ]);

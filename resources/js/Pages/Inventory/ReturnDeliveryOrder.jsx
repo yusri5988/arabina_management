@@ -16,11 +16,11 @@ export default function ReturnDeliveryOrder({ order, skuLines = [] }) {
     const raw = inputMap[line.item_id];
     const qty = Number(raw || 0);
     if (qty < 1) {
-      setNotice({ type: 'error', message: `Masukkan qty untuk ${line.sku}.` });
+      setNotice({ type: 'error', message: `Please enter quantity for ${line.sku}.` });
       return;
     }
     if (qty > Number(line.remaining_quantity || 0)) {
-      setNotice({ type: 'error', message: `Qty return melebihi baki untuk ${line.sku}.` });
+      setNotice({ type: 'error', message: `Return quantity exceeds remaining for ${line.sku}.` });
       return;
     }
 
@@ -51,7 +51,7 @@ export default function ReturnDeliveryOrder({ order, skuLines = [] }) {
     }));
 
     if (lines.length === 0) {
-      setNotice({ type: 'error', message: 'Return list masih kosong.' });
+      setNotice({ type: 'error', message: 'Return list is empty.' });
       return;
     }
 
@@ -73,15 +73,15 @@ export default function ReturnDeliveryOrder({ order, skuLines = [] }) {
 
       const result = await response.json().catch(() => ({}));
       if (!response.ok) {
-        setNotice({ type: 'error', message: result.message ?? 'Gagal submit return SKU.' });
+        setNotice({ type: 'error', message: result.message ?? 'Failed to submit return SKU.' });
         return;
       }
 
-      setNotice({ type: 'success', message: result.message ?? 'Return SKU berjaya.' });
+      setNotice({ type: 'success', message: result.message ?? 'Return SKU submitted successfully.' });
       setReturnMap({});
       router.visit('/items/stock/out/delivery-orders');
     } catch (error) {
-      setNotice({ type: 'error', message: 'Network error. Sila cuba lagi.' });
+      setNotice({ type: 'error', message: 'Network error. Please try again.' });
     } finally {
       setProcessing(false);
     }
@@ -109,13 +109,18 @@ export default function ReturnDeliveryOrder({ order, skuLines = [] }) {
           </div>
         )}
 
-        <div className="bg-white rounded-3xl border border-slate-100 overflow-hidden">
-          <div className="px-5 py-4 border-b border-slate-100">
-            <h3 className="text-sm font-black text-slate-700 uppercase tracking-wider">DO SKU List</h3>
+        {/* Unified Box for DO SKU List and Return List */}
+        <div className="bg-white rounded-3xl border border-slate-100 overflow-hidden shadow-sm">
+          {/* Section 1: DO SKU List */}
+          <div className="px-5 py-4 border-b border-slate-100 bg-slate-50/30">
+            <h3 className="text-sm font-black text-slate-700 uppercase tracking-wider flex items-center">
+              <span className="w-2 h-2 bg-red-500 rounded-full mr-2"></span>
+              DO SKU List
+            </h3>
           </div>
           <div className="overflow-x-auto">
             <table className="min-w-full divide-y divide-slate-100">
-              <thead className="bg-slate-50">
+              <thead className="bg-slate-50/50">
                 <tr>
                   <th className="px-4 py-3 text-left text-[10px] font-bold text-slate-500 uppercase tracking-wider">SKU</th>
                   <th className="px-4 py-3 text-right text-[10px] font-bold text-slate-500 uppercase tracking-wider">Shipped</th>
@@ -130,31 +135,66 @@ export default function ReturnDeliveryOrder({ order, skuLines = [] }) {
                   <tr key={line.item_id}>
                     <td className="px-4 py-3 text-xs text-slate-700">
                       <div className="font-bold text-slate-800">{line.sku}</div>
-                      <div className="text-slate-500">{line.name}</div>
+                      <div className="text-slate-500 italic">{line.name}</div>
                     </td>
                     <td className="px-4 py-3 text-xs text-right text-slate-700">{line.shipped_quantity}</td>
                     <td className="px-4 py-3 text-xs text-right text-slate-700">{line.returned_quantity}</td>
                     <td className="px-4 py-3 text-xs text-right font-bold text-slate-800">{line.remaining_quantity}</td>
                     <td className="px-4 py-3 text-right">
-                      <input
-                        type="number"
-                        min="1"
-                        max={line.remaining_quantity}
-                        value={inputMap[line.item_id] ?? ''}
-                        onChange={(e) => setInputMap((prev) => ({ ...prev, [line.item_id]: e.target.value }))}
-                        className="w-24 rounded-lg border border-slate-200 px-3 py-1.5 text-xs text-right font-semibold focus:ring-0"
-                        placeholder="Qty"
-                        disabled={Number(line.remaining_quantity) <= 0}
-                      />
+                      <div className="flex items-center justify-end space-x-1">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const current = Number(inputMap[line.item_id] || 0);
+                            if (current > 0) {
+                              setInputMap((prev) => ({ ...prev, [line.item_id]: current - 1 }));
+                            }
+                          }}
+                          disabled={Number(line.remaining_quantity) <= 0}
+                          className="w-8 h-8 flex items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 hover:border-slate-300 transition-colors disabled:opacity-40"
+                        >
+                          <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M20 12H4" />
+                          </svg>
+                        </button>
+                        <input
+                          type="number"
+                          min="0"
+                          max={line.remaining_quantity}
+                          value={inputMap[line.item_id] ?? ''}
+                          onChange={(e) => {
+                            const val = e.target.value === '' ? '' : Math.min(Math.max(0, Number(e.target.value)), line.remaining_quantity);
+                            setInputMap((prev) => ({ ...prev, [line.item_id]: val }));
+                          }}
+                          className="w-14 h-8 rounded-lg border border-slate-200 px-1 py-1 text-xs text-center font-bold text-slate-700 focus:ring-0 focus:border-slate-400 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                          placeholder="Qty"
+                          disabled={Number(line.remaining_quantity) <= 0}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const current = Number(inputMap[line.item_id] || 0);
+                            if (current < Number(line.remaining_quantity)) {
+                              setInputMap((prev) => ({ ...prev, [line.item_id]: current + 1 }));
+                            }
+                          }}
+                          disabled={Number(line.remaining_quantity) <= 0}
+                          className="w-8 h-8 flex items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 hover:border-slate-300 transition-colors disabled:opacity-40"
+                        >
+                          <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M12 4v16m8-8H4" />
+                          </svg>
+                        </button>
+                      </div>
                     </td>
                     <td className="px-4 py-3 text-right">
                       <button
                         type="button"
                         onClick={() => addToReturnList(line)}
                         disabled={Number(line.remaining_quantity) <= 0}
-                        className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-bold text-emerald-700 hover:bg-emerald-100 disabled:opacity-60 disabled:cursor-not-allowed"
+                        className="rounded-lg border border-red-600 bg-red-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-red-700 disabled:opacity-60 transition-colors"
                       >
-                        Add to Return List
+                        Add
                       </button>
                     </td>
                   </tr>
@@ -162,49 +202,43 @@ export default function ReturnDeliveryOrder({ order, skuLines = [] }) {
               </tbody>
             </table>
           </div>
-        </div>
 
-        <div className="bg-white rounded-3xl border border-slate-100 overflow-hidden">
-          <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
-            <h3 className="text-sm font-black text-slate-700 uppercase tracking-wider">Return List</h3>
-            <button
-              type="button"
-              onClick={submitReturn}
-              disabled={processing || selectedRows.length === 0}
-              className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-2 text-xs font-bold text-amber-700 hover:bg-amber-100 disabled:opacity-60 disabled:cursor-not-allowed"
-            >
-              {processing ? 'Submitting...' : 'Submit Return'}
-            </button>
+          {/* Section 2: Return List */}
+          <div className="px-5 py-4 border-y border-slate-100 bg-slate-50/30">
+            <h3 className="text-sm font-black text-slate-700 uppercase tracking-wider flex items-center">
+              <span className="w-2 h-2 bg-amber-500 rounded-full mr-2"></span>
+              Return List Preview
+            </h3>
           </div>
-          <div className="overflow-x-auto">
+          <div className="overflow-x-auto min-h-[100px]">
             <table className="min-w-full divide-y divide-slate-100">
-              <thead className="bg-slate-50">
+              <thead className="bg-slate-50/50">
                 <tr>
                   <th className="px-4 py-3 text-left text-[10px] font-bold text-slate-500 uppercase tracking-wider">SKU</th>
-                  <th className="px-4 py-3 text-right text-[10px] font-bold text-slate-500 uppercase tracking-wider">Qty Return</th>
+                  <th className="px-4 py-3 text-right text-[10px] font-bold text-slate-500 uppercase tracking-wider">Qty to Return</th>
                   <th className="px-4 py-3 text-right text-[10px] font-bold text-slate-500 uppercase tracking-wider">Action</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-50">
                 {selectedRows.length === 0 && (
                   <tr>
-                    <td colSpan="3" className="px-4 py-8 text-center text-xs text-slate-500">
-                      Belum ada SKU dalam return list.
+                    <td colSpan="3" className="px-4 py-12 text-center text-xs text-slate-400 italic">
+                      No items in return list. Click "Add" above.
                     </td>
                   </tr>
                 )}
                 {selectedRows.map((line) => (
-                  <tr key={line.item_id}>
+                  <tr key={line.item_id} className="bg-amber-50/10">
                     <td className="px-4 py-3 text-xs text-slate-700">
                       <div className="font-bold text-slate-800">{line.sku}</div>
-                      <div className="text-slate-500">{line.name}</div>
+                      <div className="text-slate-500 italic">{line.name}</div>
                     </td>
-                    <td className="px-4 py-3 text-xs text-right font-bold text-slate-800">{line.quantity}</td>
+                    <td className="px-4 py-3 text-xs text-right font-black text-slate-900">{line.quantity}</td>
                     <td className="px-4 py-3 text-right">
                       <button
                         type="button"
                         onClick={() => removeFromReturnList(line.item_id)}
-                        className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-1.5 text-xs font-bold text-rose-700 hover:bg-rose-100"
+                        className="text-xs font-bold text-red-600 hover:text-red-700 hover:underline"
                       >
                         Remove
                       </button>
@@ -214,9 +248,30 @@ export default function ReturnDeliveryOrder({ order, skuLines = [] }) {
               </tbody>
             </table>
           </div>
+
+          {/* Footer: Unified Submit Button */}
+          <div className="p-6 border-t border-slate-100 bg-white flex justify-end">
+            <button
+              type="button"
+              onClick={submitReturn}
+              disabled={processing || selectedRows.length === 0}
+              className="w-full sm:w-auto px-12 py-4 rounded-2xl bg-slate-900 text-white text-sm font-black hover:bg-slate-800 transition-all active:scale-[0.98] disabled:opacity-20 disabled:cursor-not-allowed shadow-xl shadow-slate-200 flex items-center justify-center space-x-2"
+            >
+              {processing ? (
+                <>
+                  <svg className="animate-spin h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                  </svg>
+                  <span>Please Wait...</span>
+                </>
+              ) : (
+                <span>Submit Return Now</span>
+              )}
+            </button>
+          </div>
         </div>
       </div>
     </AuthenticatedLayout>
   );
 }
-
