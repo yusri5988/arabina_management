@@ -107,6 +107,10 @@ Route::middleware('auth')->group(function () {
         Route::get('/rejections', [ProcurementController::class, 'rejectedList'])->middleware('module:rejected_list')->name('warehouse.rejections.index');
     });
 
+    Route::get('/rejections', [ProcurementController::class, 'rejectedList'])
+        ->middleware('module:rejected_list')
+        ->name('rejections.index');
+
     Route::middleware('module:create_package')->group(function () {
         Route::get('/packages', [PackageController::class, 'index'])->name('packages.index');
         Route::get('/packages/bulk/template', [PackageController::class, 'downloadBulkTemplate'])->name('packages.bulk.template');

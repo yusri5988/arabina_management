@@ -155,6 +155,20 @@ export default function Index({ items }) {
     setTimeout(() => setNotification(null), 4000);
   };
 
+  const parseResponsePayload = async (response) => {
+    const contentType = response.headers.get('content-type') ?? '';
+
+    if (contentType.includes('application/json')) {
+      return response.json();
+    }
+
+    const text = await response.text();
+
+    return {
+      message: text || 'Unexpected server response.',
+    };
+  };
+
   const submit = async (e) => {
     e.preventDefault();
     setNotification(null);
@@ -168,11 +182,12 @@ export default function Index({ items }) {
           'Content-Type': 'application/json',
           Accept: 'application/json',
           'X-CSRF-TOKEN': csrfToken,
+          'X-Requested-With': 'XMLHttpRequest',
         },
         body: JSON.stringify(data),
       });
 
-      const payload = await response.json();
+      const payload = await parseResponsePayload(response);
 
       if (response.status === 201) {
         setInventory(prev => [payload.data, ...prev]);
@@ -216,11 +231,12 @@ export default function Index({ items }) {
           'Content-Type': 'application/json',
           Accept: 'application/json',
           'X-CSRF-TOKEN': csrfToken,
+          'X-Requested-With': 'XMLHttpRequest',
         },
         body: JSON.stringify(editData),
       });
 
-      const payload = await response.json();
+      const payload = await parseResponsePayload(response);
 
       if (response.ok) {
         setInventory(prev =>
@@ -231,6 +247,8 @@ export default function Index({ items }) {
         showNotification('success', 'Item updated successfully.');
       } else if (response.status === 422) {
         setEditErrors(payload.errors);
+      } else {
+        showNotification('error', payload.message ?? 'Failed to update item.');
       }
     } catch (error) {
       showNotification('error', 'Failed to update item.');
@@ -247,10 +265,11 @@ export default function Index({ items }) {
         headers: {
           Accept: 'application/json',
           'X-CSRF-TOKEN': csrfToken,
+          'X-Requested-With': 'XMLHttpRequest',
         },
       });
 
-      const payload = await response.json();
+      const payload = await parseResponsePayload(response);
 
       if (response.ok) {
         setInventory(prev => prev.filter(item => item.id !== id));
@@ -317,10 +336,10 @@ export default function Index({ items }) {
     try {
       const response = await fetch('/items/bulk', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Accept: 'application/json', 'X-CSRF-TOKEN': csrfToken },
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json', 'X-CSRF-TOKEN': csrfToken, 'X-Requested-With': 'XMLHttpRequest' },
         body: JSON.stringify({ items: bulkRows }),
       });
-      const payload = await response.json();
+      const payload = await parseResponsePayload(response);
       if (response.status === 201) {
         if (payload.data?.length) {
           setInventory(prev => [...payload.data, ...prev]);
@@ -470,6 +489,7 @@ export default function Index({ items }) {
                 </div>
                 <div className="flex gap-3">
                   <button
+                    type="button"
                     onClick={submitBulk}
                     disabled={bulkUploading}
                     className="flex-1 bg-[#1b580e] text-white py-3.5 rounded-2xl text-sm font-bold hover:bg-emerald-950 disabled:opacity-50 active:scale-[0.98] transition-all shadow-md"
@@ -477,6 +497,7 @@ export default function Index({ items }) {
                     {bulkUploading ? 'Uploading...' : `Upload ${bulkRows.length} Item(s)`}
                   </button>
                   <button
+                    type="button"
                     onClick={cancelBulk}
                     className="px-6 py-3.5 rounded-2xl text-sm font-bold bg-slate-200 text-slate-600 hover:bg-slate-300 transition-colors"
                   >
@@ -582,10 +603,10 @@ export default function Index({ items }) {
                               />
                             </td>
                             <td className="px-4 py-2 text-right whitespace-nowrap">
-                              <button onClick={() => saveEdit(item.id)} disabled={processing} className="inline-flex items-center px-4 py-2 rounded-xl bg-emerald-600 text-white text-[10px] font-black uppercase tracking-wider hover:bg-emerald-700 disabled:opacity-50 transition-all mr-1.5 shadow-sm shadow-emerald-100">
+                              <button type="button" onClick={() => saveEdit(item.id)} disabled={processing} className="inline-flex items-center px-4 py-2 rounded-xl bg-emerald-600 text-white text-[10px] font-black uppercase tracking-wider hover:bg-emerald-700 disabled:opacity-50 transition-all mr-1.5 shadow-sm shadow-emerald-100">
                                 Save
                               </button>
-                              <button onClick={cancelEdit} className="inline-flex items-center px-4 py-2 rounded-xl bg-slate-100 text-slate-600 text-[10px] font-black uppercase tracking-wider hover:bg-slate-200 transition-all">
+                              <button type="button" onClick={cancelEdit} className="inline-flex items-center px-4 py-2 rounded-xl bg-slate-100 text-slate-600 text-[10px] font-black uppercase tracking-wider hover:bg-slate-200 transition-all">
                                 Cancel
                               </button>
                             </td>
@@ -600,20 +621,20 @@ export default function Index({ items }) {
                               <span className="inline-block bg-slate-100 text-slate-600 text-[10px] font-bold uppercase px-2 py-0.5 rounded-full">{item.unit}</span>
                             </td>
                             <td className="px-4 py-3 text-right whitespace-nowrap">
-                              <button onClick={() => startEdit(item)} className="inline-flex items-center px-3 py-1.5 rounded-xl bg-amber-50 text-amber-700 text-[10px] font-bold uppercase tracking-wider hover:bg-amber-100 border border-amber-200 transition-all mr-1.5">
+                              <button type="button" onClick={() => startEdit(item)} className="inline-flex items-center px-3 py-1.5 rounded-xl bg-amber-500 text-white text-[10px] font-bold uppercase tracking-wider hover:bg-amber-600 transition-all mr-1.5 shadow-sm">
                                 Edit
                               </button>
                               {deleteConfirmId === item.id ? (
                                 <>
-                                  <button onClick={() => deleteItem(item.id)} disabled={processing} className="inline-flex items-center px-3 py-1.5 rounded-xl bg-red-600 text-white text-[10px] font-bold uppercase tracking-wider hover:bg-red-700 disabled:opacity-50 transition-all mr-1.5">
+                                  <button type="button" onClick={() => deleteItem(item.id)} disabled={processing} className="inline-flex items-center px-3 py-1.5 rounded-xl bg-red-600 text-white text-[10px] font-bold uppercase tracking-wider hover:bg-red-700 disabled:opacity-50 transition-all mr-1.5">
                                     Confirm
                                   </button>
-                                  <button onClick={() => setDeleteConfirmId(null)} className="inline-flex items-center px-3 py-1.5 rounded-xl bg-slate-200 text-slate-600 text-[10px] font-bold uppercase tracking-wider hover:bg-slate-300 transition-all">
+                                  <button type="button" onClick={() => setDeleteConfirmId(null)} className="inline-flex items-center px-3 py-1.5 rounded-xl bg-slate-200 text-slate-600 text-[10px] font-bold uppercase tracking-wider hover:bg-slate-300 transition-all">
                                     No
                                   </button>
                                 </>
                               ) : (
-                                <button onClick={() => setDeleteConfirmId(item.id)} className="inline-flex items-center px-3 py-1.5 rounded-xl bg-red-50 text-red-600 text-[10px] font-bold uppercase tracking-wider hover:bg-red-100 border border-red-200 transition-all">
+                                <button type="button" onClick={() => setDeleteConfirmId(item.id)} className="inline-flex items-center px-3 py-1.5 rounded-xl bg-red-500 text-white text-[10px] font-bold uppercase tracking-wider hover:bg-red-600 transition-all shadow-sm">
                                   Delete
                                 </button>
                               )}
