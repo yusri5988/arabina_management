@@ -398,7 +398,7 @@ export default function ProcurementIndex({
                                   </div>
                                   <button onClick={addNewOrderPackageLine} className="bg-blue-600 hover:bg-blue-700 text-white h-[46px] px-6 rounded-xl text-[10px] font-black uppercase tracking-widest w-full md:w-48 shadow-md active:scale-95 transition-all">Add Package</button>
                               </div>
-                              <div className="flex flex-col gap-2 max-h-80 overflow-y-auto pr-2 custom-scrollbar">
+                              <div className="flex flex-col gap-2">
                                   {newOrderPackageLines.map((line, index) => (
                                       <div key={index} className="flex items-center justify-between bg-white border border-slate-100 rounded-2xl py-3 px-5 shadow-sm group hover:border-blue-300 transition-all">
                                           <div className="flex items-center gap-5">
@@ -461,7 +461,7 @@ export default function ProcurementIndex({
                                   </div>
                                   <button onClick={addNewOrderSkuLine} className="bg-emerald-600 hover:bg-emerald-700 text-white h-[46px] px-6 rounded-xl text-[10px] font-black uppercase tracking-widest w-full md:w-48 shadow-md active:scale-95 transition-all">Add SKU</button>
                               </div>
-                              <div className="flex flex-col gap-2 max-h-80 overflow-y-auto pr-2 custom-scrollbar">
+                              <div className="flex flex-col gap-2">
                                   {newOrderSkuLines.map((line, index) => (
                                       <div key={index} className="flex items-center justify-between bg-white border border-slate-100 rounded-2xl py-3 px-5 shadow-sm group hover:border-emerald-300 transition-all">
                                           <div className="flex items-center gap-5">
