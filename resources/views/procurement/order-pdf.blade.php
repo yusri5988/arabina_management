@@ -168,17 +168,27 @@
 </head>
 <body>
     @php
+        $formatQuantity = static function ($quantity) {
+            $normalized = round((float) $quantity, 1);
+
+            if (abs($normalized - round($normalized)) < 0.00001) {
+                return (string) (int) round($normalized);
+            }
+
+            return number_format($normalized, 1, '.', '');
+        };
+
         // Logic to extract loose SKUs (same as frontend)
         $pkgLines = $order->packageLines;
         $allLines = $order->lines;
         
         $looseLines = $allLines->map(function($line) use ($pkgLines) {
-            $looseQty = (int)$line->ordered_quantity;
+            $looseQty = round((float) $line->ordered_quantity, 1);
             foreach ($pkgLines as $pLine) {
                 if ($pLine->package && $pLine->package->packageItems) {
                     $pItem = $pLine->package->packageItems->firstWhere('item_id', $line->item_id);
                     if ($pItem) {
-                        $looseQty -= ($pLine->quantity * (int)$pItem->quantity);
+                        $looseQty = round($looseQty - ($pLine->quantity * $pItem->quantity), 1);
                     }
                 }
             }
@@ -239,7 +249,7 @@
                             <div class="item-name">{{ $pLine->package->name ?? '-' }}</div>
                         </td>
                         <td style="color: #3b82f6; font-weight: bold; font-size: 10px; text-transform: uppercase;">Package</td>
-                        <td class="qty-badge">x{{ $pLine->quantity }}</td>
+                        <td class="qty-badge">x{{ $formatQuantity($pLine->quantity) }}</td>
                     </tr>
                 @endforeach
 
@@ -250,7 +260,7 @@
                             <div class="item-name">{{ $lLine->name }}</div>
                         </td>
                         <td style="color: #10b981; font-weight: bold; font-size: 10px; text-transform: uppercase;">Loose SKU</td>
-                        <td class="qty-badge">x{{ $lLine->qty }}</td>
+                        <td class="qty-badge">x{{ $formatQuantity($lLine->qty) }}</td>
                     </tr>
                 @endforeach
             </tbody>
@@ -272,7 +282,7 @@
                         <td class="item-code">{{ $line->item->sku ?? '-' }}</td>
                         <td class="item-name">{{ $line->item->name ?? '-' }}</td>
                         <td style="font-size: 10px; color: #64748b;">{{ $line->item->unit ?? 'PCS' }}</td>
-                        <td class="qty-badge">{{ $line->ordered_quantity }}</td>
+                        <td class="qty-badge">{{ $formatQuantity($line->ordered_quantity) }}</td>
                     </tr>
                 @endforeach
             </tbody>

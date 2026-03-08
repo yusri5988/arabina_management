@@ -227,19 +227,22 @@ export default function CrnCreate({ procurementOrders = [], items = [] }) {
                     label="Expected Qty"
                     value={item.expected_qty}
                     onChange={(val) => updateItem(index, 'expected_qty', val)}
-                    min={1}
+                    min={0.1}
+                    step={0.1}
                   />
                   <QtyInput
                     label="Received Qty"
                     value={item.received_qty}
                     onChange={(val) => updateItem(index, 'received_qty', val)}
                     min={0}
+                    step={0.1}
                   />
                   <QtyInput
                     label="Rejected Qty"
                     value={item.rejected_qty}
                     onChange={(val) => updateItem(index, 'rejected_qty', val)}
                     min={0}
+                    step={0.1}
                   />
                 </div>
               </div>

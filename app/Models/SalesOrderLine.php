@@ -16,6 +16,10 @@ class SalesOrderLine extends Model
         'item_quantity',
     ];
 
+    protected $casts = [
+        'shipped_quantity' => 'float',
+    ];
+
     public function salesOrder(): BelongsTo
     {
         return $this->belongsTo(SalesOrder::class);

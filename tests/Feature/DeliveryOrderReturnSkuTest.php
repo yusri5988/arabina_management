@@ -85,6 +85,37 @@ class DeliveryOrderReturnSkuTest extends TestCase
             ->assertJsonValidationErrors(['item_id']);
     }
 
+    public function test_can_return_decimal_sku_quantity_from_delivery_order(): void
+    {
+        $user = User::factory()->create(['role' => User::ROLE_SUPER_ADMIN]);
+        [$itemA] = $this->seedItemsWithStock($user, 10, 8);
+
+        $deliveryOrder = $this->createDeliveryOrder($user, [
+            ['item_id' => $itemA->id, 'quantity' => 6.5],
+        ]);
+
+        $response = $this->actingAs($user)->postJson("/items/stock/out/do/{$deliveryOrder->id}/return-sku", [
+            'item_id' => $itemA->id,
+            'quantity' => 1.5,
+        ]);
+
+        $response->assertOk();
+
+        $this->assertEquals(
+            5.0,
+            (float) ItemVariant::query()->where('item_id', $itemA->id)->value('stock_current')
+        );
+
+        $returnedId = (int) $response->json('data.id');
+        $this->assertEquals(
+            1.5,
+            (float) DB::table('inventory_transaction_lines')
+                ->where('inventory_transaction_id', $returnedId)
+                ->where('item_id', $itemA->id)
+                ->value('quantity')
+        );
+    }
+
     public function test_legacy_full_return_route_still_works(): void
     {
         $user = User::factory()->create(['role' => User::ROLE_SUPER_ADMIN]);
@@ -210,12 +241,12 @@ class DeliveryOrderReturnSkuTest extends TestCase
                 })
                 ->firstOrFail();
 
-            $variant->decrement('stock_current', (int) $line['quantity']);
+            $variant->decrement('stock_current', $line['quantity']);
 
             $transaction->lines()->create([
                 'item_id' => (int) $line['item_id'],
                 'item_variant_id' => $variant->id,
-                'quantity' => (int) $line['quantity'],
+                'quantity' => $line['quantity'],
             ]);
         }
 

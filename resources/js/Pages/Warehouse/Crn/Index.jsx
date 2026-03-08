@@ -347,10 +347,10 @@ export default function CrnIndex({ pendingProcurements = [], activeCrns = [], no
                                             </td>
                                             <td className="px-4 py-3 text-center text-sm font-bold text-slate-700">{line.remaining_qty}</td>
                                             <td className="px-4 py-3 text-center">
-                                              <QtyInput value={current.received_qty} onChange={(val) => setLineValue(order.id, line.line_id, 'received_qty', val, line.remaining_qty)} min={0} max={line.remaining_qty} />
+                                              <QtyInput value={current.received_qty} onChange={(val) => setLineValue(order.id, line.line_id, 'received_qty', val, line.remaining_qty)} min={0} max={line.remaining_qty} step={0.1} />
                                             </td>
                                             <td className="px-4 py-3 text-center">
-                                              <QtyInput value={current.rejected_qty} onChange={(val) => setLineValue(order.id, line.line_id, 'rejected_qty', val, line.remaining_qty)} min={0} max={line.remaining_qty} />
+                                              <QtyInput value={current.rejected_qty} onChange={(val) => setLineValue(order.id, line.line_id, 'rejected_qty', val, line.remaining_qty)} min={0} max={line.remaining_qty} step={0.1} />
                                             </td>
                                             <td className="px-4 py-3">
                                               <input

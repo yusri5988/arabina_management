@@ -5,6 +5,8 @@ import AuthenticatedLayout from '../../Layouts/AuthenticatedLayout';
 
 const initialAlacarteLine = { item_id: '', quantity: '' };
 
+const normalizeQuantity = (value) => Math.round(Number(value || 0) * 10) / 10;
+
 export default function Stock({ items, packages, salesOrders = [], type = 'in', historyData = [] }) {
   const initialType = type === 'out' ? 'out' : 'in';
   const isOut = initialType === 'out';
@@ -185,7 +187,7 @@ export default function Stock({ items, packages, salesOrders = [], type = 'in', 
 
       if (field === 'quantity') {
         const maxStock = Number(itemStockById.get(String(line.item_id)) ?? 0);
-        const normalized = Math.max(Math.min(Number(value || 0), maxStock), 0);
+        const normalized = normalizeQuantity(Math.max(Math.min(Number(value || 0), maxStock), 0));
         return { ...line, quantity: String(normalized) };
       }
 
@@ -198,7 +200,7 @@ export default function Stock({ items, packages, salesOrders = [], type = 'in', 
     const qty = Number(outAddSku.quantity || 0);
     const availableStock = Number(itemStockById.get(itemId) ?? 0);
 
-    if (!itemId || qty < 1) {
+    if (!itemId || qty <= 0) {
       setNotification({ type: 'error', message: 'Please choose SKU and quantity for stock out.' });
       return;
     }
@@ -213,12 +215,12 @@ export default function Stock({ items, packages, salesOrders = [], type = 'in', 
       if (existingIndex >= 0) {
         return prev.map((line, index) => (
           index === existingIndex
-            ? { ...line, quantity: String(Math.min(Number(line.quantity || 0) + qty, availableStock)) }
+            ? { ...line, quantity: String(normalizeQuantity(Math.min(Number(line.quantity || 0) + qty, availableStock))) }
             : line
         ));
       }
 
-      return [...prev, { item_id: itemId, quantity: String(Math.min(qty, availableStock)) }];
+      return [...prev, { item_id: itemId, quantity: String(normalizeQuantity(Math.min(qty, availableStock))) }];
     });
 
     setOutAddSku((prev) => ({
@@ -497,8 +499,9 @@ export default function Stock({ items, packages, salesOrders = [], type = 'in', 
                       <QtyInput
                         value={line.quantity}
                         onChange={(val) => updateLine(index, 'quantity', val)}
-                        min={1}
+                        min={0.1}
                         max={Number(itemStockById.get(String(line.item_id)) ?? 0)}
+                        step={0.1}
                       />
                     </div>
                     <div className="col-span-1 flex items-center justify-end">
@@ -538,7 +541,8 @@ export default function Stock({ items, packages, salesOrders = [], type = 'in', 
                   <div className="col-span-8 md:col-span-2">
                     <input
                       type="number"
-                      min="1"
+                      min="0.1"
+                      step="0.1"
                       value={outAddSku.quantity}
                       onChange={e => setOutAddSku(prev => ({ ...prev, quantity: e.target.value }))}
                       placeholder="Qty"

@@ -17,6 +17,12 @@ class CrnItem extends Model
         'rejection_reason',
     ];
 
+    protected $casts = [
+        'expected_qty' => 'float',
+        'received_qty' => 'float',
+        'rejected_qty' => 'float',
+    ];
+
     public function crn(): BelongsTo
     {
         return $this->belongsTo(ContainerReceivingNote::class, 'crn_id');

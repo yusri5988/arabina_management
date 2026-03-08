@@ -2,6 +2,13 @@ import { Head, router } from '@inertiajs/react';
 import { useMemo, useState } from 'react';
 import AuthenticatedLayout from '../../Layouts/AuthenticatedLayout';
 
+const normalizeQuantity = (value) => Math.round(Number(value || 0) * 10) / 10;
+
+const formatQuantity = (value) => {
+  const numeric = Number(value || 0);
+  return Number.isInteger(numeric) ? String(numeric) : numeric.toFixed(1);
+};
+
 export default function ReturnDeliveryOrder({ order, skuLines = [] }) {
   const [returnMap, setReturnMap] = useState({});
   const [inputMap, setInputMap] = useState({});
@@ -14,8 +21,8 @@ export default function ReturnDeliveryOrder({ order, skuLines = [] }) {
 
   const addToReturnList = (line) => {
     const raw = inputMap[line.item_id];
-    const qty = Number(raw || 0);
-    if (qty < 1) {
+    const qty = normalizeQuantity(raw || 0);
+    if (qty <= 0) {
       setNotice({ type: 'error', message: `Please enter quantity for ${line.sku}.` });
       return;
     }
@@ -137,9 +144,9 @@ export default function ReturnDeliveryOrder({ order, skuLines = [] }) {
                       <div className="font-bold text-slate-800">{line.sku}</div>
                       <div className="text-slate-500 italic">{line.name}</div>
                     </td>
-                    <td className="px-4 py-3 text-xs text-right text-slate-700">{line.shipped_quantity}</td>
-                    <td className="px-4 py-3 text-xs text-right text-slate-700">{line.returned_quantity}</td>
-                    <td className="px-4 py-3 text-xs text-right font-bold text-slate-800">{line.remaining_quantity}</td>
+                    <td className="px-4 py-3 text-xs text-right text-slate-700">{formatQuantity(line.shipped_quantity)}</td>
+                    <td className="px-4 py-3 text-xs text-right text-slate-700">{formatQuantity(line.returned_quantity)}</td>
+                    <td className="px-4 py-3 text-xs text-right font-bold text-slate-800">{formatQuantity(line.remaining_quantity)}</td>
                     <td className="px-4 py-3 text-right">
                       <div className="flex items-center justify-end space-x-1">
                         <button
@@ -147,7 +154,10 @@ export default function ReturnDeliveryOrder({ order, skuLines = [] }) {
                           onClick={() => {
                             const current = Number(inputMap[line.item_id] || 0);
                             if (current > 0) {
-                              setInputMap((prev) => ({ ...prev, [line.item_id]: current - 1 }));
+                              setInputMap((prev) => ({
+                                ...prev,
+                                [line.item_id]: normalizeQuantity(Math.max(current - 0.1, 0)),
+                              }));
                             }
                           }}
                           disabled={Number(line.remaining_quantity) <= 0}
@@ -160,10 +170,13 @@ export default function ReturnDeliveryOrder({ order, skuLines = [] }) {
                         <input
                           type="number"
                           min="0"
+                          step="0.1"
                           max={line.remaining_quantity}
                           value={inputMap[line.item_id] ?? ''}
                           onChange={(e) => {
-                            const val = e.target.value === '' ? '' : Math.min(Math.max(0, Number(e.target.value)), line.remaining_quantity);
+                            const val = e.target.value === ''
+                              ? ''
+                              : normalizeQuantity(Math.min(Math.max(0, Number(e.target.value)), line.remaining_quantity));
                             setInputMap((prev) => ({ ...prev, [line.item_id]: val }));
                           }}
                           className="w-14 h-8 rounded-lg border border-slate-200 px-1 py-1 text-xs text-center font-bold text-slate-700 focus:ring-0 focus:border-slate-400 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
@@ -175,7 +188,10 @@ export default function ReturnDeliveryOrder({ order, skuLines = [] }) {
                           onClick={() => {
                             const current = Number(inputMap[line.item_id] || 0);
                             if (current < Number(line.remaining_quantity)) {
-                              setInputMap((prev) => ({ ...prev, [line.item_id]: current + 1 }));
+                              setInputMap((prev) => ({
+                                ...prev,
+                                [line.item_id]: normalizeQuantity(Math.min(current + 0.1, Number(line.remaining_quantity))),
+                              }));
                             }
                           }}
                           disabled={Number(line.remaining_quantity) <= 0}
@@ -233,7 +249,7 @@ export default function ReturnDeliveryOrder({ order, skuLines = [] }) {
                       <div className="font-bold text-slate-800">{line.sku}</div>
                       <div className="text-slate-500 italic">{line.name}</div>
                     </td>
-                    <td className="px-4 py-3 text-xs text-right font-black text-slate-900">{line.quantity}</td>
+                    <td className="px-4 py-3 text-xs text-right font-black text-slate-900">{formatQuantity(line.quantity)}</td>
                     <td className="px-4 py-3 text-right">
                       <button
                         type="button"

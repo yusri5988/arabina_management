@@ -82,7 +82,7 @@ class ProcurementController extends Controller
                 
                 foreach ($so->lines as $line) {
                     if ($line->package_id) {
-                        $qty = max(0, (int)$line->package_quantity - (int)$line->shipped_quantity);
+                        $qty = max(0, $this->normalizeQuantity($line->package_quantity - $line->shipped_quantity));
                         if ($qty > 0) {
                             $soDetail['packages'][] = ['code' => $line->package?->code, 'qty' => $qty];
                             $requestedPackagesMap[$line->package_id] = ($requestedPackagesMap[$line->package_id] ?? 0) + $qty;
@@ -90,17 +90,17 @@ class ProcurementController extends Controller
                             if ($line->package && $line->package->packageItems) {
                                 foreach ($line->package->packageItems as $pItem) {
                                     $itemId = $pItem->item_id;
-                                    $needed = $qty * (int)$pItem->quantity;
-                                    $totalSkuDemandMap[$itemId] = ($totalSkuDemandMap[$itemId] ?? 0) + $needed;
+                                    $needed = $this->normalizeQuantity($qty * $pItem->quantity);
+                                    $totalSkuDemandMap[$itemId] = $this->normalizeQuantity(($totalSkuDemandMap[$itemId] ?? 0) + $needed);
                                 }
                             }
                         }
                     } elseif ($line->item_sku) {
                         $item = Item::where('sku', $line->item_sku)->first();
                         if ($item) {
-                            $qty = max(0, (int)$line->item_quantity - (int)$line->shipped_quantity);
+                            $qty = max(0, $this->normalizeQuantity($line->item_quantity - $line->shipped_quantity));
                             if ($qty > 0) {
-                                $totalSkuDemandMap[$item->id] = ($totalSkuDemandMap[$item->id] ?? 0) + $qty;
+                                $totalSkuDemandMap[$item->id] = $this->normalizeQuantity(($totalSkuDemandMap[$item->id] ?? 0) + $qty);
                                 $soDetail['loose_skus'][] = ['sku' => $line->item_sku, 'qty' => $qty];
                             }
                         }
@@ -163,7 +163,9 @@ class ProcurementController extends Controller
                         // Subtract package contents from loose shortage calculation
                         foreach ($pkg->packageItems as $pItem) {
                             if (isset($totalSkuDemandMap[$pItem->item_id])) {
-                                $totalSkuDemandMap[$pItem->item_id] -= ($qty * (int)$pItem->quantity);
+                                $totalSkuDemandMap[$pItem->item_id] = $this->normalizeQuantity(
+                                    $totalSkuDemandMap[$pItem->item_id] - ($qty * $pItem->quantity)
+                                );
                             }
                         }
                     }
@@ -220,7 +222,7 @@ class ProcurementController extends Controller
             'package_lines.*.quantity' => 'required|integer|min:1',
             'sku_lines' => 'nullable|array',
             'sku_lines.*.item_id' => 'required|integer|exists:items,id|distinct',
-            'sku_lines.*.quantity' => 'required|integer|min:1',
+            'sku_lines.*.quantity' => $this->decimalQuantityRules(),
             'notes' => 'nullable|string|max:500',
         ]);
 
@@ -253,16 +255,16 @@ class ProcurementController extends Controller
                 if ($package && $package->packageItems) {
                     foreach ($package->packageItems as $pItem) {
                         $itemId = (int) $pItem->item_id;
-                        $totalNeeded = $packageQty * (int) $pItem->quantity;
-                        $skuTotals[$itemId] = ($skuTotals[$itemId] ?? 0) + $totalNeeded;
+                        $totalNeeded = $this->normalizeQuantity($packageQty * $pItem->quantity);
+                        $skuTotals[$itemId] = $this->normalizeQuantity(($skuTotals[$itemId] ?? 0) + $totalNeeded);
                     }
                 }
             }
 
             foreach ($validated['sku_lines'] ?? [] as $sLine) {
                 $itemId = (int) $sLine['item_id'];
-                $qty = (int) $sLine['quantity'];
-                $skuTotals[$itemId] = ($skuTotals[$itemId] ?? 0) + $qty;
+                $qty = $this->normalizeQuantity($sLine['quantity']);
+                $skuTotals[$itemId] = $this->normalizeQuantity(($skuTotals[$itemId] ?? 0) + $qty);
             }
 
             foreach ($skuTotals as $itemId => $totalQty) {
@@ -322,7 +324,7 @@ class ProcurementController extends Controller
         $validated = $request->validate([
             'lines' => 'required|array|min:1',
             'lines.*.line_id' => 'required|integer|distinct',
-            'lines.*.received_quantity' => 'required|integer|min:0',
+            'lines.*.received_quantity' => $this->decimalQuantityRules(true),
         ]);
 
         $inputByLineId = collect($validated['lines'])->keyBy(fn ($line) => (int) $line['line_id']);
@@ -335,18 +337,18 @@ class ProcurementController extends Controller
                     continue;
                 }
 
-                $receivedQuantity = (int) $inputByLineId->get($line->id)['received_quantity'];
+                $receivedQuantity = $this->normalizeQuantity($inputByLineId->get($line->id)['received_quantity']);
                 if ($receivedQuantity > $line->ordered_quantity) {
                     throw ValidationException::withMessages([
                         'lines' => ['Received quantity cannot exceed ordered quantity.'],
                     ]);
                 }
 
-                $rejectedQuantity = 0;
+                $rejectedQuantity = 0.0;
 
                 $variant = $this->findOrCreateDefaultVariant($line->item_id);
 
-                $stockIncrease = max($receivedQuantity - $line->received_quantity, 0);
+                $stockIncrease = max($this->normalizeQuantity($receivedQuantity - $line->received_quantity), 0);
                 if ($stockIncrease > 0) {
                     $variant->increment('stock_initial', $stockIncrease);
                     $variant->increment('stock_current', $stockIncrease);
@@ -388,7 +390,7 @@ class ProcurementController extends Controller
 
         $validated = $request->validate([
             'item_id' => 'required|integer|exists:items,id',
-            'quantity' => 'required|integer|min:1',
+            'quantity' => $this->decimalQuantityRules(),
         ]);
 
         DB::transaction(function () use ($order, $validated) {
@@ -397,10 +399,10 @@ class ProcurementController extends Controller
                 ->first();
 
             if ($line) {
-                $addQty = (int) $validated['quantity'];
+                $addQty = $this->normalizeQuantity($validated['quantity']);
                 $line->update([
-                    'suggested_quantity' => (int) ($line->suggested_quantity ?? 0) + $addQty,
-                    'ordered_quantity' => (int) ($line->ordered_quantity ?? 0) + $addQty,
+                    'suggested_quantity' => $this->normalizeQuantity(($line->suggested_quantity ?? 0) + $addQty),
+                    'ordered_quantity' => $this->normalizeQuantity(($line->ordered_quantity ?? 0) + $addQty),
                 ]);
 
                 return;
@@ -408,8 +410,8 @@ class ProcurementController extends Controller
 
             $order->lines()->create([
                 'item_id' => (int) $validated['item_id'],
-                'suggested_quantity' => (int) $validated['quantity'],
-                'ordered_quantity' => (int) $validated['quantity'],
+                'suggested_quantity' => $this->normalizeQuantity($validated['quantity']),
+                'ordered_quantity' => $this->normalizeQuantity($validated['quantity']),
                 'received_quantity' => 0,
                 'rejected_quantity' => 0,
             ]);
@@ -452,7 +454,7 @@ class ProcurementController extends Controller
 
             foreach ($package->packageItems as $packageItem) {
                 $itemId = (int) $packageItem->item_id;
-                $totalQty = $packageQuantity * (int) $packageItem->quantity;
+                $totalQty = $this->normalizeQuantity($packageQuantity * $packageItem->quantity);
 
                 $line = $order->lines()
                     ->where('item_id', $itemId)
@@ -460,8 +462,8 @@ class ProcurementController extends Controller
 
                 if ($line) {
                     $line->update([
-                        'suggested_quantity' => (int) ($line->suggested_quantity ?? 0) + $totalQty,
-                        'ordered_quantity' => (int) ($line->ordered_quantity ?? 0) + $totalQty,
+                        'suggested_quantity' => $this->normalizeQuantity(($line->suggested_quantity ?? 0) + $totalQty),
+                        'ordered_quantity' => $this->normalizeQuantity(($line->ordered_quantity ?? 0) + $totalQty),
                     ]);
                 } else {
                     $order->lines()->create([
@@ -648,11 +650,11 @@ class ProcurementController extends Controller
         $rejectable = $rejection->rejectable;
 
         if ($rejectable instanceof ProcurementOrderLine) {
-            return [(int) $rejectable->ordered_quantity, (int) $rejectable->received_quantity];
+            return [$this->normalizeQuantity($rejectable->ordered_quantity), $this->normalizeQuantity($rejectable->received_quantity)];
         }
 
         if ($rejectable instanceof CrnItem) {
-            return [(int) $rejectable->expected_qty, (int) $rejectable->received_qty];
+            return [$this->normalizeQuantity($rejectable->expected_qty), $this->normalizeQuantity($rejectable->received_qty)];
         }
 
         return [0, 0];
@@ -710,7 +712,7 @@ class ProcurementController extends Controller
     {
         $status = 'received';
         foreach ($order->lines as $line) {
-            if ($line->received_quantity === 0 && $line->ordered_quantity > 0) {
+            if ($line->received_quantity <= 0 && $line->ordered_quantity > 0) {
                 return 'submitted';
             }
             if ($line->received_quantity < $line->ordered_quantity) {

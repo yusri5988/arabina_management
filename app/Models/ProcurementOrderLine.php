@@ -18,6 +18,13 @@ class ProcurementOrderLine extends Model
         'notes',
     ];
 
+    protected $casts = [
+        'suggested_quantity' => 'float',
+        'ordered_quantity' => 'float',
+        'received_quantity' => 'float',
+        'rejected_quantity' => 'float',
+    ];
+
     public function procurementOrder(): BelongsTo
     {
         return $this->belongsTo(ProcurementOrder::class);

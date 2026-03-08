@@ -167,7 +167,7 @@ export default function ProcurementIndex({
   const updateNewOrderSkuQuantity = (index, delta) => {
     setNewOrderSkuLines(prev => prev.map((line, i) => {
       if (i === index) {
-        return { ...line, quantity: Math.max(1, line.quantity + delta) };
+        return { ...line, quantity: Math.max(0.1, Math.round((line.quantity + delta) * 10) / 10) };
       }
       return line;
     }));
@@ -447,13 +447,15 @@ export default function ProcurementIndex({
                                           onClick={() => setNewOrderAddSkuForm(prev => ({ ...prev, quantity: Math.max(0, (Number(prev.quantity) || 0) - 1) }))}
                                           className="w-8 h-8 flex items-center justify-center bg-slate-50 rounded-lg text-slate-400 hover:text-emerald-600 border border-slate-100 transition-all active:scale-90 font-black"
                                       >-</button>
-                                      <input 
-                                          type="number" 
-                                          value={newOrderAddSkuForm.quantity} 
-                                          onChange={(e) => setNewOrderAddSkuForm({ ...newOrderAddSkuForm, quantity: e.target.value })} 
-                                          placeholder="Qty" 
-                                          className="w-12 border-none text-xs font-black text-center bg-transparent focus:ring-0 p-0 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none" 
-                                      />
+                                          <input 
+                                           type="number" 
+                                           value={newOrderAddSkuForm.quantity} 
+                                           onChange={(e) => setNewOrderAddSkuForm({ ...newOrderAddSkuForm, quantity: e.target.value })} 
+                                           placeholder="Qty" 
+                                           min="0.1"
+                                           step="0.1"
+                                           className="w-12 border-none text-xs font-black text-center bg-transparent focus:ring-0 p-0 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none" 
+                                       />
                                       <button 
                                           onClick={() => setNewOrderAddSkuForm(prev => ({ ...prev, quantity: (Number(prev.quantity) || 0) + 1 }))}
                                           className="w-8 h-8 flex items-center justify-center bg-slate-50 rounded-lg text-slate-400 hover:text-emerald-600 border border-slate-100 transition-all active:scale-90 font-black"

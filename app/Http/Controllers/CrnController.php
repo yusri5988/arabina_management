@@ -125,8 +125,8 @@ class CrnController extends Controller
             'remarks' => 'nullable|string|max:500',
             'lines' => 'required|array|min:1',
             'lines.*.line_id' => 'required|integer|distinct',
-            'lines.*.received_qty' => 'required|integer|min:0',
-            'lines.*.rejected_qty' => 'required|integer|min:0',
+            'lines.*.received_qty' => $this->decimalQuantityRules(true),
+            'lines.*.rejected_qty' => $this->decimalQuantityRules(true),
             'lines.*.rejection_reason' => 'nullable|string|max:255',
         ]);
 
@@ -147,10 +147,10 @@ class CrnController extends Controller
                 continue;
             }
 
-            $receivedQty = (int) $input['received_qty'];
-            $rejectedQty = (int) $input['rejected_qty'];
+            $receivedQty = $this->normalizeQuantity($input['received_qty']);
+            $rejectedQty = $this->normalizeQuantity($input['rejected_qty']);
 
-            if (($receivedQty + $rejectedQty) > $remaining) {
+            if ($this->normalizeQuantity($receivedQty + $rejectedQty) > $remaining) {
                 throw ValidationException::withMessages([
                     'lines' => ["Total received + rejected exceeds remaining quantity for SKU {$line->item?->sku}."],
                 ]);
@@ -191,10 +191,10 @@ class CrnController extends Controller
                     continue;
                 }
 
-                $receivedQty = (int) $input['received_qty'];
-                $rejectedQty = (int) $input['rejected_qty'];
+                $receivedQty = $this->normalizeQuantity($input['received_qty']);
+                $rejectedQty = $this->normalizeQuantity($input['rejected_qty']);
 
-                if (($receivedQty + $rejectedQty) > $remaining) {
+                if ($this->normalizeQuantity($receivedQty + $rejectedQty) > $remaining) {
                     throw ValidationException::withMessages([
                         'lines' => ["Total received + rejected exceeds remaining quantity for SKU {$line->item?->sku}."],
                     ]);
@@ -331,14 +331,18 @@ class CrnController extends Controller
             'remarks' => 'nullable|string',
             'items' => 'required|array|min:1',
             'items.*.item_variant_id' => 'required|exists:item_variants,id',
-            'items.*.expected_qty' => 'required|integer|min:1',
-            'items.*.received_qty' => 'required|integer|min:0',
-            'items.*.rejected_qty' => 'required|integer|min:0',
+            'items.*.expected_qty' => $this->decimalQuantityRules(),
+            'items.*.received_qty' => $this->decimalQuantityRules(true),
+            'items.*.rejected_qty' => $this->decimalQuantityRules(true),
             'items.*.rejection_reason' => 'nullable|string',
         ]);
 
         foreach ($validated['items'] as $index => $item) {
-            if (((int) $item['received_qty'] + (int) $item['rejected_qty']) > (int) $item['expected_qty']) {
+            $receivedQty = $this->normalizeQuantity($item['received_qty']);
+            $rejectedQty = $this->normalizeQuantity($item['rejected_qty']);
+            $expectedQty = $this->normalizeQuantity($item['expected_qty']);
+
+            if ($this->normalizeQuantity($receivedQty + $rejectedQty) > $expectedQty) {
                 throw ValidationException::withMessages([
                     "items.$index.received_qty" => 'Received and rejected quantities cannot exceed expected quantity.',
                 ]);
@@ -415,7 +419,7 @@ class CrnController extends Controller
                     $transaction,
                     $item->itemVariant,
                     (int) $item->itemVariant->item_id,
-                    (int) $item->received_qty
+                    $this->normalizeQuantity($item->received_qty)
                 );
 
                 $this->recordRejectionFromCrnItem(
@@ -431,9 +435,9 @@ class CrnController extends Controller
                         ->where('item_id', $item->itemVariant->item_id)
                         ->first();
 
-                    if ($poLine) {
-                        $poLine->increment('received_quantity', (int) $item->received_qty);
-                        $poLine->increment('rejected_quantity', (int) $item->rejected_qty);
+                if ($poLine) {
+                        $poLine->increment('received_quantity', $this->normalizeQuantity($item->received_qty));
+                        $poLine->increment('rejected_quantity', $this->normalizeQuantity($item->rejected_qty));
                     }
                 }
             }
@@ -561,7 +565,7 @@ class CrnController extends Controller
         int $itemId,
         int $userId
     ): void {
-        if ((int) $crnItem->rejected_qty <= 0 || $itemId <= 0) {
+        if ($this->normalizeQuantity($crnItem->rejected_qty) <= 0 || $itemId <= 0) {
             return;
         }
 
@@ -575,7 +579,7 @@ class CrnController extends Controller
                 'crn_id' => $crn->id,
                 'item_id' => $itemId,
                 'item_variant_id' => $crnItem->item_variant_id,
-                'quantity' => (int) $crnItem->rejected_qty,
+                'quantity' => $this->normalizeQuantity($crnItem->rejected_qty),
                 'reason' => $crnItem->rejection_reason,
                 'rejected_at' => $crn->received_at ?? $crnItem->updated_at ?? now(),
                 'created_by' => $userId,
@@ -587,7 +591,7 @@ class CrnController extends Controller
         InventoryTransaction $transaction,
         ItemVariant $variant,
         int $itemId,
-        int $receivedQty
+        float $receivedQty
     ): void {
         if ($receivedQty <= 0) {
             return;
@@ -603,10 +607,10 @@ class CrnController extends Controller
         $variant->increment('stock_current', $receivedQty);
     }
 
-    private function remainingQuantity(ProcurementOrderLine $line): int
+    private function remainingQuantity(ProcurementOrderLine $line): float
     {
         return max(
-            (int) $line->ordered_quantity - (int) $line->received_quantity - (int) $line->rejected_quantity,
+            $this->normalizeQuantity($line->ordered_quantity - $line->received_quantity - $line->rejected_quantity),
             0
         );
     }
@@ -631,7 +635,7 @@ class CrnController extends Controller
 
         $lines = $po->lines;
         $allProcessed = $lines->every(function ($line) {
-            return ((int) $line->received_quantity + (int) $line->rejected_quantity) >= (int) $line->ordered_quantity;
+            return $this->normalizeQuantity($line->received_quantity + $line->rejected_quantity) >= $line->ordered_quantity;
         });
 
         $status = $allProcessed ? 'received' : 'partial';

@@ -22,6 +22,7 @@ class RejectedItem extends Model
     ];
 
     protected $casts = [
+        'quantity' => 'float',
         'rejected_at' => 'datetime',
     ];
 

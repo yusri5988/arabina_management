@@ -1,6 +1,7 @@
 import { Head } from '@inertiajs/react';
 import { useCallback, useMemo, useRef, useState } from 'react';
 import AuthenticatedLayout from '../../Layouts/AuthenticatedLayout';
+import QtyInput from '../../components/QtyInput.jsx';
 
 const initialForm = {
   code: '',
@@ -10,6 +11,16 @@ const initialForm = {
 };
 
 const templateColumns = ['package_code', 'package_name', 'sku', 'quantity'];
+
+const formatQuantity = (value) => {
+  const numeric = Number(value || 0);
+
+  if (Number.isNaN(numeric)) {
+    return value;
+  }
+
+  return Number.isInteger(numeric) ? String(numeric) : numeric.toFixed(1);
+};
 
 export default function Index({ items, packages, schemaReady = true }) {
   const [data, setData] = useState(initialForm);
@@ -343,7 +354,7 @@ export default function Index({ items, packages, schemaReady = true }) {
               {' '}
               <code className="bg-slate-100 px-1.5 py-0.5 rounded text-slate-700">sku</code>,
               {' '}
-              <code className="bg-slate-100 px-1.5 py-0.5 rounded text-slate-700">quantity</code>.
+              <code className="bg-slate-100 px-1.5 py-0.5 rounded text-slate-700">quantity</code> (supports up to 1 decimal place).
             </p>
 
             <input
@@ -481,14 +492,11 @@ export default function Index({ items, packages, schemaReady = true }) {
                     </select>
                   </div>
                   <div className="col-span-3">
-                    <input
-                      type="number"
-                      min="1"
-                      value={line.quantity}
-                      onChange={e => updateLine(index, 'quantity', e.target.value)}
-                      className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm font-bold text-right focus:ring-2 focus:ring-arabina-accent focus:outline-none bg-white"
-                      placeholder="Qty"
-                      required
+                    <QtyInput
+                      value={line.quantity === '' ? '' : Number(line.quantity)}
+                      onChange={(value) => updateLine(index, 'quantity', value === '' ? '' : String(value))}
+                      min={0.1}
+                      step={0.1}
                     />
                   </div>
                   <div className="col-span-1 flex items-center justify-end">
@@ -576,7 +584,7 @@ export default function Index({ items, packages, schemaReady = true }) {
                       <span className="font-semibold text-slate-700">
                         {line.item?.sku} - {line.item?.name}
                       </span>
-                      <span className="font-black text-slate-900">x{line.quantity}</span>
+                      <span className="font-black text-slate-900">x{formatQuantity(line.quantity)}</span>
                     </div>
                   ))}
                 </div>

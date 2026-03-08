@@ -483,7 +483,7 @@ class ItemController extends Controller
                     'notes' => $t->notes,
                     'lines_count' => $t->lines->count(),
                     'items_summary' => $t->lines->take(3)->map(function ($l) {
-                        return $l->item?->sku . ' (x' . $l->quantity . ')';
+                        return $l->item?->sku . ' (x' . $this->formatQuantity($l->quantity) . ')';
                     })->implode(', ') . ($t->lines->count() > 3 ? '...' : ''),
                 ];
             }),
@@ -527,19 +527,19 @@ class ItemController extends Controller
         $validated = $request->validate([
             'lines' => 'required|array|min:1',
             'lines.*.item_id' => 'required|integer|distinct|exists:items,id',
-            'lines.*.quantity' => 'required|integer|min:1',
+            'lines.*.quantity' => $this->decimalQuantityRules(),
         ]);
 
         $remainingByItemId = collect($skuLines)
             ->keyBy('item_id')
-            ->map(fn ($line) => (int) $line['remaining_quantity'])
+            ->map(fn ($line) => $this->normalizeQuantity($line['remaining_quantity']))
             ->all();
 
         $lineMap = [];
         foreach ($validated['lines'] as $line) {
             $itemId = (int) $line['item_id'];
-            $quantity = (int) $line['quantity'];
-            $remaining = (int) ($remainingByItemId[$itemId] ?? 0);
+            $quantity = $this->normalizeQuantity($line['quantity']);
+            $remaining = $this->normalizeQuantity($remainingByItemId[$itemId] ?? 0);
 
             if ($remaining <= 0) {
                 throw ValidationException::withMessages([
@@ -585,7 +585,7 @@ class ItemController extends Controller
 
             foreach ($lineMap as $line) {
                 $variant = $this->findOrCreateDefaultVariant((int) $line['item_id'], true);
-                $qty = (int) $line['quantity'];
+                $qty = $this->normalizeQuantity($line['quantity']);
                 $variant->increment('stock_current', $qty);
 
                 $transaction->lines()->create([
@@ -648,10 +648,10 @@ class ItemController extends Controller
                 if (!isset($lineMap[$itemId])) {
                     $lineMap[$itemId] = [
                         'item_id' => $itemId,
-                        'quantity' => 0,
+                        'quantity' => 0.0,
                     ];
                 }
-                $lineMap[$itemId]['quantity'] += (int) $line->quantity;
+                $lineMap[$itemId]['quantity'] = $this->normalizeQuantity($lineMap[$itemId]['quantity'] + $line->quantity);
             }
         }
 
@@ -685,7 +685,7 @@ class ItemController extends Controller
 
             foreach ($lineMap as $line) {
                 $variant = $this->findOrCreateDefaultVariant((int) $line['item_id'], true);
-                $qty = (int) $line['quantity'];
+                $qty = $this->normalizeQuantity($line['quantity']);
 
                 $variant->increment('stock_current', $qty);
 
@@ -721,7 +721,7 @@ class ItemController extends Controller
     {
         $validated = $request->validate([
             'item_id' => 'required|integer|exists:items,id',
-            'quantity' => 'required|integer|min:1',
+            'quantity' => $this->decimalQuantityRules(),
         ]);
 
         $anchorTransaction = InventoryTransaction::query()
@@ -737,13 +737,13 @@ class ItemController extends Controller
         $returnMarker = $this->buildDeliveryOrderReturnMarker($doCode);
 
         $itemId = (int) $validated['item_id'];
-        $requestedQty = (int) $validated['quantity'];
+        $requestedQty = $this->normalizeQuantity($validated['quantity']);
 
-        $shippedQty = 0;
+        $shippedQty = 0.0;
         foreach ($sourceTransactions as $transaction) {
             foreach ($transaction->lines as $line) {
                 if ((int) $line->item_id === $itemId) {
-                    $shippedQty += (int) $line->quantity;
+                    $shippedQty = $this->normalizeQuantity($shippedQty + $line->quantity);
                 }
             }
         }
@@ -754,14 +754,14 @@ class ItemController extends Controller
             ]);
         }
 
-        $returnedQty = (int) DB::table('inventory_transaction_lines as transaction_lines')
+        $returnedQty = $this->normalizeQuantity(DB::table('inventory_transaction_lines as transaction_lines')
             ->join('inventory_transactions as transactions', 'transactions.id', '=', 'transaction_lines.inventory_transaction_id')
             ->where('transactions.type', 'in')
             ->where('transactions.notes', 'like', '%' . $returnMarker . '%')
             ->where('transaction_lines.item_id', $itemId)
-            ->sum('transaction_lines.quantity');
+            ->sum('transaction_lines.quantity'));
 
-        $availableToReturn = max($shippedQty - $returnedQty, 0);
+        $availableToReturn = max($this->normalizeQuantity($shippedQty - $returnedQty), 0);
         if ($requestedQty > $availableToReturn) {
             throw ValidationException::withMessages([
                 'quantity' => ['Return quantity exceeds remaining quantity for this SKU.'],
@@ -853,7 +853,7 @@ class ItemController extends Controller
                         'sku' => $line->item?->sku ?? 'N/A',
                         'name' => $line->item?->name ?? 'Unknown Item',
                         'unit' => $line->item?->unit ?? '',
-                        'quantity' => (int) $line->quantity,
+                        'quantity' => $this->normalizeQuantity($line->quantity),
                     ];
                 })
                 ->sortBy('sku')
@@ -890,7 +890,7 @@ class ItemController extends Controller
                         'sku' => $line->item?->sku ?? 'N/A',
                         'name' => $line->item?->name ?? 'Unknown Item',
                         'unit' => $line->item?->unit ?? '',
-                        'quantity' => (int) $line->quantity,
+                        'quantity' => $this->normalizeQuantity($line->quantity),
                     ];
                 })
                 ->sortBy('sku')
@@ -970,10 +970,10 @@ class ItemController extends Controller
                         if (!isset($linesBySku[$sku])) {
                             $linesBySku[$sku] = [
                                 'sku' => $sku,
-                                'quantity' => 0,
+                                'quantity' => 0.0,
                             ];
                         }
-                        $linesBySku[$sku]['quantity'] += (int) $line->quantity;
+                        $linesBySku[$sku]['quantity'] = $this->normalizeQuantity($linesBySku[$sku]['quantity'] + $line->quantity);
                     }
                 }
 
@@ -981,7 +981,7 @@ class ItemController extends Controller
                     ->values()
                     ->take(5)
                     ->map(function ($line) {
-                        return $line['sku'] . ' (x' . $line['quantity'] . ')';
+                        return $line['sku'] . ' (x' . $this->formatQuantity($line['quantity']) . ')';
                     })
                     ->implode(', ');
 
@@ -1039,9 +1039,9 @@ class ItemController extends Controller
             foreach ($transaction->lines as $line) {
                 $itemId = (int) $line->item_id;
                 if (!isset($shippedByItem[$itemId])) {
-                    $shippedByItem[$itemId] = 0;
+                    $shippedByItem[$itemId] = 0.0;
                 }
-                $shippedByItem[$itemId] += (int) $line->quantity;
+                $shippedByItem[$itemId] = $this->normalizeQuantity($shippedByItem[$itemId] + $line->quantity);
             }
         }
 
@@ -1052,7 +1052,7 @@ class ItemController extends Controller
             ->select('transaction_lines.item_id', DB::raw('SUM(transaction_lines.quantity) as returned_quantity'))
             ->groupBy('transaction_lines.item_id')
             ->pluck('returned_quantity', 'item_id')
-            ->map(fn ($qty) => (int) $qty)
+            ->map(fn ($qty) => $this->normalizeQuantity($qty))
             ->all();
 
         $items = empty($shippedByItem)
@@ -1065,8 +1065,8 @@ class ItemController extends Controller
 
         $skuLines = [];
         foreach ($shippedByItem as $itemId => $shippedQuantity) {
-            $returnedQuantity = (int) ($returnedRows[$itemId] ?? 0);
-            $remainingQuantity = max((int) $shippedQuantity - $returnedQuantity, 0);
+            $returnedQuantity = $this->normalizeQuantity($returnedRows[$itemId] ?? 0);
+            $remainingQuantity = max($this->normalizeQuantity($shippedQuantity - $returnedQuantity), 0);
             $item = $items->get($itemId);
 
             $skuLines[] = [
@@ -1074,9 +1074,9 @@ class ItemController extends Controller
                 'sku' => $item?->sku ?? 'N/A',
                 'name' => $item?->name ?? 'Unknown Item',
                 'unit' => $item?->unit ?? '',
-                'shipped_quantity' => (int) $shippedQuantity,
-                'returned_quantity' => (int) $returnedQuantity,
-                'remaining_quantity' => (int) $remainingQuantity,
+                'shipped_quantity' => $this->normalizeQuantity($shippedQuantity),
+                'returned_quantity' => $returnedQuantity,
+                'remaining_quantity' => $remainingQuantity,
             ];
         }
 
@@ -1177,7 +1177,7 @@ class ItemController extends Controller
                 ->map(function ($rows) {
                     return collect($rows)
                         ->pluck('shipped_quantity', 'sku')
-                        ->map(fn($qty) => (int) $qty)
+                        ->map(fn($qty) => $this->normalizeQuantity($qty))
                         ->toArray();
                 })
                 ->toArray();
@@ -1187,15 +1187,15 @@ class ItemController extends Controller
                 ->map(function ($rows) {
                     return collect($rows)
                         ->pluck('returned_quantity', 'sku')
-                        ->map(fn($qty) => (int) $qty)
+                        ->map(fn($qty) => $this->normalizeQuantity($qty))
                         ->toArray();
                 })
                 ->toArray();
 
             foreach ($shippedByOrderSkuRaw as $orderId => $skuMap) {
                 foreach ($skuMap as $sku => $qty) {
-                    $returnedQty = (int) ($returnedByOrderSku[$orderId][$sku] ?? 0);
-                    $shippedByOrderSku[$orderId][$sku] = max((int) $qty - $returnedQty, 0);
+                    $returnedQty = $this->normalizeQuantity($returnedByOrderSku[$orderId][$sku] ?? 0);
+                    $shippedByOrderSku[$orderId][$sku] = max($this->normalizeQuantity($qty - $returnedQty), 0);
                 }
             }
 
@@ -1230,21 +1230,22 @@ class ItemController extends Controller
                             }
 
                             $orderedBySku[$sku] = ($orderedBySku[$sku] ?? 0)
-                                + ((int) $line->package_quantity * (int) $packageItem->quantity);
+                                + $this->normalizeQuantity($line->package_quantity * $packageItem->quantity);
                         }
                         continue;
                     }
 
                     if (!empty($line->item_sku)) {
                         $orderedBySku[$line->item_sku] = ($orderedBySku[$line->item_sku] ?? 0)
-                            + (int) $line->item_quantity;
+                            + $this->normalizeQuantity($line->item_quantity);
                     }
                 }
 
                 $pendingSkuLines = [];
                 foreach ($orderedBySku as $sku => $ordered) {
-                    $shipped = (int) ($shippedBySku[$sku] ?? 0);
-                    $remaining = max($ordered - $shipped, 0);
+                    $ordered = $this->normalizeQuantity($ordered);
+                    $shipped = $this->normalizeQuantity($shippedBySku[$sku] ?? 0);
+                    $remaining = max($this->normalizeQuantity($ordered - $shipped), 0);
 
                     if ($remaining <= 0) {
                         continue;
@@ -1288,7 +1289,7 @@ class ItemController extends Controller
                         'notes' => $t->notes,
                         'lines_count' => $t->lines->count(),
                         'items_summary' => $t->lines->take(3)->map(function ($l) {
-                            return $l->item?->sku . ' (x' . $l->quantity . ')';
+                            return $l->item?->sku . ' (x' . $this->formatQuantity($l->quantity) . ')';
                         })->implode(', ') . ($t->lines->count() > 3 ? '...' : ''),
                     ];
                 });
@@ -1311,7 +1312,7 @@ class ItemController extends Controller
             'package_quantity' => 'required_if:mode,package|integer|min:1',
             'lines' => 'required_if:mode,alacarte|array|min:1',
             'lines.*.item_id' => 'required_if:mode,alacarte|integer|distinct|exists:items,id',
-            'lines.*.quantity' => 'required_if:mode,alacarte|integer|min:1',
+            'lines.*.quantity' => $this->decimalQuantityRules(),
             'notes' => 'nullable|string|max:500',
         ]);
 
@@ -1325,7 +1326,7 @@ class ItemController extends Controller
                 ->map(function ($line) {
                     return [
                         'item_id' => (int) $line['item_id'],
-                        'quantity' => (int) $line['quantity'],
+                        'quantity' => $this->normalizeQuantity($line['quantity']),
                     ];
                 })
                 ->values()
@@ -1388,7 +1389,7 @@ class ItemController extends Controller
             'package_quantity' => 'required_if:mode,package|integer|min:1',
             'lines' => 'required_if:mode,alacarte|array|min:1',
             'lines.*.item_id' => 'required_if:mode,alacarte|integer|distinct|exists:items,id',
-            'lines.*.quantity' => 'required_if:mode,alacarte|integer|min:1',
+            'lines.*.quantity' => $this->decimalQuantityRules(),
             'sales_order_id' => [
                 'required',
                 'integer',
@@ -1416,7 +1417,7 @@ class ItemController extends Controller
                 ->map(function ($line) {
                     return [
                         'item_id' => (int) $line['item_id'],
-                        'quantity' => (int) $line['quantity'],
+                        'quantity' => $this->normalizeQuantity($line['quantity']),
                     ];
                 })
                 ->values()
@@ -1472,7 +1473,7 @@ class ItemController extends Controller
                     ]);
                 }
 
-                if ((int) $variant->stock_current < (int) $line['quantity']) {
+                if ($variant->stock_current < $line['quantity']) {
                     $item = Item::query()->find($line['item_id']);
                     throw ValidationException::withMessages([
                         'package_quantity' => [
@@ -1528,7 +1529,7 @@ class ItemController extends Controller
             ->select('items.sku', DB::raw('SUM(transaction_lines.quantity) as shipped_quantity'))
             ->groupBy('items.sku')
             ->pluck('shipped_quantity', 'sku')
-            ->map(fn($quantity) => (int) $quantity)
+            ->map(fn($quantity) => $this->normalizeQuantity($quantity))
             ->all();
 
         $returnedBySku = DB::table('inventory_transaction_lines as transaction_lines')
@@ -1540,19 +1541,19 @@ class ItemController extends Controller
             ->select('items.sku', DB::raw('SUM(transaction_lines.quantity) as returned_quantity'))
             ->groupBy('items.sku')
             ->pluck('returned_quantity', 'sku')
-            ->map(fn($quantity) => (int) $quantity)
+            ->map(fn($quantity) => $this->normalizeQuantity($quantity))
             ->all();
 
         $remainingBySku = [];
         foreach ($shippedBySku as $sku => $qty) {
-            $remainingBySku[$sku] = max((int) $qty - (int) ($returnedBySku[$sku] ?? 0), 0);
+            $remainingBySku[$sku] = max($this->normalizeQuantity($qty - ($returnedBySku[$sku] ?? 0)), 0);
         }
 
         foreach ($order->lines as $line) {
             if ($line->item_sku) {
-                $availableQuantity = (int) ($remainingBySku[$line->item_sku] ?? 0);
-                $shippedQuantity = min((int) $line->item_quantity, max($availableQuantity, 0));
-                $remainingBySku[$line->item_sku] = max(0, $availableQuantity - $shippedQuantity);
+                $availableQuantity = $this->normalizeQuantity($remainingBySku[$line->item_sku] ?? 0);
+                $shippedQuantity = min($this->normalizeQuantity($line->item_quantity), max($availableQuantity, 0));
+                $remainingBySku[$line->item_sku] = max(0, $this->normalizeQuantity($availableQuantity - $shippedQuantity));
 
                 $line->update([
                     'shipped_quantity' => $shippedQuantity,
@@ -1600,7 +1601,7 @@ class ItemController extends Controller
             ->map(function ($line) use ($packageQuantity) {
                 return [
                     'item_id' => (int) $line->item_id,
-                    'quantity' => (int) $line->quantity * $packageQuantity,
+                    'quantity' => $this->normalizeQuantity($line->quantity * $packageQuantity),
                 ];
             })
             ->values()

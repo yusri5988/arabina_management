@@ -19,6 +19,18 @@
     </style>
 </head>
 <body>
+    @php
+        $formatQuantity = static function ($quantity) {
+            $normalized = round((float) $quantity, 1);
+
+            if (abs($normalized - round($normalized)) < 0.00001) {
+                return (string) (int) round($normalized);
+            }
+
+            return number_format($normalized, 1, '.', '');
+        };
+    @endphp
+
     <div class="header">
         <h1>ARABINA INVENTORY</h1>
         <p>DELIVERY ORDER</p>
@@ -67,7 +79,7 @@
                 <td>{{ $index + 1 }}</td>
                 <td>{{ $line['sku'] }}</td>
                 <td>{{ $line['name'] }}</td>
-                <td style="text-align: right;">{{ $line['quantity'] }} {{ $line['unit'] }}</td>
+                <td style="text-align: right;">{{ $formatQuantity($line['quantity']) }} {{ $line['unit'] }}</td>
             </tr>
             @endforeach
         </tbody>
@@ -97,7 +109,7 @@
                     <td>{{ $index + 1 }}</td>
                     <td>{{ $line['sku'] }}</td>
                     <td>{{ $line['name'] }}</td>
-                    <td style="text-align: right; font-weight: bold; color: #be123c;">{{ $line['quantity'] }} {{ $line['unit'] }}</td>
+                    <td style="text-align: right; font-weight: bold; color: #be123c;">{{ $formatQuantity($line['quantity']) }} {{ $line['unit'] }}</td>
                 </tr>
                 @endforeach
             </tbody>

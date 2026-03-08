@@ -54,7 +54,7 @@ class PackageController extends Controller
             'is_active' => ['nullable', 'boolean'],
             'lines' => ['required', 'array', 'min:1'],
             'lines.*.item_id' => ['required', 'integer', 'distinct', 'exists:items,id'],
-            'lines.*.quantity' => ['required', 'integer', 'min:1'],
+            'lines.*.quantity' => $this->decimalQuantityRules(),
         ]);
 
         $package = DB::transaction(function () use ($request, $validated) {
@@ -69,7 +69,7 @@ class PackageController extends Controller
                 collect($validated['lines'])->map(function ($line) {
                     return [
                         'item_id' => $line['item_id'],
-                        'quantity' => $line['quantity'],
+                        'quantity' => $this->normalizeQuantity($line['quantity']),
                     ];
                 })->all()
             );
@@ -98,7 +98,7 @@ class PackageController extends Controller
             'packages.*.package_code' => ['required', 'string', 'max:50'],
             'packages.*.package_name' => ['required', 'string', 'max:255'],
             'packages.*.sku' => ['required', 'string', 'max:100', 'exists:items,sku'],
-            'packages.*.quantity' => ['required', 'integer', 'min:1'],
+            'packages.*.quantity' => $this->decimalQuantityRules(),
         ]);
 
         $rows = collect($validated['packages'])
@@ -109,7 +109,7 @@ class PackageController extends Controller
                     'package_name' => trim($row['package_name']),
                     'is_active' => true,
                     'sku' => trim($row['sku']),
-                    'quantity' => (int) $row['quantity'],
+                    'quantity' => $this->normalizeQuantity($row['quantity']),
                 ];
             });
 
@@ -223,7 +223,7 @@ class PackageController extends Controller
             'is_active' => ['nullable', 'boolean'],
             'lines' => ['required', 'array', 'min:1'],
             'lines.*.item_id' => ['required', 'integer', 'distinct', 'exists:items,id'],
-            'lines.*.quantity' => ['required', 'integer', 'min:1'],
+            'lines.*.quantity' => $this->decimalQuantityRules(),
         ]);
 
         DB::transaction(function () use ($package, $validated) {
@@ -238,7 +238,7 @@ class PackageController extends Controller
                 collect($validated['lines'])->map(function ($line) {
                     return [
                         'item_id' => $line['item_id'],
-                        'quantity' => $line['quantity'],
+                        'quantity' => $this->normalizeQuantity($line['quantity']),
                     ];
                 })->all()
             );

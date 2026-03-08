@@ -13,6 +13,10 @@ class PackageItem extends Model
         'quantity',
     ];
 
+    protected $casts = [
+        'quantity' => 'float',
+    ];
+
     public function package(): BelongsTo
     {
         return $this->belongsTo(Package::class);
