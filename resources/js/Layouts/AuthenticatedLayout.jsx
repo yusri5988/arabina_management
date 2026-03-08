@@ -1,22 +1,29 @@
 import { usePage, router, Link } from '@inertiajs/react';
 import { useState } from 'react';
-import { 
-  ArrowRightOnRectangleIcon, 
+import {
+  ArrowRightOnRectangleIcon,
   HomeIcon,
   ShoppingCartIcon,
   TruckIcon,
   UsersIcon,
-  ChevronLeftIcon,
   UserCircleIcon,
   Bars3Icon,
   XMarkIcon,
   BuildingStorefrontIcon,
-  ClockIcon
+  ClockIcon,
+  ChevronDownIcon,
+  DocumentTextIcon,
+  ArchiveBoxIcon,
+  TableCellsIcon,
+  ArrowUpTrayIcon,
+  ExclamationTriangleIcon,
+  CubeIcon
 } from '@heroicons/react/24/outline/index.js';
 
 export default function AuthenticatedLayout({ children, title, showWelcome = false, backUrl = null }) {
   const { auth, url } = usePage().props;
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [warehouseOpen, setWarehouseOpen] = useState(() => url?.startsWith('/warehouse') || url?.startsWith('/items/stocks') || url?.startsWith('/items/stock/out') || url?.startsWith('/packages'));
 
   const logout = () => {
     router.post('/logout');
@@ -27,15 +34,6 @@ export default function AuthenticatedLayout({ children, title, showWelcome = fal
     if (path === '/dashboard' && url === '/dashboard') return true;
     if (path !== '/dashboard' && url.startsWith(path)) return true;
     return false;
-  };
-
-  const handleBack = () => {
-    if (typeof window !== 'undefined' && window.history.length > 1) {
-      window.history.back();
-      return;
-    }
-
-    router.visit('/dashboard');
   };
 
   const navLinks = [
@@ -52,6 +50,16 @@ export default function AuthenticatedLayout({ children, title, showWelcome = fal
     ...(auth?.user?.role === 'super_admin' ? [{ name: 'Users', path: '/admin/users', icon: UsersIcon }] : []),
     ...(auth?.user?.role === 'super_admin' ? [{ name: 'Activity Logs', path: '/admin/logs', icon: ClockIcon }] : []),
     { name: 'Profile', path: '/profile', icon: UserCircleIcon },
+  ];
+
+  const showWarehouseMenu = auth?.user?.role !== 'sales' && auth?.user?.role !== 'procurement';
+  const warehouseChildren = [
+    { name: 'CRN (Container)', path: '/warehouse/crn', icon: DocumentTextIcon },
+    { name: 'Item Catalog', path: '/items', icon: ArchiveBoxIcon },
+    { name: 'Stock List', path: '/items/stocks', icon: TableCellsIcon },
+    { name: 'Delivery Order', path: '/items/stock/out', icon: ArrowUpTrayIcon },
+    { name: 'Rejected List', path: '/warehouse/rejections', icon: ExclamationTriangleIcon },
+    ...(auth?.user?.role === 'super_admin' ? [{ name: 'Create Package', path: '/packages', icon: CubeIcon }] : []),
   ];
 
   return (
@@ -85,20 +93,65 @@ export default function AuthenticatedLayout({ children, title, showWelcome = fal
 
         <nav className="flex-1 px-4 py-6 space-y-1.5 overflow-y-auto">
           <p className="px-4 text-[10px] font-bold text-emerald-300/60 uppercase tracking-widest mb-4">Main Menu</p>
-          {navLinks.map((link) => (
-            <Link
-              key={link.name}
-              href={link.path}
-              className={`flex items-center space-x-3 px-4 py-3.5 rounded-2xl transition-all ${
-                isActive(link.path) 
-                ? 'bg-emerald-800/80 text-white font-bold shadow-inner border border-emerald-700/50' 
-                : 'text-emerald-100/70 hover:bg-emerald-800/40 hover:text-white border border-transparent'
-              }`}
-            >
-              <link.icon className={`w-5 h-5 ${isActive(link.path) ? 'text-emerald-300' : ''}`} strokeWidth={isActive(link.path) ? 2.5 : 2} />
-              <span>{link.name}</span>
-            </Link>
-          ))}
+          {navLinks.map((link) => {
+            if (link.name === 'Warehouse' && showWarehouseMenu) {
+              const warehouseActive = isActive('/warehouse') || isActive('/items/stocks') || isActive('/items/stock/out') || isActive('/packages');
+
+              return (
+                <div key={link.name} className="space-y-1.5">
+                  <button
+                    type="button"
+                    onClick={() => setWarehouseOpen((prev) => !prev)}
+                    className={`flex w-full items-center justify-between px-4 py-3.5 rounded-2xl transition-all ${
+                      warehouseActive
+                        ? 'bg-emerald-800/80 text-white font-bold shadow-inner border border-emerald-700/50'
+                        : 'text-emerald-100/70 hover:bg-emerald-800/40 hover:text-white border border-transparent'
+                    }`}
+                  >
+                    <span className="flex items-center space-x-3">
+                      <link.icon className={`w-5 h-5 ${warehouseActive ? 'text-emerald-300' : ''}`} strokeWidth={warehouseActive ? 2.5 : 2} />
+                      <span>{link.name}</span>
+                    </span>
+                    <ChevronDownIcon className={`w-4 h-4 transition-transform ${warehouseOpen ? 'rotate-180' : ''}`} strokeWidth={2.5} />
+                  </button>
+
+                  {warehouseOpen && (
+                    <div className="ml-4 space-y-1 border-l border-emerald-800/60 pl-3">
+                      {warehouseChildren.map((child) => (
+                        <Link
+                          key={child.name}
+                          href={child.path}
+                          className={`flex items-center space-x-3 px-3 py-2.5 rounded-xl text-sm transition-all ${
+                            isActive(child.path)
+                              ? 'bg-emerald-700/70 text-white font-semibold border border-emerald-600/60'
+                              : 'text-emerald-100/70 hover:bg-emerald-800/30 hover:text-white border border-transparent'
+                          }`}
+                        >
+                          <child.icon className={`w-4 h-4 ${isActive(child.path) ? 'text-emerald-200' : ''}`} strokeWidth={2} />
+                          <span>{child.name}</span>
+                        </Link>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            }
+
+            return (
+              <Link
+                key={link.name}
+                href={link.path}
+                className={`flex items-center space-x-3 px-4 py-3.5 rounded-2xl transition-all ${
+                  isActive(link.path) 
+                  ? 'bg-emerald-800/80 text-white font-bold shadow-inner border border-emerald-700/50' 
+                  : 'text-emerald-100/70 hover:bg-emerald-800/40 hover:text-white border border-transparent'
+                }`}
+              >
+                <link.icon className={`w-5 h-5 ${isActive(link.path) ? 'text-emerald-300' : ''}`} strokeWidth={isActive(link.path) ? 2.5 : 2} />
+                <span>{link.name}</span>
+              </Link>
+            );
+          })}
         </nav>
 
         <div className="p-4 border-t border-emerald-800/50 bg-[#123a09]/50">
@@ -133,17 +186,6 @@ export default function AuthenticatedLayout({ children, title, showWelcome = fal
               >
                 <Bars3Icon className="w-6 h-6" />
               </button>
-              {backUrl && (
-                backUrl === '__back__' ? (
-                  <button type="button" onClick={handleBack} className="p-2 -ml-2 text-slate-400 hover:bg-slate-100 hover:text-slate-700 rounded-xl transition-colors">
-                    <ChevronLeftIcon className="w-5 h-5" strokeWidth={2.5} />
-                  </button>
-                ) : (
-                  <Link href={backUrl} className="p-2 -ml-2 text-slate-400 hover:bg-slate-100 hover:text-slate-700 rounded-xl transition-colors">
-                    <ChevronLeftIcon className="w-5 h-5" strokeWidth={2.5} />
-                  </Link>
-                )
-              )}
               <h1 className="text-xl font-black text-slate-800 tracking-tight">{title || 'Dashboard'}</h1>
             </div>
             

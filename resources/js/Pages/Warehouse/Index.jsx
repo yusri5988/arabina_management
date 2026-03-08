@@ -1,5 +1,5 @@
 import { Head, Link, usePage } from '@inertiajs/react';
-import { ArrowDownTrayIcon, ArrowUpTrayIcon, ExclamationTriangleIcon, ArchiveBoxIcon, CubeIcon, DocumentTextIcon, TableCellsIcon } from '@heroicons/react/24/outline/index.js';
+import { ArrowUpTrayIcon, ExclamationTriangleIcon, ArchiveBoxIcon, CubeIcon, DocumentTextIcon, TableCellsIcon } from '@heroicons/react/24/outline/index.js';
 import AuthenticatedLayout from '../../Layouts/AuthenticatedLayout';
 
 export default function WarehouseIndex() {
@@ -55,22 +55,6 @@ export default function WarehouseIndex() {
             </div>
             <h4 className="text-lg font-bold text-slate-800 mb-1 tracking-tight">Stock List</h4>
             <p className="text-slate-500 text-sm font-medium leading-snug">View live inventory stock table by SKU.</p>
-          </div>
-        </Link>
-
-        <Link
-          href="/items/stock/in"
-          className="group relative bg-white p-6 rounded-2xl shadow-sm border border-emerald-100 hover:border-emerald-300 hover:shadow-lg hover:shadow-emerald-100/50 transition-all duration-300 active:scale-[0.98] overflow-hidden"
-        >
-          <div className="absolute top-0 right-0 p-4 opacity-5 group-hover:opacity-10 transition-opacity transform group-hover:scale-110 duration-500">
-            <ArrowDownTrayIcon className="w-20 h-20 text-emerald-600" />
-          </div>
-          <div className="relative z-10 flex flex-col h-full">
-            <div className="w-12 h-12 bg-emerald-50 rounded-xl flex items-center justify-center mb-4 text-emerald-600 shadow-inner group-hover:bg-emerald-600 group-hover:text-white transition-colors duration-300">
-              <ArrowDownTrayIcon className="w-6 h-6" strokeWidth={2.5} />
-            </div>
-            <h4 className="text-lg font-bold text-slate-800 mb-1 tracking-tight">Stock In (+)</h4>
-            <p className="text-slate-500 text-sm font-medium leading-snug">Add incoming stock to inventory.</p>
           </div>
         </Link>
 

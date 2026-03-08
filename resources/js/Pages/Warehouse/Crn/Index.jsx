@@ -12,6 +12,7 @@ export default function CrnIndex({ pendingProcurements = [], activeCrns = [], no
   const [notification, setNotification] = useState(null);
   const [processingId, setProcessingId] = useState(null);
   const [openOrderId, setOpenOrderId] = useState(null);
+  const [confirmSubmitOrderId, setConfirmSubmitOrderId] = useState(null);
   const [pendingList, setPendingList] = useState(pendingProcurements);
   const [crnList, setCrnList] = useState(activeCrns);
   const [etaDates, setEtaDates] = useState({});
@@ -20,6 +21,7 @@ export default function CrnIndex({ pendingProcurements = [], activeCrns = [], no
 
   const toggleOrder = (order) => {
     setOpenOrderId((prev) => (prev === order.id ? null : order.id));
+    setConfirmSubmitOrderId((prev) => (prev === order.id ? null : prev));
     setForms((prev) => {
       if (prev[order.id]) return prev;
       const mapped = {};
@@ -62,6 +64,7 @@ export default function CrnIndex({ pendingProcurements = [], activeCrns = [], no
       return { line_id: line.line_id, received_qty: Number(current.received_qty || 0), rejected_qty: Number(current.rejected_qty || 0), rejection_reason: current.rejection_reason || null };
     });
     setNotification(null);
+    setConfirmSubmitOrderId(null);
     setProcessingId(`all-${order.id}`);
     try {
       const { response, payload } = await apiFetchJson(`/warehouse/crn/procurement/${order.id}/receive`, {
@@ -291,6 +294,7 @@ export default function CrnIndex({ pendingProcurements = [], activeCrns = [], no
                 <tbody className="divide-y divide-slate-50">
                   {pendingList.map((order) => {
                     const isOpen = openOrderId === order.id;
+                    const showConfirmSubmit = confirmSubmitOrderId === order.id;
                     const orderForm = forms?.[order.id] ?? {};
                     return (
                       <>
@@ -315,14 +319,47 @@ export default function CrnIndex({ pendingProcurements = [], activeCrns = [], no
                             <td colSpan={4} className="px-6 md:px-8 py-4 bg-slate-50/60">
                               <div className="space-y-3">
                                 <div className="flex justify-end">
-                                  <button
-                                    type="button"
-                                    onClick={() => submitAllLines(order)}
-                                    disabled={!canManage || processingId === `all-${order.id}`}
-                                    className="rounded-lg bg-slate-800 text-white text-xs font-bold px-4 py-2 hover:bg-slate-900 disabled:opacity-50 transition-colors"
-                                  >
-                                    {processingId === `all-${order.id}` ? 'Submitting...' : 'Submit All'}
-                                  </button>
+                                  <div className="flex items-start justify-end gap-3">
+                                    <div
+                                      className={`origin-top-right overflow-hidden rounded-2xl border border-amber-200 bg-white shadow-xl transition-all duration-300 ease-out ${
+                                        showConfirmSubmit
+                                          ? 'max-h-24 max-w-[760px] translate-x-0 scale-100 opacity-100'
+                                          : 'pointer-events-none max-h-0 max-w-0 translate-x-3 scale-95 opacity-0'
+                                      }`}
+                                    >
+                                      <div className="flex w-[760px] items-center justify-between gap-4 px-4 py-3">
+                                        <p className="min-w-0 text-sm font-semibold text-slate-700 whitespace-nowrap">
+                                          Confirm submit all received and rejected quantities for PO <span className="font-bold text-slate-900">{order.code}</span>?
+                                        </p>
+                                        <div className="flex shrink-0 items-center gap-2">
+                                          <button
+                                            type="button"
+                                            onClick={() => setConfirmSubmitOrderId(null)}
+                                            className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-600 transition-colors hover:bg-slate-50"
+                                          >
+                                            Cancel
+                                          </button>
+                                          <button
+                                            type="button"
+                                            onClick={() => submitAllLines(order)}
+                                            disabled={!canManage || processingId === `all-${order.id}`}
+                                            className="rounded-xl bg-amber-500 px-3 py-2 text-xs font-bold text-slate-950 transition-colors hover:bg-amber-400 disabled:opacity-50"
+                                          >
+                                            Confirm Submit
+                                          </button>
+                                        </div>
+                                      </div>
+                                    </div>
+
+                                    <button
+                                      type="button"
+                                      onClick={() => setConfirmSubmitOrderId((prev) => (prev === order.id ? null : order.id))}
+                                      disabled={!canManage || processingId === `all-${order.id}`}
+                                      className="rounded-lg bg-slate-800 text-white text-xs font-bold px-4 py-2 hover:bg-slate-900 disabled:opacity-50 transition-all duration-200"
+                                    >
+                                      {processingId === `all-${order.id}` ? 'Submitting...' : 'Submit All'}
+                                    </button>
+                                  </div>
                                 </div>
 
                                 <div className="overflow-x-auto rounded-xl border border-slate-200">
