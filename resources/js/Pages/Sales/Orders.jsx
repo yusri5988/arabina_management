@@ -95,29 +95,37 @@ export default function Orders({ packages = [], items = [], orders = [], availab
         )}
 
         {/* Package Availability Section */}
-        <div className="bg-white rounded-[2rem] shadow-sm border border-slate-100 overflow-hidden">
-          <div className="bg-[#1b580e] p-6 md:p-8">
-            <h2 className="text-xl font-bold text-white flex items-center gap-2">
-              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-6 h-6 text-emerald-400">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M20.25 7.5l-.625 10.632a2.25 2.25 0 01-2.247 2.118H6.622a2.25 2.25 0 01-2.247-2.118L3.75 7.5M10 11.25h4M3.375 7.5h17.25c.621 0 1.125-.504 1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125z" />
-              </svg>
-              Package Availability
-            </h2>
-            <p className="text-emerald-100/60 text-sm mt-1">Ready-to-ship sets based on current inventory.</p>
+        <div className="bg-white rounded-[2rem] shadow-sm border border-slate-100 overflow-hidden mb-8">
+          <div className="bg-gradient-to-br from-[#1b580e] to-[#0d2a07] py-6 px-8 text-white relative overflow-hidden">
+            {/* Decorative background shapes */}
+            <div className="absolute top-0 right-0 -mt-8 -mr-8 w-64 h-64 bg-white opacity-5 rounded-full blur-3xl"></div>
+            <div className="absolute bottom-0 left-0 -mb-8 -ml-8 w-48 h-48 bg-emerald-400 opacity-5 rounded-full blur-2xl"></div>
+
+            <div className="relative z-10">
+              <h2 className="text-xl sm:text-2xl font-black mb-1 tracking-tight flex items-center gap-2.5">
+                <span className="p-1.5 bg-white/10 rounded-lg backdrop-blur-md">
+                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor" className="w-5 h-5 text-emerald-300">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M20.25 7.5l-.625 10.632a2.25 2.25 0 01-2.247 2.118H6.622a2.25 2.25 0 01-2.247-2.118L3.75 7.5M10 11.25h4M3.375 7.5h17.25c.621 0 1.125-.504 1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125z" />
+                  </svg>
+                </span>
+                Package Availability
+              </h2>
+              <p className="text-white/60 text-xs sm:text-sm font-medium">Ready-to-ship sets based on current inventory.</p>
+            </div>
           </div>
 
-          <div className="p-6 md:p-8 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+          <div className="p-6 md:p-8 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 bg-slate-50/30">
             {availability.map((pkg) => (
-              <div key={pkg.id} className="rounded-xl border border-slate-100 p-3 bg-slate-50 flex flex-col justify-between group hover:border-emerald-200 transition-all">
+              <div key={pkg.id} className="rounded-2xl border border-slate-100 p-4 bg-white flex flex-col justify-between group hover:border-[#1b580e]/30 hover:shadow-md transition-all">
                 <div>
-                  <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">{pkg.code}</p>
-                  <p className="text-xs font-bold text-slate-800 line-clamp-1">{pkg.name}</p>
+                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">{pkg.code}</p>
+                  <p className="text-sm font-bold text-slate-800 line-clamp-1 group-hover:text-[#1b580e] transition-colors">{pkg.name}</p>
                 </div>
-                <div className="mt-2 flex items-end justify-between">
-                  <span className={`text-[10px] font-medium ${pkg.available_qty > 0 ? 'text-emerald-600' : 'text-red-600'}`}>
-                    {pkg.available_qty > 0 ? 'Available' : 'Unavailable'}
+                <div className="mt-4 flex items-center justify-between">
+                  <span className={`text-[10px] font-black uppercase tracking-tighter px-2 py-0.5 rounded-md ${pkg.available_qty > 0 ? 'bg-emerald-50 text-emerald-600' : 'bg-rose-50 text-rose-600'}`}>
+                    {pkg.available_qty > 0 ? 'Available' : 'Out'}
                   </span>
-                  <span className={`text-xl font-black ${pkg.available_qty < 0 ? 'text-red-600' : pkg.available_qty > 0 ? 'text-emerald-600' : 'text-slate-300'}`}>
+                  <span className={`text-xl font-black ${pkg.available_qty < 0 ? 'text-rose-600' : pkg.available_qty > 0 ? 'text-[#1b580e]' : 'text-slate-200'}`}>
                     {pkg.available_qty}
                   </span>
                 </div>
@@ -127,14 +135,18 @@ export default function Orders({ packages = [], items = [], orders = [], availab
           </div>
         </div>
 
-        <div className="bg-white rounded-[2rem] shadow-sm border border-slate-100 p-6 md:p-8">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-lg font-bold text-slate-800">Submit Sales Order</h2>
+        <div className="bg-white rounded-[2.5rem] shadow-sm border border-slate-100 p-8 md:p-10 relative overflow-hidden">
+          <div className="absolute top-0 left-0 w-full h-1.5 bg-[#1b580e]"></div>
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-8 gap-4">
+            <div>
+              <h2 className="text-2xl font-black text-slate-800 tracking-tight uppercase">Submit Sales Order</h2>
+              <div className="h-1 w-12 bg-emerald-500 mt-2 rounded-full"></div>
+            </div>
             <Link
               href="/orders/history"
-              className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-bold text-slate-700 hover:bg-slate-100"
+              className="w-full sm:w-auto text-center rounded-2xl border border-slate-200 bg-slate-50 px-6 py-3 text-xs font-black text-slate-700 hover:bg-slate-100 transition-all active:scale-[0.98]"
             >
-              Delivery History
+              DELIVERY HISTORY
             </Link>
           </div>
           <div className="border-b border-slate-100 pb-1" />
