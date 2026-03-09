@@ -12,7 +12,7 @@ class Item extends Model
 {
     use SoftDeletes;
 
-    protected $fillable = ['sku', 'name', 'length_m', 'unit', 'created_by'];
+    protected $fillable = ['sku', 'name', 'length_m', 'unit', 'bom_scope', 'created_by'];
 
     public function variants(): HasMany
     {
@@ -27,5 +27,10 @@ class Item extends Model
     public function packageItems(): HasMany
     {
         return $this->hasMany(PackageItem::class);
+    }
+
+    public function bomItems(): HasMany
+    {
+        return $this->hasMany(BomItem::class);
     }
 }

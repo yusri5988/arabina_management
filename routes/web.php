@@ -33,6 +33,12 @@ Route::middleware('auth')->group(function () {
 
     Route::get('/dashboard', [DashboardController::class, 'index'])->name('dashboard');
     Route::get('/warehouse', function () {
+        $user = request()->user();
+        $warehouseModules = ['crn', 'item_catalog', 'stock_list', 'delivery_order', 'rejected_list', 'create_package'];
+        $canAccessWarehouse = $user && collect($warehouseModules)->contains(fn ($module) => $user->hasModuleAccess($module));
+
+        abort_unless($canAccessWarehouse, 403, 'Unauthorized module.');
+
         return Inertia::render('Warehouse/Index');
     })->name('warehouse.index');
 

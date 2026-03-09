@@ -198,6 +198,13 @@
                 'qty' => $looseQty
             ];
         })->filter(fn($l) => $l->qty > 0);
+
+        $bomGroups = [
+            'cabin' => 'BOM Cabin',
+            'hardware' => 'BOM Hardware',
+            'hardware_site' => 'BOM Hardware Site',
+        ];
+        $knownScopes = array_keys($bomGroups);
     @endphp
 
     <div class="container">
@@ -267,26 +274,74 @@
         </table>
 
         <div class="section-title">Technical Detail (All Component SKUs)</div>
-        <table>
-            <thead>
-                <tr>
-                    <th>SKU Code</th>
-                    <th>Full Item Name</th>
-                    <th>Unit</th>
-                    <th style="text-align: right;">Total Qty</th>
-                </tr>
-            </thead>
-            <tbody>
-                @foreach ($order->lines as $line)
+        @foreach ($bomGroups as $scope => $label)
+            @php
+                $scopedLines = $order->lines->filter(function ($line) use ($scope) {
+                    return ($line->item->bom_scope ?? 'hardware') === $scope;
+                });
+            @endphp
+
+            <div style="font-size: 10px; font-weight: 900; text-transform: uppercase; letter-spacing: 0.12em; color: #334155; margin-bottom: 8px; margin-top: 14px;">
+                {{ $label }}
+            </div>
+            <table>
+                <thead>
                     <tr>
-                        <td class="item-code">{{ $line->item->sku ?? '-' }}</td>
-                        <td class="item-name">{{ $line->item->name ?? '-' }}</td>
-                        <td style="font-size: 10px; color: #64748b;">{{ $line->item->unit ?? 'PCS' }}</td>
-                        <td class="qty-badge">{{ $formatQuantity($line->ordered_quantity) }}</td>
+                        <th>SKU Code</th>
+                        <th>Full Item Name</th>
+                        <th>Unit</th>
+                        <th style="text-align: right;">Total Qty</th>
                     </tr>
-                @endforeach
-            </tbody>
-        </table>
+                </thead>
+                <tbody>
+                    @forelse ($scopedLines as $line)
+                        <tr>
+                            <td class="item-code">{{ $line->item->sku ?? '-' }}</td>
+                            <td class="item-name">{{ $line->item->name ?? '-' }}</td>
+                            <td style="font-size: 10px; color: #64748b;">{{ $line->item->unit ?? 'PCS' }}</td>
+                            <td class="qty-badge">{{ $formatQuantity($line->ordered_quantity) }}</td>
+                        </tr>
+                    @empty
+                        <tr>
+                            <td colspan="4" style="text-align: center; color: #94a3b8;">No SKU in this BOM category.</td>
+                        </tr>
+                    @endforelse
+                </tbody>
+            </table>
+        @endforeach
+
+        @php
+            $unclassifiedLines = $order->lines->filter(function ($line) use ($knownScopes) {
+                $scope = $line->item->bom_scope ?? 'hardware';
+                return ! in_array($scope, $knownScopes, true);
+            });
+        @endphp
+
+        @if ($unclassifiedLines->isNotEmpty())
+            <div style="font-size: 10px; font-weight: 900; text-transform: uppercase; letter-spacing: 0.12em; color: #334155; margin-bottom: 8px; margin-top: 14px;">
+                Unclassified BOM
+            </div>
+            <table>
+                <thead>
+                    <tr>
+                        <th>SKU Code</th>
+                        <th>Full Item Name</th>
+                        <th>Unit</th>
+                        <th style="text-align: right;">Total Qty</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach ($unclassifiedLines as $line)
+                        <tr>
+                            <td class="item-code">{{ $line->item->sku ?? '-' }}</td>
+                            <td class="item-name">{{ $line->item->name ?? '-' }}</td>
+                            <td style="font-size: 10px; color: #64748b;">{{ $line->item->unit ?? 'PCS' }}</td>
+                            <td class="qty-badge">{{ $formatQuantity($line->ordered_quantity) }}</td>
+                        </tr>
+                    @endforeach
+                </tbody>
+            </table>
+        @endif
 
         @if($order->notes)
             <div class="notes-section">

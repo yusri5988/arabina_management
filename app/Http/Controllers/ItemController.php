@@ -24,7 +24,7 @@ class ItemController extends Controller
     public function index(): Response
     {
         return Inertia::render('Inventory/Index', [
-            'items' => Item::latest()->get(['id', 'sku', 'name', 'length_m', 'unit']),
+            'items' => Item::latest()->get(['id', 'sku', 'name', 'length_m', 'unit', 'bom_scope']),
         ]);
     }
 
@@ -327,6 +327,7 @@ class ItemController extends Controller
             'name' => 'required|string|max:255',
             'length_m' => 'nullable|numeric',
             'unit' => 'required|in:pcs,set,roll',
+            'bom_scope' => 'required|in:cabin,hardware,hardware_site',
         ]);
 
         $item = Item::create([
@@ -334,6 +335,7 @@ class ItemController extends Controller
             'name' => $validated['name'],
             'length_m' => $validated['length_m'],
             'unit' => $validated['unit'],
+            'bom_scope' => $validated['bom_scope'],
             'created_by' => $request->user()->id,
         ]);
 
@@ -357,6 +359,7 @@ class ItemController extends Controller
             'items.*.item_name' => 'required|string|max:255',
             'items.*.length_m' => 'nullable|numeric',
             'items.*.unit' => 'required|in:pcs,set,roll',
+            'items.*.bom_scope' => 'required|in:cabin,hardware,hardware_site',
         ]);
 
         $created = [];
@@ -375,6 +378,7 @@ class ItemController extends Controller
                     'name' => $row['item_name'],
                     'length_m' => $row['length_m'] ?? null,
                     'unit' => $row['unit'],
+                    'bom_scope' => $row['bom_scope'],
                     'created_by' => $request->user()->id,
                 ]);
 
@@ -384,7 +388,7 @@ class ItemController extends Controller
                     'stock_current' => 0,
                 ]);
 
-                $created[] = $item->only(['id', 'sku', 'name', 'length_m', 'unit']);
+                $created[] = $item->only(['id', 'sku', 'name', 'length_m', 'unit', 'bom_scope']);
             }
         });
 
@@ -412,6 +416,7 @@ class ItemController extends Controller
             'name' => 'required|string|max:255',
             'length_m' => ['nullable', 'numeric'],
             'unit' => 'required|in:pcs,set,roll',
+            'bom_scope' => 'required|in:cabin,hardware,hardware_site',
         ]);
 
         $item->update($validated);
@@ -1060,7 +1065,7 @@ class ItemController extends Controller
             : Item::query()
                 ->whereIn('id', array_keys($shippedByItem))
                 ->orderBy('sku')
-                ->get(['id', 'sku', 'name', 'unit'])
+                ->get(['id', 'sku', 'name', 'unit', 'bom_scope'])
                 ->keyBy('id');
 
         $skuLines = [];
@@ -1074,6 +1079,7 @@ class ItemController extends Controller
                 'sku' => $item?->sku ?? 'N/A',
                 'name' => $item?->name ?? 'Unknown Item',
                 'unit' => $item?->unit ?? '',
+                'bom_scope' => $item?->bom_scope,
                 'shipped_quantity' => $this->normalizeQuantity($shippedQuantity),
                 'returned_quantity' => $returnedQuantity,
                 'remaining_quantity' => $remainingQuantity,
@@ -1105,7 +1111,7 @@ class ItemController extends Controller
         $type = $type === 'out' ? 'out' : 'in';
 
         $items = Item::query()
-            ->select(['id', 'sku', 'name', 'unit'])
+            ->select(['id', 'sku', 'name', 'unit', 'bom_scope'])
             ->withSum('variants as stock_current_total', 'stock_current')
             ->orderBy('sku')
             ->get();
@@ -1127,9 +1133,9 @@ class ItemController extends Controller
                 ->with([
                     'lines' => function ($query) {
                         $query->with([
-                            'item:id,sku,name,unit',
+                            'item:id,sku,name,unit,bom_scope',
                             'package:id,code,name',
-                            'package.packageItems.item:id,sku,name,unit',
+                            'package.packageItems.item:id,sku,name,unit,bom_scope',
                         ])->orderBy('id');
                     },
                 ])
@@ -1213,7 +1219,7 @@ class ItemController extends Controller
                 ? collect()
                 : Item::query()
                     ->whereIn('sku', $orderedSkus->all())
-                    ->get(['sku', 'name'])
+                    ->get(['sku', 'name', 'bom_scope'])
                     ->keyBy('sku');
 
             $salesOrders = $salesOrders->map(function ($order) use ($shippedByOrderSku, $itemsBySku) {
@@ -1255,6 +1261,7 @@ class ItemController extends Controller
                     $pendingSkuLines[] = [
                         'sku' => $sku,
                         'name' => $item?->name,
+                        'bom_scope' => $item?->bom_scope,
                         'ordered_quantity' => $ordered,
                         'shipped_quantity' => min($shipped, $ordered),
                         'pending_quantity' => $remaining,

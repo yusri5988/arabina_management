@@ -2,6 +2,12 @@ import { Head } from '@inertiajs/react';
 import { useMemo, useState } from 'react';
 import AuthenticatedLayout from '../../Layouts/AuthenticatedLayout';
 
+const BOM_SECTIONS = [
+  { key: 'cabin', label: 'BOM Cabin' },
+  { key: 'hardware', label: 'BOM Hardware' },
+  { key: 'hardware_site', label: 'BOM Hardware Site' },
+];
+
 export default function StockList({ items = [], packages = [] }) {
   const [search, setSearch] = useState('');
   const [sortConfig, setSortConfig] = useState({ key: 'name', direction: 'asc' });
@@ -58,6 +64,13 @@ export default function StockList({ items = [], packages = [] }) {
 
     return result;
   }, [items, search, sortConfig]);
+
+  const inventoryByBom = useMemo(() => {
+    return BOM_SECTIONS.map((section) => ({
+      ...section,
+      rows: filteredInventory.filter((item) => String(item.bom_scope ?? 'hardware') === section.key),
+    }));
+  }, [filteredInventory]);
 
   return (
     <AuthenticatedLayout title="SKU Inventory" backUrl="__back__">
@@ -163,115 +176,79 @@ export default function StockList({ items = [], packages = [] }) {
             </div>
           </div>
 
-          <div className="bg-white rounded-[2rem] shadow-sm border border-slate-100 overflow-hidden">
-            <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-slate-100">
-                <thead className="bg-slate-50">
-                  <tr>
-                    <th
-                      className="px-4 py-3 text-left text-[10px] font-bold text-slate-500 uppercase tracking-wider cursor-pointer hover:bg-slate-100 group transition-colors"
-                      onClick={() => requestSort('sku')}
-                    >
-                      <div className="flex items-center gap-1">
-                        SKU
-                        <span className="flex flex-col text-[8px] leading-none text-slate-300">
-                          <span className={sortArrowClass('sku', 'asc')}>▲</span>
-                          <span className={sortArrowClass('sku', 'desc')}>▼</span>
-                        </span>
-                      </div>
-                    </th>
-                    <th
-                      className="px-4 py-3 text-left text-[10px] font-bold text-slate-500 uppercase tracking-wider cursor-pointer hover:bg-slate-100 group transition-colors"
-                      onClick={() => requestSort('name')}
-                    >
-                      <div className="flex items-center gap-1">
-                        Item Name
-                        <span className="flex flex-col text-[8px] leading-none text-slate-300">
-                          <span className={sortArrowClass('name', 'asc')}>▲</span>
-                          <span className={sortArrowClass('name', 'desc')}>▼</span>
-                        </span>
-                      </div>
-                    </th>
-                    <th
-                      className="px-4 py-3 text-left text-[10px] font-bold text-slate-500 uppercase tracking-wider cursor-pointer hover:bg-slate-100 group transition-colors"
-                      onClick={() => requestSort('length_m')}
-                    >
-                      <div className="flex items-center gap-1">
-                        Length (m)
-                        <span className="flex flex-col text-[8px] leading-none text-slate-300">
-                          <span className={sortArrowClass('length_m', 'asc')}>▲</span>
-                          <span className={sortArrowClass('length_m', 'desc')}>▼</span>
-                        </span>
-                      </div>
-                    </th>
-                    <th
-                      className="px-4 py-3 text-left text-[10px] font-bold text-slate-500 uppercase tracking-wider cursor-pointer hover:bg-slate-100 group transition-colors"
-                      onClick={() => requestSort('unit')}
-                    >
-                      <div className="flex items-center gap-1">
-                        Unit
-                        <span className="flex flex-col text-[8px] leading-none text-slate-300">
-                          <span className={sortArrowClass('unit', 'asc')}>▲</span>
-                          <span className={sortArrowClass('unit', 'desc')}>▼</span>
-                        </span>
-                      </div>
-                    </th>
-                    <th
-                      className="px-4 py-3 text-right text-[10px] font-bold text-slate-500 uppercase tracking-wider cursor-pointer hover:bg-slate-100 group transition-colors"
-                      onClick={() => requestSort('total_stock')}
-                    >
-                      <div className="flex items-center justify-end gap-1">
-                        Total Stock
-                        <span className="flex flex-col text-[8px] leading-none text-slate-300">
-                          <span className={sortArrowClass('total_stock', 'asc')}>▲</span>
-                          <span className={sortArrowClass('total_stock', 'desc')}>▼</span>
-                        </span>
-                      </div>
-                    </th>
-                    <th
-                      className="px-4 py-3 text-left text-[10px] font-bold text-slate-500 uppercase tracking-wider cursor-pointer hover:bg-slate-100 group transition-colors"
-                      onClick={() => requestSort('updated_at')}
-                    >
-                      <div className="flex items-center gap-1">
-                        Last Update
-                        <span className="flex flex-col text-[8px] leading-none text-slate-300">
-                          <span className={sortArrowClass('updated_at', 'asc')}>▲</span>
-                          <span className={sortArrowClass('updated_at', 'desc')}>▼</span>
-                        </span>
-                      </div>
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="bg-white divide-y divide-slate-50">
-                  {filteredInventory.map((item) => {
-                    const totalStock = (item.variants ?? []).reduce((sum, variant) => sum + Number(variant.stock_current ?? 0), 0);
-
-                    return (
-                      <tr key={item.id} className="hover:bg-slate-50 transition-colors">
-                        <td className="px-4 py-3 text-xs font-bold text-slate-700">{item.sku}</td>
-                        <td className="px-4 py-3 text-sm text-slate-800 font-medium">{item.name}</td>
-                        <td className="px-4 py-3 text-xs text-slate-600">{item.length_m ? Number(item.length_m).toFixed(2) : '-'}</td>
-                        <td className="px-4 py-3 text-xs text-slate-600 uppercase">{item.unit}</td>
-                        <td className="px-4 py-3 text-right">
-                          <span className={`text-sm font-black ${totalStock > 0 ? 'text-arabina-green' : 'text-red-500'}`}>
-                            {totalStock}
-                          </span>
-                        </td>
-                        <td className="px-4 py-3 text-xs text-slate-500">{new Date(item.updated_at).toLocaleDateString()}</td>
+          <div className="space-y-5">
+            {inventoryByBom.map((section) => (
+              <div key={section.key} className="bg-white rounded-[2rem] shadow-sm border border-slate-100 overflow-hidden">
+                <div className="px-5 py-3 border-b border-slate-100 bg-slate-50/70 flex items-center justify-between">
+                  <h4 className="text-xs font-black uppercase tracking-wider text-slate-700">{section.label}</h4>
+                  <span className="text-xs font-bold text-slate-500">{section.rows.length} SKU</span>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="min-w-full divide-y divide-slate-100">
+                    <thead className="bg-slate-50">
+                      <tr>
+                        <th className="px-4 py-3 text-left text-[10px] font-bold text-slate-500 uppercase tracking-wider cursor-pointer hover:bg-slate-100 group transition-colors" onClick={() => requestSort('sku')}>
+                          <div className="flex items-center gap-1">SKU
+                            <span className="flex flex-col text-[8px] leading-none text-slate-300"><span className={sortArrowClass('sku', 'asc')}>▲</span><span className={sortArrowClass('sku', 'desc')}>▼</span></span>
+                          </div>
+                        </th>
+                        <th className="px-4 py-3 text-left text-[10px] font-bold text-slate-500 uppercase tracking-wider cursor-pointer hover:bg-slate-100 group transition-colors" onClick={() => requestSort('name')}>
+                          <div className="flex items-center gap-1">Item Name
+                            <span className="flex flex-col text-[8px] leading-none text-slate-300"><span className={sortArrowClass('name', 'asc')}>▲</span><span className={sortArrowClass('name', 'desc')}>▼</span></span>
+                          </div>
+                        </th>
+                        <th className="px-4 py-3 text-left text-[10px] font-bold text-slate-500 uppercase tracking-wider cursor-pointer hover:bg-slate-100 group transition-colors" onClick={() => requestSort('length_m')}>
+                          <div className="flex items-center gap-1">Length (m)
+                            <span className="flex flex-col text-[8px] leading-none text-slate-300"><span className={sortArrowClass('length_m', 'asc')}>▲</span><span className={sortArrowClass('length_m', 'desc')}>▼</span></span>
+                          </div>
+                        </th>
+                        <th className="px-4 py-3 text-left text-[10px] font-bold text-slate-500 uppercase tracking-wider cursor-pointer hover:bg-slate-100 group transition-colors" onClick={() => requestSort('unit')}>
+                          <div className="flex items-center gap-1">Unit
+                            <span className="flex flex-col text-[8px] leading-none text-slate-300"><span className={sortArrowClass('unit', 'asc')}>▲</span><span className={sortArrowClass('unit', 'desc')}>▼</span></span>
+                          </div>
+                        </th>
+                        <th className="px-4 py-3 text-right text-[10px] font-bold text-slate-500 uppercase tracking-wider cursor-pointer hover:bg-slate-100 group transition-colors" onClick={() => requestSort('total_stock')}>
+                          <div className="flex items-center justify-end gap-1">Total Stock
+                            <span className="flex flex-col text-[8px] leading-none text-slate-300"><span className={sortArrowClass('total_stock', 'asc')}>▲</span><span className={sortArrowClass('total_stock', 'desc')}>▼</span></span>
+                          </div>
+                        </th>
+                        <th className="px-4 py-3 text-left text-[10px] font-bold text-slate-500 uppercase tracking-wider cursor-pointer hover:bg-slate-100 group transition-colors" onClick={() => requestSort('updated_at')}>
+                          <div className="flex items-center gap-1">Last Update
+                            <span className="flex flex-col text-[8px] leading-none text-slate-300"><span className={sortArrowClass('updated_at', 'asc')}>▲</span><span className={sortArrowClass('updated_at', 'desc')}>▼</span></span>
+                          </div>
+                        </th>
                       </tr>
-                    );
-                  })}
+                    </thead>
+                    <tbody className="bg-white divide-y divide-slate-50">
+                      {section.rows.map((item) => {
+                        const totalStock = (item.variants ?? []).reduce((sum, variant) => sum + Number(variant.stock_current ?? 0), 0);
+                        return (
+                          <tr key={item.id} className="hover:bg-slate-50 transition-colors">
+                            <td className="px-4 py-3 text-xs font-bold text-slate-700">{item.sku}</td>
+                            <td className="px-4 py-3 text-sm text-slate-800 font-medium">{item.name}</td>
+                            <td className="px-4 py-3 text-xs text-slate-600">{item.length_m ? Number(item.length_m).toFixed(2) : '-'}</td>
+                            <td className="px-4 py-3 text-xs text-slate-600 uppercase">{item.unit}</td>
+                            <td className="px-4 py-3 text-right"><span className={`text-sm font-black ${totalStock > 0 ? 'text-arabina-green' : 'text-red-500'}`}>{totalStock}</span></td>
+                            <td className="px-4 py-3 text-xs text-slate-500">{new Date(item.updated_at).toLocaleDateString()}</td>
+                          </tr>
+                        );
+                      })}
+                      {section.rows.length === 0 && (
+                        <tr>
+                          <td colSpan="6" className="px-4 py-8 text-center text-sm text-slate-500">No SKU in {section.label.toLowerCase()}.</td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            ))}
 
-                  {filteredInventory.length === 0 && (
-                    <tr>
-                      <td colSpan="6" className="px-4 py-10 text-center text-sm text-slate-500">
-                        No items match current filter.
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
+            {filteredInventory.length === 0 && (
+              <div className="bg-white rounded-[2rem] shadow-sm border border-slate-100 px-4 py-10 text-center text-sm text-slate-500">
+                No items match current filter.
+              </div>
+            )}
           </div>
         </div>
 

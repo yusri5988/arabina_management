@@ -45,7 +45,7 @@ class SalesOrderController extends Controller
             'items' => \App\Models\Item::query()->select(['id', 'sku', 'name'])->orderBy('sku')->get(),
             'orders' => SalesOrder::with(['lines.package', 'lines.item'])->latest()->limit(10)->get(),
             'availability' => $availability,
-            'canCreate' => auth()->user()->hasRole('sales', 'super_admin'),
+            'canCreate' => auth()->user()?->hasModuleAccess('sales_orders') ?? false,
         ]);
     }
 

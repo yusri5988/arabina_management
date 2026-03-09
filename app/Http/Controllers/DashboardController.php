@@ -22,7 +22,7 @@ class DashboardController extends Controller
                     : 0,
                 'active_users' => User::count(),
             ],
-            'canViewLogs' => auth()->user()->hasRole('super_admin'),
+            'canViewLogs' => auth()->user()?->hasModuleAccess('admin_logs') ?? false,
         ]);
     }
 }

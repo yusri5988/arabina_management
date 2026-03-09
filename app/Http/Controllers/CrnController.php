@@ -11,7 +11,6 @@ use App\Models\ProcurementOrder;
 use App\Models\ProcurementOrderLine;
 use App\Models\TransactionLog;
 use App\Models\RejectedItem;
-use App\Models\User;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -25,12 +24,13 @@ use Inertia\Response;
 class CrnController extends Controller
 {
     private const OPEN_PROCUREMENT_STATUSES = ['draft', 'submitted', 'partial'];
+    private const CRN_ITEM_RELATIONS = ['procurementOrder:id,code', 'creator:id,name', 'items.itemVariant.item'];
 
     public function index(Request $request): Response
     {
         $notes = ContainerReceivingNote::query()
             ->where('status', 'transferred')
-            ->with(['creator:id,name', 'procurementOrder:id,code', 'items.itemVariant.item'])
+            ->with(self::CRN_ITEM_RELATIONS)
             ->latest()
             ->get();
 
@@ -44,7 +44,7 @@ class CrnController extends Controller
             'notes' => $notes,
             'activeCrns' => $activeCrns,
             'pendingProcurements' => $this->buildPendingProcurementPayload(),
-            'canManage' => in_array($request->user()->role, [User::ROLE_STORE_KEEPER, User::ROLE_SUPER_ADMIN], true),
+            'canManage' => $request->user()?->hasModuleAccess('crn') ?? false,
         ]);
     }
 
@@ -105,7 +105,7 @@ class CrnController extends Controller
 
     public function downloadPdf(ContainerReceivingNote $crn)
     {
-        $crn->load(['procurementOrder', 'creator', 'items.itemVariant.item']);
+        $crn->load(self::CRN_ITEM_RELATIONS);
 
         $pdf = Pdf::loadView('warehouse.crn-pdf', [
             'crn' => $crn,
@@ -130,42 +130,16 @@ class CrnController extends Controller
             'lines.*.rejection_reason' => 'nullable|string|max:255',
         ]);
 
-        $lineInput = collect($validated['lines'])->keyBy(fn(array $line) => (int) $line['line_id']);
-
         $order->load('lines.item');
+        $processableLines = $this->buildProcessableReceiptLines($order, collect($validated['lines']));
 
-        // Pre-validate processable lines to avoid empty CRN/transaction
-        $validLineCount = 0;
-        foreach ($order->lines as $line) {
-            $input = $lineInput->get($line->id);
-            if (!$input) {
-                continue;
-            }
-
-            $remaining = $this->remainingQuantity($line);
-            if ($remaining <= 0) {
-                continue;
-            }
-
-            $receivedQty = $this->normalizeQuantity($input['received_qty']);
-            $rejectedQty = $this->normalizeQuantity($input['rejected_qty']);
-
-            if ($this->normalizeQuantity($receivedQty + $rejectedQty) > $remaining) {
-                throw ValidationException::withMessages([
-                    'lines' => ["Total received + rejected exceeds remaining quantity for SKU {$line->item?->sku}."],
-                ]);
-            }
-
-            $validLineCount++;
-        }
-
-        if ($validLineCount === 0) {
+        if ($processableLines->isEmpty()) {
             return response()->json([
                 'message' => 'No valid lines to process. All lines are already fully received or rejected.',
             ], 422);
         }
 
-        DB::transaction(function () use ($request, $order, $lineInput, $validated) {
+        DB::transaction(function () use ($request, $order, $processableLines, $validated) {
             $transaction = $this->createInventoryTransaction(
                 $request->user()->id,
                 "Direct receive from PO: {$order->code}"
@@ -180,34 +154,18 @@ class CrnController extends Controller
                 'status' => 'transferred',
             ]);
 
-            foreach ($order->lines as $line) {
-                $input = $lineInput->get($line->id);
-                if (!$input) {
-                    continue;
-                }
-
-                $remaining = $this->remainingQuantity($line);
-                if ($remaining <= 0) {
-                    continue;
-                }
-
-                $receivedQty = $this->normalizeQuantity($input['received_qty']);
-                $rejectedQty = $this->normalizeQuantity($input['rejected_qty']);
-
-                if ($this->normalizeQuantity($receivedQty + $rejectedQty) > $remaining) {
-                    throw ValidationException::withMessages([
-                        'lines' => ["Total received + rejected exceeds remaining quantity for SKU {$line->item?->sku}."],
-                    ]);
-                }
-
+            foreach ($processableLines as $entry) {
+                $line = $entry['line'];
+                $receivedQty = $entry['received_qty'];
+                $rejectedQty = $entry['rejected_qty'];
                 $variant = $this->findOrCreateDefaultVariant((int) $line->item_id);
 
                 $crnItem = $crn->items()->create([
                     'item_variant_id' => $variant->id,
-                    'expected_qty' => $remaining,
+                    'expected_qty' => $entry['remaining_qty'],
                     'received_qty' => $receivedQty,
                     'rejected_qty' => $rejectedQty,
-                    'rejection_reason' => $input['rejection_reason'] ?? null,
+                    'rejection_reason' => $entry['rejection_reason'],
                 ]);
 
                 $this->recordRejectionFromCrnItem(
@@ -490,7 +448,7 @@ class CrnController extends Controller
     private function authorizeManage(Request $request): void
     {
         abort_unless(
-            in_array($request->user()->role, [User::ROLE_STORE_KEEPER, User::ROLE_SUPER_ADMIN], true),
+            $request->user()?->hasModuleAccess('crn'),
             403
         );
     }
@@ -543,6 +501,43 @@ class CrnController extends Controller
                     'name' => $line->item->name,
                     'unit' => $line->item->unit,
                     'remaining_qty' => $remaining,
+                ];
+            })
+            ->filter()
+            ->values();
+    }
+
+    private function buildProcessableReceiptLines(ProcurementOrder $order, Collection $validatedLines): Collection
+    {
+        $lineInput = $validatedLines->keyBy(fn(array $line) => (int) $line['line_id']);
+
+        return $order->lines
+            ->map(function (ProcurementOrderLine $line) use ($lineInput) {
+                $input = $lineInput->get($line->id);
+                if (! $input) {
+                    return null;
+                }
+
+                $remaining = $this->remainingQuantity($line);
+                if ($remaining <= 0) {
+                    return null;
+                }
+
+                $receivedQty = $this->normalizeQuantity($input['received_qty']);
+                $rejectedQty = $this->normalizeQuantity($input['rejected_qty']);
+
+                if ($this->normalizeQuantity($receivedQty + $rejectedQty) > $remaining) {
+                    throw ValidationException::withMessages([
+                        'lines' => ["Total received + rejected exceeds remaining quantity for SKU {$line->item?->sku}."],
+                    ]);
+                }
+
+                return [
+                    'line' => $line,
+                    'remaining_qty' => $remaining,
+                    'received_qty' => $receivedQty,
+                    'rejected_qty' => $rejectedQty,
+                    'rejection_reason' => $input['rejection_reason'] ?? null,
                 ];
             })
             ->filter()

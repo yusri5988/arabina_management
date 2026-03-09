@@ -4,6 +4,11 @@ import { useEffect, useMemo, useState } from 'react';
 import AuthenticatedLayout from '../../Layouts/AuthenticatedLayout';
 
 const initialAlacarteLine = { item_id: '', quantity: '' };
+const BOM_GROUPS = [
+  { key: 'cabin', label: 'BOM Cabin' },
+  { key: 'hardware', label: 'BOM Hardware' },
+  { key: 'hardware_site', label: 'BOM Hardware Site' },
+];
 
 const normalizeQuantity = (value) => Math.round(Number(value || 0) * 10) / 10;
 
@@ -83,10 +88,27 @@ export default function Stock({ items, packages, salesOrders = [], type = 'in', 
     return map;
   }, [items]);
 
+  const itemById = useMemo(() => {
+    const map = new Map();
+    (items ?? []).forEach((item) => {
+      map.set(String(item.id), item);
+    });
+    return map;
+  }, [items]);
+
   const outSelectableItems = useMemo(() => {
     if (!isOut) return items ?? [];
     return (items ?? []).filter((item) => Number(item.stock_current_total ?? 0) > 0);
   }, [isOut, items]);
+
+  const alacarteLinesByBom = useMemo(() => {
+    return BOM_GROUPS.map((group) => ({
+      ...group,
+      rows: alacarteLines
+        .map((line, index) => ({ line, index, item: itemById.get(String(line.item_id)) }))
+        .filter(({ item }) => String(item?.bom_scope ?? 'hardware') === group.key),
+    }));
+  }, [alacarteLines, itemById]);
 
   const selectedSalesOrder = useMemo(
     () => salesOrders.find((order) => String(order.id) === String(packageData.sales_order_id)),
@@ -473,44 +495,57 @@ export default function Stock({ items, packages, salesOrders = [], type = 'in', 
                   )}
                 </div>
 
-                {alacarteLines.map((line, index) => (
-                  <div key={index} className="grid grid-cols-12 gap-3 bg-slate-50 rounded-2xl p-3 border border-slate-100">
-                    <div className="col-span-8">
-                      {isOut ? (
-                        <div className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm bg-white text-slate-700">
-                          {items.find((x) => String(x.id) === String(line.item_id))?.sku} - {items.find((x) => String(x.id) === String(line.item_id))?.name}
+                {alacarteLinesByBom.map((group) => (
+                  <div key={group.key} className="space-y-3">
+                    <div className="flex items-center justify-between px-1">
+                      <h4 className="text-[11px] font-black uppercase tracking-widest text-slate-500">{group.label}</h4>
+                      <span className="text-[10px] font-bold text-slate-400">{group.rows.length} SKU</span>
+                    </div>
+
+                    {group.rows.length > 0 ? group.rows.map(({ line, index, item }) => (
+                      <div key={index} className="grid grid-cols-12 gap-3 bg-slate-50 rounded-2xl p-3 border border-slate-100">
+                        <div className="col-span-8">
+                          {isOut ? (
+                            <div className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm bg-white text-slate-700">
+                              {item?.sku} - {item?.name}
+                            </div>
+                          ) : (
+                            <select
+                              value={line.item_id}
+                              onChange={e => updateLine(index, 'item_id', e.target.value)}
+                              className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm focus:ring-2 focus:ring-arabina-accent focus:outline-none bg-white"
+                              required
+                            >
+                              {items.map(itemOption => (
+                                <option key={itemOption.id} value={itemOption.id}>
+                                  {itemOption.sku} - {itemOption.name}
+                                </option>
+                              ))}
+                            </select>
+                          )}
                         </div>
-                      ) : (
-                        <select
-                          value={line.item_id}
-                          onChange={e => updateLine(index, 'item_id', e.target.value)}
-                          className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm focus:ring-2 focus:ring-arabina-accent focus:outline-none bg-white"
-                          required
-                        >
-                          {items.map(item => (
-                            <option key={item.id} value={item.id}>
-                              {item.sku} - {item.name}
-                            </option>
-                          ))}
-                        </select>
-                      )}
-                    </div>
-                    <div className="col-span-3">
-                      <QtyInput
-                        value={line.quantity}
-                        onChange={(val) => updateLine(index, 'quantity', val)}
-                        min={0.1}
-                        max={Number(itemStockById.get(String(line.item_id)) ?? 0)}
-                        step={0.1}
-                      />
-                    </div>
-                    <div className="col-span-1 flex items-center justify-end">
-                      {(isOut || alacarteLines.length > 1) && (
-                        <button type="button" onClick={() => removeLine(index)} className="text-red-500 text-xs font-bold">
-                          X
-                        </button>
-                      )}
-                    </div>
+                        <div className="col-span-3">
+                          <QtyInput
+                            value={line.quantity}
+                            onChange={(val) => updateLine(index, 'quantity', val)}
+                            min={0.5}
+                            max={Number(itemStockById.get(String(line.item_id)) ?? 0)}
+                            step={0.5}
+                          />
+                        </div>
+                        <div className="col-span-1 flex items-center justify-end">
+                          {(isOut || alacarteLines.length > 1) && (
+                            <button type="button" onClick={() => removeLine(index)} className="text-red-500 text-xs font-bold">
+                              X
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    )) : (
+                      <div className="rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3 text-xs text-slate-400">
+                        No SKU in {group.label.toLowerCase()}.
+                      </div>
+                    )}
                   </div>
                 ))}
 
@@ -541,8 +576,8 @@ export default function Stock({ items, packages, salesOrders = [], type = 'in', 
                   <div className="col-span-8 md:col-span-2">
                     <input
                       type="number"
-                      min="0.1"
-                      step="0.1"
+                      min="0.5"
+                      step="0.5"
                       value={outAddSku.quantity}
                       onChange={e => setOutAddSku(prev => ({ ...prev, quantity: e.target.value }))}
                       placeholder="Qty"

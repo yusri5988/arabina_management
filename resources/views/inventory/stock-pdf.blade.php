@@ -54,26 +54,47 @@
     </table>
 
     <div class="section-title">SKU Inventory List</div>
-    <table>
-        <thead>
-            <tr>
-                <th width="15%">SKU</th>
-                <th>Item Name</th>
-                <th width="10%">Unit</th>
-                <th width="15%" class="text-right">Current Stock</th>
-            </tr>
-        </thead>
-        <tbody>
-            @foreach($items as $item)
-            <tr>
-                <td class="font-bold">{{ $item->sku }}</td>
-                <td>{{ $item->name }}</td>
-                <td>{{ strtoupper($item->unit) }}</td>
-                <td class="text-right font-bold">{{ $item->variants->sum('stock_current') }}</td>
-            </tr>
-            @endforeach
-        </tbody>
-    </table>
+    @php
+        $bomSections = [
+            'cabin' => 'BOM Cabin',
+            'hardware' => 'BOM Hardware',
+            'hardware_site' => 'BOM Hardware Site',
+        ];
+    @endphp
+
+    @foreach($bomSections as $scope => $label)
+        @php
+            $groupedItems = $items->filter(function ($item) use ($scope) {
+                return ($item->bom_scope ?? 'hardware') === $scope;
+            });
+        @endphp
+
+        <div class="section-title">{{ $label }}</div>
+        <table>
+            <thead>
+                <tr>
+                    <th width="15%">SKU</th>
+                    <th>Item Name</th>
+                    <th width="10%">Unit</th>
+                    <th width="15%" class="text-right">Current Stock</th>
+                </tr>
+            </thead>
+            <tbody>
+                @forelse($groupedItems as $item)
+                    <tr>
+                        <td class="font-bold">{{ $item->sku }}</td>
+                        <td>{{ $item->name }}</td>
+                        <td>{{ strtoupper($item->unit) }}</td>
+                        <td class="text-right font-bold">{{ $item->variants->sum('stock_current') }}</td>
+                    </tr>
+                @empty
+                    <tr>
+                        <td colspan="4" style="text-align: center; color: #64748b;">No SKU in this BOM category.</td>
+                    </tr>
+                @endforelse
+            </tbody>
+        </table>
+    @endforeach
 
     <div class="footer">
         Arabina Inventory System &copy; {{ date('Y') }} | Confidential Report

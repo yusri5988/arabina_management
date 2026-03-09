@@ -9,6 +9,12 @@ const formatQuantity = (value) => {
   return Number.isInteger(numeric) ? String(numeric) : numeric.toFixed(1);
 };
 
+const BOM_GROUPS = [
+  { key: 'cabin', label: 'BOM Cabin' },
+  { key: 'hardware', label: 'BOM Hardware' },
+  { key: 'hardware_site', label: 'BOM Hardware Site' },
+];
+
 export default function ReturnDeliveryOrder({ order, skuLines = [] }) {
   const [returnMap, setReturnMap] = useState({});
   const [inputMap, setInputMap] = useState({});
@@ -95,6 +101,19 @@ export default function ReturnDeliveryOrder({ order, skuLines = [] }) {
   };
 
   const selectedRows = Object.values(returnMap);
+  const groupedSkuLines = useMemo(() => {
+    return BOM_GROUPS.map((group) => ({
+      ...group,
+      rows: skuLines.filter((line) => String(line.bom_scope ?? 'hardware') === group.key),
+    }));
+  }, [skuLines]);
+
+  const groupedSelectedRows = useMemo(() => {
+    return BOM_GROUPS.map((group) => ({
+      ...group,
+      rows: selectedRows.filter((line) => String(line.bom_scope ?? 'hardware') === group.key),
+    }));
+  }, [selectedRows]);
 
   return (
     <AuthenticatedLayout title="Return Delivery Order" backUrl="/items/stock/out/delivery-orders">
@@ -125,98 +144,112 @@ export default function ReturnDeliveryOrder({ order, skuLines = [] }) {
               DO SKU List
             </h3>
           </div>
-          <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-slate-100">
-              <thead className="bg-slate-50/50">
-                <tr>
-                  <th className="px-4 py-3 text-left text-[10px] font-bold text-slate-500 uppercase tracking-wider">SKU</th>
-                  <th className="px-4 py-3 text-right text-[10px] font-bold text-slate-500 uppercase tracking-wider">Shipped</th>
-                  <th className="px-4 py-3 text-right text-[10px] font-bold text-slate-500 uppercase tracking-wider">Returned</th>
-                  <th className="px-4 py-3 text-right text-[10px] font-bold text-slate-500 uppercase tracking-wider">Remaining</th>
-                  <th className="px-4 py-3 text-right text-[10px] font-bold text-slate-500 uppercase tracking-wider">Return Qty</th>
-                  <th className="px-4 py-3 text-right text-[10px] font-bold text-slate-500 uppercase tracking-wider">Action</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-50">
-                {skuLines.map((line) => (
-                  <tr key={line.item_id}>
-                    <td className="px-4 py-3 text-xs text-slate-700">
-                      <div className="font-bold text-slate-800">{line.sku}</div>
-                      <div className="text-slate-500 italic">{line.name}</div>
-                    </td>
-                    <td className="px-4 py-3 text-xs text-right text-slate-700">{formatQuantity(line.shipped_quantity)}</td>
-                    <td className="px-4 py-3 text-xs text-right text-slate-700">{formatQuantity(line.returned_quantity)}</td>
-                    <td className="px-4 py-3 text-xs text-right font-bold text-slate-800">{formatQuantity(line.remaining_quantity)}</td>
-                    <td className="px-4 py-3 text-right">
-                      <div className="flex items-center justify-end space-x-1">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const current = Number(inputMap[line.item_id] || 0);
-                            if (current > 0) {
-                              setInputMap((prev) => ({
-                                ...prev,
-                                [line.item_id]: normalizeQuantity(Math.max(current - 0.1, 0)),
-                              }));
-                            }
-                          }}
-                          disabled={Number(line.remaining_quantity) <= 0}
-                          className="w-8 h-8 flex items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 hover:border-slate-300 transition-colors disabled:opacity-40"
-                        >
-                          <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M20 12H4" />
-                          </svg>
-                        </button>
-                        <input
-                          type="number"
-                          min="0"
-                          step="0.1"
-                          max={line.remaining_quantity}
-                          value={inputMap[line.item_id] ?? ''}
-                          onChange={(e) => {
-                            const val = e.target.value === ''
-                              ? ''
-                              : normalizeQuantity(Math.min(Math.max(0, Number(e.target.value)), line.remaining_quantity));
-                            setInputMap((prev) => ({ ...prev, [line.item_id]: val }));
-                          }}
-                          className="w-14 h-8 rounded-lg border border-slate-200 px-1 py-1 text-xs text-center font-bold text-slate-700 focus:ring-0 focus:border-slate-400 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                          placeholder="Qty"
-                          disabled={Number(line.remaining_quantity) <= 0}
-                        />
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const current = Number(inputMap[line.item_id] || 0);
-                            if (current < Number(line.remaining_quantity)) {
-                              setInputMap((prev) => ({
-                                ...prev,
-                                [line.item_id]: normalizeQuantity(Math.min(current + 0.1, Number(line.remaining_quantity))),
-                              }));
-                            }
-                          }}
-                          disabled={Number(line.remaining_quantity) <= 0}
-                          className="w-8 h-8 flex items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 hover:border-slate-300 transition-colors disabled:opacity-40"
-                        >
-                          <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M12 4v16m8-8H4" />
-                          </svg>
-                        </button>
-                      </div>
-                    </td>
-                    <td className="px-4 py-3 text-right">
-                      <button
-                        type="button"
-                        onClick={() => addToReturnList(line)}
-                        disabled={Number(line.remaining_quantity) <= 0}
-                        className="rounded-lg border border-red-600 bg-red-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-red-700 disabled:opacity-60 transition-colors"
-                      >
-                        Add
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <div className="space-y-5 p-5">
+            {groupedSkuLines.map((group) => (
+              <div key={group.key} className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <h4 className="text-[11px] font-black uppercase tracking-widest text-slate-500">{group.label}</h4>
+                  <span className="text-[10px] font-bold text-slate-400">{group.rows.length} SKU</span>
+                </div>
+                <div className="overflow-x-auto rounded-2xl border border-slate-100">
+                  <table className="min-w-full divide-y divide-slate-100">
+                    <thead className="bg-slate-50/50">
+                      <tr>
+                        <th className="px-4 py-3 text-left text-[10px] font-bold text-slate-500 uppercase tracking-wider">SKU</th>
+                        <th className="px-4 py-3 text-right text-[10px] font-bold text-slate-500 uppercase tracking-wider">Shipped</th>
+                        <th className="px-4 py-3 text-right text-[10px] font-bold text-slate-500 uppercase tracking-wider">Returned</th>
+                        <th className="px-4 py-3 text-right text-[10px] font-bold text-slate-500 uppercase tracking-wider">Remaining</th>
+                        <th className="px-4 py-3 text-right text-[10px] font-bold text-slate-500 uppercase tracking-wider">Return Qty</th>
+                        <th className="px-4 py-3 text-right text-[10px] font-bold text-slate-500 uppercase tracking-wider">Action</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-50">
+                      {group.rows.length > 0 ? group.rows.map((line) => (
+                        <tr key={line.item_id}>
+                          <td className="px-4 py-3 text-xs text-slate-700">
+                            <div className="font-bold text-slate-800">{line.sku}</div>
+                            <div className="text-slate-500 italic">{line.name}</div>
+                          </td>
+                          <td className="px-4 py-3 text-xs text-right text-slate-700">{formatQuantity(line.shipped_quantity)}</td>
+                          <td className="px-4 py-3 text-xs text-right text-slate-700">{formatQuantity(line.returned_quantity)}</td>
+                          <td className="px-4 py-3 text-xs text-right font-bold text-slate-800">{formatQuantity(line.remaining_quantity)}</td>
+                          <td className="px-4 py-3 text-right">
+                            <div className="flex items-center justify-end space-x-1">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const current = Number(inputMap[line.item_id] || 0);
+                                  if (current > 0) {
+                                    setInputMap((prev) => ({
+                                      ...prev,
+                                      [line.item_id]: normalizeQuantity(Math.max(current - 0.5, 0)),
+                                    }));
+                                  }
+                                }}
+                                disabled={Number(line.remaining_quantity) <= 0}
+                                className="w-8 h-8 flex items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 hover:border-slate-300 transition-colors disabled:opacity-40"
+                              >
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M20 12H4" />
+                                </svg>
+                              </button>
+                              <input
+                                type="number"
+                                min="0"
+                                step="0.5"
+                                max={line.remaining_quantity}
+                                value={inputMap[line.item_id] ?? ''}
+                                onChange={(e) => {
+                                  const val = e.target.value === ''
+                                    ? ''
+                                    : normalizeQuantity(Math.min(Math.max(0, Number(e.target.value)), line.remaining_quantity));
+                                  setInputMap((prev) => ({ ...prev, [line.item_id]: val }));
+                                }}
+                                className="w-14 h-8 rounded-lg border border-slate-200 px-1 py-1 text-xs text-center font-bold text-slate-700 focus:ring-0 focus:border-slate-400 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                                placeholder="Qty"
+                                disabled={Number(line.remaining_quantity) <= 0}
+                              />
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const current = Number(inputMap[line.item_id] || 0);
+                                  if (current < Number(line.remaining_quantity)) {
+                                    setInputMap((prev) => ({
+                                      ...prev,
+                                      [line.item_id]: normalizeQuantity(Math.min(current + 0.5, Number(line.remaining_quantity))),
+                                    }));
+                                  }
+                                }}
+                                disabled={Number(line.remaining_quantity) <= 0}
+                                className="w-8 h-8 flex items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 hover:border-slate-300 transition-colors disabled:opacity-40"
+                              >
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M12 4v16m8-8H4" />
+                                </svg>
+                              </button>
+                            </div>
+                          </td>
+                          <td className="px-4 py-3 text-right">
+                            <button
+                              type="button"
+                              onClick={() => addToReturnList(line)}
+                              disabled={Number(line.remaining_quantity) <= 0}
+                              className="rounded-lg border border-red-600 bg-red-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-red-700 disabled:opacity-60 transition-colors"
+                            >
+                              Add
+                            </button>
+                          </td>
+                        </tr>
+                      )) : (
+                        <tr>
+                          <td colSpan="6" className="px-4 py-8 text-center text-xs text-slate-400 italic">No SKU in {group.label.toLowerCase()}.</td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            ))}
           </div>
 
           {/* Section 2: Return List */}
@@ -226,43 +259,56 @@ export default function ReturnDeliveryOrder({ order, skuLines = [] }) {
               Return List Preview
             </h3>
           </div>
-          <div className="overflow-x-auto min-h-[100px]">
-            <table className="min-w-full divide-y divide-slate-100">
-              <thead className="bg-slate-50/50">
-                <tr>
-                  <th className="px-4 py-3 text-left text-[10px] font-bold text-slate-500 uppercase tracking-wider">SKU</th>
-                  <th className="px-4 py-3 text-right text-[10px] font-bold text-slate-500 uppercase tracking-wider">Qty to Return</th>
-                  <th className="px-4 py-3 text-right text-[10px] font-bold text-slate-500 uppercase tracking-wider">Action</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-50">
-                {selectedRows.length === 0 && (
-                  <tr>
-                    <td colSpan="3" className="px-4 py-12 text-center text-xs text-slate-400 italic">
-                      No items in return list. Click "Add" above.
-                    </td>
-                  </tr>
-                )}
-                {selectedRows.map((line) => (
-                  <tr key={line.item_id} className="bg-amber-50/10">
-                    <td className="px-4 py-3 text-xs text-slate-700">
-                      <div className="font-bold text-slate-800">{line.sku}</div>
-                      <div className="text-slate-500 italic">{line.name}</div>
-                    </td>
-                    <td className="px-4 py-3 text-xs text-right font-black text-slate-900">{formatQuantity(line.quantity)}</td>
-                    <td className="px-4 py-3 text-right">
-                      <button
-                        type="button"
-                        onClick={() => removeFromReturnList(line.item_id)}
-                        className="text-xs font-bold text-red-600 hover:text-red-700 hover:underline"
-                      >
-                        Remove
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <div className="min-h-[100px] space-y-5 p-5">
+            {groupedSelectedRows.map((group) => (
+              <div key={group.key} className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <h4 className="text-[11px] font-black uppercase tracking-widest text-slate-500">{group.label}</h4>
+                  <span className="text-[10px] font-bold text-slate-400">{group.rows.length} SKU</span>
+                </div>
+                <div className="overflow-x-auto rounded-2xl border border-slate-100">
+                  <table className="min-w-full divide-y divide-slate-100">
+                    <thead className="bg-slate-50/50">
+                      <tr>
+                        <th className="px-4 py-3 text-left text-[10px] font-bold text-slate-500 uppercase tracking-wider">SKU</th>
+                        <th className="px-4 py-3 text-right text-[10px] font-bold text-slate-500 uppercase tracking-wider">Qty to Return</th>
+                        <th className="px-4 py-3 text-right text-[10px] font-bold text-slate-500 uppercase tracking-wider">Action</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-50">
+                      {group.rows.length > 0 ? group.rows.map((line) => (
+                        <tr key={line.item_id} className="bg-amber-50/10">
+                          <td className="px-4 py-3 text-xs text-slate-700">
+                            <div className="font-bold text-slate-800">{line.sku}</div>
+                            <div className="text-slate-500 italic">{line.name}</div>
+                          </td>
+                          <td className="px-4 py-3 text-xs text-right font-black text-slate-900">{formatQuantity(line.quantity)}</td>
+                          <td className="px-4 py-3 text-right">
+                            <button
+                              type="button"
+                              onClick={() => removeFromReturnList(line.item_id)}
+                              className="text-xs font-bold text-red-600 hover:text-red-700 hover:underline"
+                            >
+                              Remove
+                            </button>
+                          </td>
+                        </tr>
+                      )) : (
+                        <tr>
+                          <td colSpan="3" className="px-4 py-8 text-center text-xs text-slate-400 italic">No items in {group.label.toLowerCase()}.</td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            ))}
+
+            {selectedRows.length === 0 && (
+              <div className="text-center text-xs text-slate-400 italic py-2">
+                No items in return list. Click "Add" above.
+              </div>
+            )}
           </div>
 
           {/* Footer: Unified Submit Button */}

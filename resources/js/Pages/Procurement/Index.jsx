@@ -3,6 +3,43 @@ import { useState, useRef, useEffect, useMemo } from 'react';
 import AuthenticatedLayout from '../../Layouts/AuthenticatedLayout';
 import { apiFetchJson } from '../../lib/http';
 
+const BOM_GROUPS = [
+  { key: 'cabin', label: 'BOM Cabin' },
+  { key: 'hardware', label: 'BOM Hardware' },
+  { key: 'hardware_site', label: 'BOM Hardware Site' },
+];
+const KNOWN_BOM_KEYS = new Set(BOM_GROUPS.map((group) => group.key));
+
+const getOrderPackageLines = (order) => order.packageLines ?? order.package_lines ?? [];
+const getOrderLines = (order) => order.lines ?? [];
+
+const computeLooseLines = (order) => {
+  const pkgLines = getOrderPackageLines(order);
+  const ordLines = getOrderLines(order);
+
+  return ordLines
+    .map((line) => {
+      let looseQty = Number(line.ordered_quantity || 0);
+
+      pkgLines.forEach((pLine) => {
+        const pkg = pLine.package;
+        if (!pkg) return;
+
+        const pItems = pkg.packageItems || pkg.package_items || [];
+        const pItem = pItems.find((pi) => Number(pi.item_id) === Number(line.item_id));
+
+        if (pItem) {
+          const qtyInPkg = Number(pItem.quantity || 0);
+          const pkgOrderQty = Number(pLine.quantity || 0);
+          looseQty -= pkgOrderQty * qtyInPkg;
+        }
+      });
+
+      return { ...line, looseQty };
+    })
+    .filter((line) => line.looseQty > 0);
+};
+
 const CustomSelect = ({ value, onChange, options, placeholder, className = "" }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [search, setSearch] = useState('');
@@ -122,7 +159,7 @@ export default function ProcurementIndex({
   };
 
   const addNewOrderPackageLine = () => {
-    let packageId = newOrderAddPackageForm.package_id;
+    const packageId = Number(newOrderAddPackageForm.package_id);
     const quantity = Number(newOrderAddPackageForm.quantity);
 
     if (packageId && quantity > 0) {
@@ -148,7 +185,7 @@ export default function ProcurementIndex({
   };
 
   const addNewOrderSkuLine = () => {
-    let itemId = newOrderAddSkuForm.item_id;
+    const itemId = Number(newOrderAddSkuForm.item_id);
     const quantity = Number(newOrderAddSkuForm.quantity);
 
     if (itemId && quantity > 0) {
@@ -287,35 +324,72 @@ export default function ProcurementIndex({
                           <div className="lg:col-span-8">
                               <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-4">Recommended Replenishment</h3>
                               {(suggestion.package_lines.length > 0 || suggestion.sku_lines.length > 0) ? (
-                                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                  <div className="flex flex-col gap-4">
                                       {suggestion.package_lines.map((p, idx) => (
-                                          <div key={`pkg-${idx}`} className="group flex items-center justify-between p-4 rounded-2xl bg-emerald-50/50 border border-emerald-100 hover:border-emerald-300 transition-all">
-                                              <div className="flex items-center gap-4">
-                                                  <div className="w-10 h-10 rounded-xl bg-emerald-100 flex items-center justify-center text-emerald-600 shadow-sm group-hover:scale-110 transition-transform text-lg">📦</div>
-                                                  <div>
-                                                      <p className="text-xs font-black text-emerald-900 leading-tight">{p.code}</p>
-                                                      <p className="text-[9px] text-emerald-600 font-bold uppercase tracking-tight">{p.name}</p>
+                                          <div key={`pkg-${idx}`} className="group flex flex-col p-6 rounded-3xl bg-emerald-50/50 border border-emerald-100 hover:border-emerald-300 transition-all shadow-sm">
+                                              <div className="flex items-center justify-between mb-6">
+                                                  <div className="flex items-center gap-5">
+                                                      <div className="w-12 h-12 rounded-2xl bg-emerald-100 flex items-center justify-center text-emerald-600 shadow-sm group-hover:scale-110 transition-transform text-2xl">📦</div>
+                                                      <div>
+                                                          <p className="text-sm font-black text-emerald-900 leading-tight uppercase tracking-tight">{p.code}</p>
+                                                          <p className="text-[11px] text-emerald-600 font-bold uppercase tracking-widest mt-0.5">{p.name}</p>
+                                                      </div>
+                                                  </div>
+                                                  <div className="bg-emerald-100/80 px-4 py-1.5 rounded-xl border border-emerald-200">
+                                                      <p className="text-lg font-black text-emerald-700">x{p.quantity}</p>
                                                   </div>
                                               </div>
-                                              <div className="text-right">
-                                                  <p className="text-sm font-black text-emerald-700">x{p.quantity}</p>
-                                              </div>
-                                          </div>
-                                      ))}
-                                      {suggestion.sku_lines.map((s, idx) => (
-                                          <div key={`sku-${idx}`} className="group flex items-center justify-between p-4 rounded-2xl bg-blue-50/50 border border-blue-100 hover:border-blue-300 transition-all">
-                                              <div className="flex items-center gap-4">
-                                                  <div className="w-10 h-10 rounded-xl bg-blue-100 flex items-center justify-center text-blue-600 shadow-sm group-hover:scale-110 transition-transform text-lg">🧩</div>
-                                                  <div>
-                                                      <p className="text-xs font-black text-blue-900 leading-tight">{s.sku}</p>
-                                                      <p className="text-[9px] text-blue-600 font-bold uppercase tracking-tight">{s.name}</p>
+
+                                              {p.boms && p.boms.length > 0 && (
+                                                  <div className="mt-2 pt-6 border-t border-emerald-200/50">
+                                                      <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+                                                          {BOM_GROUPS.map((group) => {
+                                                              const bom = p.boms.find(b => b.type === group.key);
+                                                              if (!bom) return <div key={group.key} className="hidden md:block"></div>;
+
+                                                              return (
+                                                                  <div key={group.key} className="flex flex-col">
+                                                                      <p className="text-[9px] font-black text-emerald-800 uppercase tracking-[0.2em] mb-3 flex items-center gap-2">
+                                                                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+                                                                          {group.label}: <span className="text-emerald-600/70">{bom.code}</span>
+                                                                      </p>
+                                                                      <div className="space-y-1.5">
+                                                                          {bom.items.map((item, iIdx) => (
+                                                                              <div key={iIdx} className="flex justify-between items-start text-[10px] group/item py-0.5">
+                                                                                  <span className="text-emerald-700 font-bold leading-tight flex-1">
+                                                                                      {item.sku} - <span className="text-emerald-600/80 font-medium">{item.name}</span>
+                                                                                  </span>
+                                                                                  <span className="text-emerald-900 font-black ml-4 bg-emerald-100 px-2 py-0.5 rounded-md min-w-[32px] text-center">x{item.quantity}</span>
+                                                                              </div>
+                                                                          ))}
+                                                                      </div>
+                                                                  </div>
+                                                              );
+                                                          })}
+                                                      </div>
                                                   </div>
-                                              </div>
-                                              <div className="text-right">
-                                                  <p className="text-sm font-black text-blue-700">+{s.shortage_qty}</p>
-                                              </div>
+                                              )}
                                           </div>
                                       ))}
+                                      
+                                      {suggestion.sku_lines.length > 0 && (
+                                          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-2">
+                                              {suggestion.sku_lines.map((s, idx) => (
+                                                  <div key={`sku-${idx}`} className="group flex items-center justify-between p-4 rounded-2xl bg-blue-50/50 border border-blue-100 hover:border-blue-300 transition-all">
+                                                      <div className="flex items-center gap-4">
+                                                          <div className="w-10 h-10 rounded-xl bg-blue-100 flex items-center justify-center text-blue-600 shadow-sm group-hover:scale-110 transition-transform text-lg">🧩</div>
+                                                          <div>
+                                                              <p className="text-xs font-black text-blue-900 leading-tight">{s.sku}</p>
+                                                              <p className="text-[9px] text-blue-600 font-bold uppercase tracking-tight">{s.name}</p>
+                                                          </div>
+                                                      </div>
+                                                      <div className="text-right">
+                                                          <p className="text-sm font-black text-blue-700">+{s.shortage_qty}</p>
+                                                      </div>
+                                                  </div>
+                                              ))}
+                                          </div>
+                                      )}
                                   </div>
                               ) : (
                                   <div className="py-12 bg-slate-50/30 rounded-3xl border border-dashed border-slate-200 text-center text-slate-400 font-bold text-xs uppercase tracking-widest">No stock shortage detected</div>
@@ -514,7 +588,12 @@ export default function ProcurementIndex({
                     </div>
                 </div>
                 <div className="p-6 md:p-8 space-y-4">
-                  {list.map((order) => (
+                  {list.map((order) => {
+                    const orderPackageLines = getOrderPackageLines(order);
+                    const orderLines = getOrderLines(order);
+                    const looseLines = computeLooseLines(order);
+
+                    return (
                     <div key={order.id} className="group rounded-[2rem] border border-slate-100 bg-white hover:border-slate-300 hover:shadow-md transition-all overflow-hidden">
                       <div className="p-5 flex flex-wrap items-center justify-between gap-4 bg-slate-50/30 border-b border-slate-100/50">
                         <div className="flex items-center gap-4">
@@ -531,7 +610,7 @@ export default function ProcurementIndex({
                             <h4 className="text-[9px] font-black uppercase tracking-[0.2em] text-slate-400 mb-2">Items Ordered</h4>
                             <div className="grid grid-cols-1 gap-2">
                                 {/* 1. Display Packages First */}
-                                {order.package_lines?.map((pLine) => (
+                                {orderPackageLines.map((pLine) => (
                                   <div key={`pkg-${pLine.id}`} className="p-3 rounded-xl bg-blue-50/30 border border-blue-100 group-hover:bg-white transition-colors flex justify-between items-center">
                                     <div className="flex items-center gap-3">
                                         <span className="text-lg">📦</span>
@@ -545,30 +624,7 @@ export default function ProcurementIndex({
                                 ))}
 
                                 {/* 2. Calculate and Display Loose SKUs (Individual Items) */}
-                                {(() => {
-                                    const pkgLines = order.packageLines || order.package_lines || [];
-                                    const ordLines = order.lines || [];
-
-                                    const looseLines = ordLines.map(line => {
-                                        let looseQty = Number(line.ordered_quantity || 0);
-                                        
-                                        pkgLines.forEach(pLine => {
-                                            const pkg = pLine.package;
-                                            if (!pkg) return;
-
-                                            const pItems = pkg.packageItems || pkg.package_items || [];
-                                            const pItem = pItems.find(pi => Number(pi.item_id) === Number(line.item_id));
-                                            
-                                            if (pItem) {
-                                                const qtyInPkg = Number(pItem.quantity || 0);
-                                                const pkgOrderQty = Number(pLine.quantity || 0);
-                                                looseQty -= (pkgOrderQty * qtyInPkg);
-                                            }
-                                        });
-                                        return { ...line, looseQty };
-                                    }).filter(l => l.looseQty > 0);
-
-                                    return looseLines.map((line) => (
+                                {looseLines.map((line) => (
                                         <div key={`loose-${line.id}`} className="p-3 rounded-xl bg-emerald-50/30 border border-emerald-100 group-hover:bg-white transition-colors flex justify-between items-center">
                                             <div className="flex items-center gap-3">
                                                 <span className="text-lg">🧩</span>
@@ -579,27 +635,62 @@ export default function ProcurementIndex({
                                             </div>
                                             <span className="text-[11px] font-black text-emerald-800 bg-white px-2 py-0.5 rounded border border-emerald-200 shadow-sm">x{line.looseQty}</span>
                                         </div>
-                                    ));
-                                })()}
+                                    ))}
 
-                                {(!order.package_lines || order.package_lines.length === 0) && (!order.lines || order.lines.length === 0) && (
+                                {orderPackageLines.length === 0 && orderLines.length === 0 && (
                                     <p className="text-[10px] text-slate-400 italic px-1">No items found in this order</p>
                                 )}
                             </div>
                         </div>
                         <div className="space-y-3">
                           <button onClick={() => toggleReceiveForm(order.id)} className="w-full flex items-center justify-between rounded-xl px-4 py-3 border border-slate-200 text-slate-600 bg-white hover:border-slate-400 transition-all group/btn shadow-sm">
-                            <span className="text-[10px] font-black uppercase tracking-widest">View SKU Detail List ({(order.lines ?? []).length})</span>
+                            <span className="text-[10px] font-black uppercase tracking-widest">View SKU Detail List ({orderLines.length})</span>
                             <span className={`text-xs transition-transform duration-300 ${expandedReceiveForms?.[order.id] ? 'rotate-180' : ''}`}>▼</span>
                           </button>
                           {expandedReceiveForms?.[order.id] && (
                             <div className="space-y-2 max-h-60 overflow-y-auto pr-2 custom-scrollbar animate-in slide-in-from-top-2 duration-300">
-                                {(order.lines ?? []).map((line) => (
-                                  <div key={line.id} className="flex items-center justify-between rounded-xl bg-slate-50/50 border border-slate-100 px-4 py-3">
-                                    <div><p className="text-xs font-black text-slate-800 tracking-tight">{line.item?.sku}</p></div>
-                                    <span className="text-[11px] font-black text-slate-700 bg-white px-2 py-1 rounded border border-slate-200">{line.ordered_quantity} {line.item?.unit}</span>
-                                  </div>
-                                ))}
+                                {BOM_GROUPS.map((group) => {
+                                  const groupLines = orderLines.filter((line) => String(line.item?.bom_scope ?? 'hardware') === group.key);
+                                  if (groupLines.length === 0) return null;
+
+                                  return (
+                                    <div key={`${order.id}-${group.key}`} className="space-y-2">
+                                      <div className="px-1 pt-1">
+                                        <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">{group.label}</p>
+                                      </div>
+                                      {groupLines.map((line) => (
+                                        <div key={line.id} className="flex items-center justify-between rounded-xl bg-slate-50/50 border border-slate-100 px-4 py-3">
+                                          <div><p className="text-xs font-black text-slate-800 tracking-tight">{line.item?.sku}</p></div>
+                                          <span className="text-[11px] font-black text-slate-700 bg-white px-2 py-1 rounded border border-slate-200">{line.ordered_quantity} {line.item?.unit}</span>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  );
+                                })}
+                                {(() => {
+                                  const otherLines = orderLines.filter((line) => {
+                                    const scope = String(line.item?.bom_scope ?? 'hardware');
+                                    return !KNOWN_BOM_KEYS.has(scope);
+                                  });
+
+                                  if (otherLines.length === 0) {
+                                    return null;
+                                  }
+
+                                  return (
+                                    <div className="space-y-2">
+                                      <div className="px-1 pt-1">
+                                        <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Unclassified BOM</p>
+                                      </div>
+                                      {otherLines.map((line) => (
+                                        <div key={line.id} className="flex items-center justify-between rounded-xl bg-slate-50/50 border border-slate-100 px-4 py-3">
+                                          <div><p className="text-xs font-black text-slate-800 tracking-tight">{line.item?.sku}</p></div>
+                                          <span className="text-[11px] font-black text-slate-700 bg-white px-2 py-1 rounded border border-slate-200">{line.ordered_quantity} {line.item?.unit}</span>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  );
+                                })()}
                             </div>
                           )}
                         </div>
@@ -614,7 +705,8 @@ export default function ProcurementIndex({
                         )}
                       </div>
                     </div>
-                  ))}
+                    );
+                  })}
                   {list.length === 0 && (
                       <div className="py-20 text-center text-slate-400 font-bold text-sm">No procurement history found</div>
                   )}

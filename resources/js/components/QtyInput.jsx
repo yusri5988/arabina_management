@@ -3,12 +3,17 @@ import { MinusIcon, PlusIcon } from '@heroicons/react/24/outline/index.js';
 const normalizeQty = (value, step, min, max) => {
   const numeric = Number(value || 0);
   const clamped = Math.max(min, Math.min(numeric, max ?? Infinity));
+  const stepString = String(step);
+  const decimals = stepString.includes('.') ? stepString.split('.')[1].length : 0;
+  const snapped = step > 0
+    ? min + (Math.round((clamped - min) / step) * step)
+    : clamped;
 
-  if (step === 0.1) {
-    return Math.round(clamped * 10) / 10;
+  if (decimals > 0) {
+    return Number(snapped.toFixed(decimals));
   }
 
-  return clamped;
+  return Math.round(snapped);
 };
 
 export default function QtyInput({ value, onChange, min = 0, max, step = 1, label, className = '' }) {

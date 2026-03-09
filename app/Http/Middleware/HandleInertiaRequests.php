@@ -4,7 +4,6 @@ namespace App\Http\Middleware;
 
 use Closure;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Auth;
 use Inertia\Inertia;
 use Symfony\Component\HttpFoundation\Response;
 
@@ -19,12 +18,22 @@ class HandleInertiaRequests
     {
         Inertia::share([
             'auth' => function () use ($request) {
+                $user = $request->user();
+                $moduleKeys = array_keys(config('modules.registry', []));
+                $effectivePermissions = $user
+                    ? collect($moduleKeys)
+                        ->filter(fn (string $key) => $user->hasModuleAccess($key))
+                        ->values()
+                        ->all()
+                    : [];
+
                 return [
-                    'user' => $request->user() ? [
-                        'id' => $request->user()->id,
-                        'name' => $request->user()->name,
-                        'email' => $request->user()->email,
-                        'role' => $request->user()->role,
+                    'user' => $user ? [
+                        'id' => $user->id,
+                        'name' => $user->name,
+                        'email' => $user->email,
+                        'role' => $user->role,
+                        'module_permissions' => $effectivePermissions,
                     ] : null,
                 ];
             },

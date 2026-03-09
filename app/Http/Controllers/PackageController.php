@@ -2,12 +2,14 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Bom;
 use App\Models\Item;
 use App\Models\Package;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -16,10 +18,10 @@ class PackageController extends Controller
 {
     public function index(): Response
     {
-        $schemaReady = Schema::hasTable('packages') && Schema::hasTable('package_items');
+        $schemaReady = $this->isSchemaReady();
 
         $items = Item::query()
-            ->select(['id', 'sku', 'name', 'unit'])
+            ->select(['id', 'sku', 'name', 'unit', 'bom_scope'])
             ->orderBy('sku')
             ->get();
 
@@ -28,6 +30,7 @@ class PackageController extends Controller
             $packages = Package::query()
                 ->with([
                     'packageItems.item:id,sku,name,unit',
+                    'boms.bomItems.item:id,sku,name,unit',
                 ])
                 ->latest('id')
                 ->get();
@@ -42,22 +45,17 @@ class PackageController extends Controller
 
     public function store(Request $request): JsonResponse
     {
-        if (! (Schema::hasTable('packages') && Schema::hasTable('package_items'))) {
+        if (! $this->isSchemaReady()) {
             return response()->json([
                 'message' => 'Packages table is not ready. Please run php artisan migrate.',
             ], 503);
         }
 
-        $validated = $request->validate([
-            'code' => ['required', 'string', 'max:50', 'unique:packages,code'],
-            'name' => ['required', 'string', 'max:255'],
-            'is_active' => ['nullable', 'boolean'],
-            'lines' => ['required', 'array', 'min:1'],
-            'lines.*.item_id' => ['required', 'integer', 'distinct', 'exists:items,id'],
-            'lines.*.quantity' => $this->decimalQuantityRules(),
-        ]);
+        $validated = $this->validatePackagePayload($request, true);
+        $normalizedBoms = $this->normalizeBomPayload($validated);
+        $this->validateBomRules($normalizedBoms);
 
-        $package = DB::transaction(function () use ($request, $validated) {
+        $package = DB::transaction(function () use ($request, $validated, $normalizedBoms) {
             $package = Package::create([
                 'code' => $validated['code'],
                 'name' => $validated['name'],
@@ -65,14 +63,7 @@ class PackageController extends Controller
                 'created_by' => $request->user()->id,
             ]);
 
-            $package->packageItems()->createMany(
-                collect($validated['lines'])->map(function ($line) {
-                    return [
-                        'item_id' => $line['item_id'],
-                        'quantity' => $this->normalizeQuantity($line['quantity']),
-                    ];
-                })->all()
-            );
+            $this->syncBomAndPackageItems($package, $normalizedBoms);
 
             return $package;
         });
@@ -80,14 +71,14 @@ class PackageController extends Controller
         return response()->json([
             'message' => 'Package created successfully.',
             'data' => Package::query()
-                ->with(['packageItems.item:id,sku,name,unit'])
+                ->with(['packageItems.item:id,sku,name,unit', 'boms.bomItems.item:id,sku,name,unit'])
                 ->findOrFail($package->id),
         ], 201);
     }
 
     public function bulkStore(Request $request): JsonResponse
     {
-        if (! (Schema::hasTable('packages') && Schema::hasTable('package_items'))) {
+        if (! $this->isSchemaReady()) {
             return response()->json([
                 'message' => 'Packages table is not ready. Please run php artisan migrate.',
             ], 503);
@@ -145,8 +136,24 @@ class PackageController extends Controller
 
         $itemsBySku = Item::query()
             ->whereIn('sku', $rows->pluck('sku')->unique()->all())
-            ->get(['id', 'sku'])
+            ->get(['id', 'sku', 'bom_scope'])
             ->keyBy('sku');
+
+        $nonHardwareSkus = $rows
+            ->pluck('sku')
+            ->unique()
+            ->filter(function ($sku) use ($itemsBySku) {
+                return (string) ($itemsBySku[$sku]->bom_scope ?? '') !== Bom::TYPE_HARDWARE;
+            })
+            ->values();
+
+        if ($nonHardwareSkus->isNotEmpty()) {
+            throw ValidationException::withMessages([
+                'packages' => [
+                    'Bulk upload hanya sokong SKU kategori hardware. SKU berikut bukan hardware: ' . $nonHardwareSkus->implode(', '),
+                ],
+            ]);
+        }
 
         $createdIds = [];
         $skipped = [];
@@ -167,21 +174,25 @@ class PackageController extends Controller
                     'created_by' => $request->user()->id,
                 ]);
 
-                $package->packageItems()->createMany(
-                    $packageRows->map(function ($row) use ($itemsBySku) {
-                        return [
-                            'item_id' => $itemsBySku[$row['sku']]->id,
-                            'quantity' => $row['quantity'],
-                        ];
-                    })->values()->all()
-                );
+                $hardwareBomLines = $packageRows->map(function ($row) use ($itemsBySku) {
+                    return [
+                        'item_id' => $itemsBySku[$row['sku']]->id,
+                        'quantity' => $row['quantity'],
+                    ];
+                })->values()->all();
+
+                $this->syncBomAndPackageItems($package, [
+                    Bom::TYPE_CABIN => [],
+                    Bom::TYPE_HARDWARE => $hardwareBomLines,
+                    Bom::TYPE_HARDWARE_SITE => [],
+                ]);
 
                 $createdIds[] = $package->id;
             }
         });
 
         $createdPackages = Package::query()
-            ->with(['packageItems.item:id,sku,name,unit'])
+            ->with(['packageItems.item:id,sku,name,unit', 'boms.bomItems.item:id,sku,name,unit'])
             ->whereIn('id', $createdIds)
             ->latest('id')
             ->get();
@@ -217,44 +228,31 @@ class PackageController extends Controller
 
     public function update(Request $request, Package $package): JsonResponse
     {
-        $validated = $request->validate([
-            'code' => ['required', 'string', 'max:50', 'unique:packages,code,' . $package->id],
-            'name' => ['required', 'string', 'max:255'],
-            'is_active' => ['nullable', 'boolean'],
-            'lines' => ['required', 'array', 'min:1'],
-            'lines.*.item_id' => ['required', 'integer', 'distinct', 'exists:items,id'],
-            'lines.*.quantity' => $this->decimalQuantityRules(),
-        ]);
+        $validated = $this->validatePackagePayload($request, false, $package->id);
+        $normalizedBoms = $this->normalizeBomPayload($validated);
+        $this->validateBomRules($normalizedBoms);
 
-        DB::transaction(function () use ($package, $validated) {
+        DB::transaction(function () use ($package, $validated, $normalizedBoms) {
             $package->update([
                 'code' => $validated['code'],
                 'name' => $validated['name'],
                 'is_active' => $validated['is_active'] ?? true,
             ]);
 
-            $package->packageItems()->delete();
-            $package->packageItems()->createMany(
-                collect($validated['lines'])->map(function ($line) {
-                    return [
-                        'item_id' => $line['item_id'],
-                        'quantity' => $this->normalizeQuantity($line['quantity']),
-                    ];
-                })->all()
-            );
+            $this->syncBomAndPackageItems($package, $normalizedBoms);
         });
 
         return response()->json([
             'message' => 'Package updated successfully.',
             'data' => Package::query()
-                ->with(['packageItems.item:id,sku,name,unit'])
+                ->with(['packageItems.item:id,sku,name,unit', 'boms.bomItems.item:id,sku,name,unit'])
                 ->findOrFail($package->id),
         ]);
     }
 
     public function destroy(Package $package): JsonResponse
     {
-        if (! (Schema::hasTable('packages') && Schema::hasTable('package_items'))) {
+        if (! $this->isSchemaReady()) {
             return response()->json([
                 'message' => 'Packages table is not ready. Please run php artisan migrate.',
             ], 503);
@@ -265,5 +263,163 @@ class PackageController extends Controller
         return response()->json([
             'message' => 'Package deleted successfully.',
         ]);
+    }
+
+    private function validatePackagePayload(Request $request, bool $isCreate, ?int $packageId = null): array
+    {
+        $rules = [
+            'code' => ['required', 'string', 'max:50', Rule::unique('packages', 'code')->ignore($packageId)],
+            'name' => ['required', 'string', 'max:255'],
+            'is_active' => ['nullable', 'boolean'],
+        ];
+
+        if ($request->has('boms')) {
+            $rules = array_merge($rules, [
+                'boms' => ['required', 'array'],
+                'boms.cabin' => ['required', 'array'],
+                'boms.hardware' => ['required', 'array'],
+                'boms.hardware_site' => ['required', 'array'],
+                'boms.cabin.*.item_id' => ['required', 'integer', 'exists:items,id'],
+                'boms.cabin.*.quantity' => $this->decimalQuantityRules(),
+                'boms.hardware.*.item_id' => ['required', 'integer', 'exists:items,id'],
+                'boms.hardware.*.quantity' => $this->decimalQuantityRules(),
+                'boms.hardware_site.*.item_id' => ['required', 'integer', 'exists:items,id'],
+                'boms.hardware_site.*.quantity' => $this->decimalQuantityRules(),
+            ]);
+        } else {
+            $rules = array_merge($rules, [
+                'lines' => ['required', 'array', 'min:1'],
+                'lines.*.item_id' => ['required', 'integer', 'distinct', 'exists:items,id'],
+                'lines.*.quantity' => $this->decimalQuantityRules(),
+            ]);
+        }
+
+        if ($isCreate) {
+            return $request->validate($rules);
+        }
+
+        return $request->validate($rules);
+    }
+
+    private function isSchemaReady(): bool
+    {
+        return Schema::hasTable('packages')
+            && Schema::hasTable('package_items')
+            && Schema::hasTable('boms')
+            && Schema::hasTable('bom_items');
+    }
+
+    private function normalizeBomPayload(array $validated): array
+    {
+        if (isset($validated['boms']) && is_array($validated['boms'])) {
+            return [
+                Bom::TYPE_CABIN => $this->normalizeBomLines($validated['boms'][Bom::TYPE_CABIN] ?? []),
+                Bom::TYPE_HARDWARE => $this->normalizeBomLines($validated['boms'][Bom::TYPE_HARDWARE] ?? []),
+                Bom::TYPE_HARDWARE_SITE => $this->normalizeBomLines($validated['boms'][Bom::TYPE_HARDWARE_SITE] ?? []),
+            ];
+        }
+
+        return [
+            Bom::TYPE_CABIN => [],
+            Bom::TYPE_HARDWARE => $this->normalizeBomLines($validated['lines'] ?? []),
+            Bom::TYPE_HARDWARE_SITE => [],
+        ];
+    }
+
+    private function normalizeBomLines(array $lines): array
+    {
+        return collect($lines)
+            ->map(function ($line) {
+                return [
+                    'item_id' => (int) ($line['item_id'] ?? 0),
+                    'quantity' => $this->normalizeQuantity($line['quantity'] ?? 0),
+                ];
+            })
+            ->filter(fn ($line) => $line['item_id'] > 0 && $line['quantity'] > 0)
+            ->values()
+            ->all();
+    }
+
+    private function validateBomRules(array $boms): void
+    {
+        $totalLines = collect($boms)->flatten(1)->count();
+        if ($totalLines === 0) {
+            throw ValidationException::withMessages([
+                'boms' => ['At least one SKU line is required in BOM.'],
+            ]);
+        }
+
+        foreach ($boms as $type => $lines) {
+            $duplicates = collect($lines)
+                ->pluck('item_id')
+                ->countBy()
+                ->filter(fn ($count) => $count > 1)
+                ->keys()
+                ->all();
+
+            if ($duplicates !== []) {
+                throw ValidationException::withMessages([
+                    "boms.$type" => ['Duplicate SKU in ' . str_replace('_', ' ', $type) . ' BOM is not allowed.'],
+                ]);
+            }
+        }
+
+        $itemIds = collect($boms)->flatten(1)->pluck('item_id')->unique()->values();
+        if ($itemIds->isEmpty()) {
+            return;
+        }
+
+        $itemScopes = Item::query()
+            ->whereIn('id', $itemIds->all())
+            ->pluck('bom_scope', 'id');
+
+        foreach ($boms as $type => $lines) {
+            foreach ($lines as $line) {
+                $scope = (string) ($itemScopes[$line['item_id']] ?? '');
+                if ($scope !== $type) {
+                    throw ValidationException::withMessages([
+                        "boms.$type" => [
+                            'SKU tidak boleh cross BOM. Pastikan setiap SKU didaftarkan dengan kategori BOM yang sama.',
+                        ],
+                    ]);
+                }
+            }
+        }
+    }
+
+    private function syncBomAndPackageItems(Package $package, array $boms): void
+    {
+        $package->boms()->delete();
+
+        foreach (Bom::TYPES as $type) {
+            $lines = $boms[$type] ?? [];
+            $bom = $package->boms()->create([
+                'code' => $package->code . '-' . strtoupper($type),
+                'name' => ucfirst(str_replace('_', ' ', $type)) . ' - ' . $package->name,
+                'is_active' => true,
+                'type' => $type,
+            ]);
+
+            if ($lines !== []) {
+                $bom->bomItems()->createMany($lines);
+            }
+        }
+
+        $aggregated = collect($boms)
+            ->flatten(1)
+            ->groupBy('item_id')
+            ->map(function ($lines, $itemId) {
+                return [
+                    'item_id' => (int) $itemId,
+                    'quantity' => $this->normalizeQuantity(collect($lines)->sum('quantity')),
+                ];
+            })
+            ->values()
+            ->all();
+
+        $package->packageItems()->delete();
+        if ($aggregated !== []) {
+            $package->packageItems()->createMany($aggregated);
+        }
     }
 }

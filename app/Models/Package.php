@@ -20,6 +20,11 @@ class Package extends Model
         return $this->hasMany(PackageItem::class);
     }
 
+    public function boms(): HasMany
+    {
+        return $this->hasMany(Bom::class);
+    }
+
     public function creator(): BelongsTo
     {
         return $this->belongsTo(User::class, 'created_by');

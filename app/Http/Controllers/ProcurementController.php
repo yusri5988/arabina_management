@@ -12,7 +12,6 @@ use App\Models\ContainerReceivingNote;
 use App\Models\CrnItem;
 use App\Models\RejectedItem;
 use App\Models\SalesOrder;
-use App\Models\User;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Barryvdh\DomPDF\Facade\Pdf;
@@ -28,7 +27,7 @@ class ProcurementController extends Controller
     private const ORDER_RELATIONS = [
         'packageLines.package:id,code,name',
         'packageLines.package.packageItems.item:id,sku,name,unit',
-        'lines.item:id,sku,name,unit',
+        'lines.item:id,sku,name,unit,bom_scope',
     ];
 
     public function index(Request $request): Response
@@ -139,7 +138,7 @@ class ProcurementController extends Controller
 
             // 3. Fulfill shortages using requested packages first, but only if actually short
             foreach ($requestedPackagesMap as $pkgId => $qty) {
-                $pkg = Package::with('packageItems')->find($pkgId);
+                $pkg = Package::with(['packageItems', 'boms.bomItems.item'])->find($pkgId);
                 if ($pkg) {
                     // Check if any item in this package is still short
                     $needsOrdering = false;
@@ -159,6 +158,16 @@ class ProcurementController extends Controller
                             'code' => $pkg->code,
                             'name' => $pkg->name,
                             'quantity' => $qty,
+                            'boms' => $pkg->boms->map(fn($bom) => [
+                                'type' => $bom->type,
+                                'code' => $bom->code,
+                                'name' => $bom->name,
+                                'items' => $bom->bomItems->map(fn($bi) => [
+                                    'sku' => $bi->item?->sku,
+                                    'name' => $bi->item?->name,
+                                    'quantity' => $bi->quantity,
+                                ]),
+                            ]),
                         ];
                         // Subtract package contents from loose shortage calculation
                         foreach ($pkg->packageItems as $pItem) {
@@ -197,14 +206,14 @@ class ProcurementController extends Controller
             }
             
             $suggestion['source_orders'] = $sourceOrders;
-            $items = Item::query()->orderBy('sku')->get(['id', 'sku', 'name', 'unit']);
+            $items = Item::query()->orderBy('sku')->get(['id', 'sku', 'name', 'unit', 'bom_scope']);
             $packages = Package::query()->orderBy('code')->get(['id', 'code', 'name']);
         }
 
         return Inertia::render('Procurement/Index', [
             'databaseReady' => $databaseReady,
-            'canManage' => in_array($request->user()->role, [User::ROLE_PROCUREMENT, User::ROLE_SUPER_ADMIN], true),
-            'canReceive' => in_array($request->user()->role, [User::ROLE_STORE_KEEPER, User::ROLE_PROCUREMENT, User::ROLE_SUPER_ADMIN], true),
+            'canManage' => $request->user()?->hasModuleAccess('procurement') ?? false,
+            'canReceive' => $request->user()?->hasModuleAccess('procurement') ?? false,
             'suggestion' => $suggestion,
             'orders' => $orders,
             'items' => $items,
@@ -214,7 +223,7 @@ class ProcurementController extends Controller
 
     public function store(Request $request): JsonResponse
     {
-        $this->authorizeRole($request, [User::ROLE_PROCUREMENT, User::ROLE_SUPER_ADMIN]);
+        $this->authorizeModule($request, 'procurement');
 
         $validated = $request->validate([
             'package_lines' => 'nullable|array',
@@ -319,7 +328,7 @@ class ProcurementController extends Controller
 
     public function receive(Request $request, ProcurementOrder $order): JsonResponse
     {
-        $this->authorizeRole($request, [User::ROLE_STORE_KEEPER, User::ROLE_PROCUREMENT, User::ROLE_SUPER_ADMIN]);
+        $this->authorizeModule($request, 'procurement');
 
         $validated = $request->validate([
             'lines' => 'required|array|min:1',
@@ -380,7 +389,7 @@ class ProcurementController extends Controller
 
     public function addLine(Request $request, ProcurementOrder $order): JsonResponse
     {
-        $this->authorizeRole($request, [User::ROLE_PROCUREMENT, User::ROLE_SUPER_ADMIN]);
+        $this->authorizeModule($request, 'procurement');
 
         if ($order->status !== 'draft') {
             return response()->json([
@@ -425,7 +434,7 @@ class ProcurementController extends Controller
 
     public function addPackageLine(Request $request, ProcurementOrder $order): JsonResponse
     {
-        $this->authorizeRole($request, [User::ROLE_PROCUREMENT, User::ROLE_SUPER_ADMIN]);
+        $this->authorizeModule($request, 'procurement');
 
         if ($order->status !== 'draft') {
             return response()->json([
@@ -485,7 +494,7 @@ class ProcurementController extends Controller
 
     public function submit(Request $request, ProcurementOrder $order): JsonResponse
     {
-        $this->authorizeRole($request, [User::ROLE_PROCUREMENT, User::ROLE_SUPER_ADMIN]);
+        $this->authorizeModule($request, 'procurement');
 
         if ($order->status !== 'draft') {
             return response()->json([
@@ -542,7 +551,7 @@ class ProcurementController extends Controller
 
     public function destroy(Request $request, ProcurementOrder $order): JsonResponse
     {
-        $this->authorizeRole($request, [User::ROLE_PROCUREMENT, User::ROLE_SUPER_ADMIN]);
+        $this->authorizeModule($request, 'procurement');
 
         if ($order->status !== 'draft') {
             return response()->json([
@@ -569,7 +578,7 @@ class ProcurementController extends Controller
 
     public function rejectedList(Request $request): Response
     {
-        $canView = in_array($request->user()->role, [User::ROLE_STORE_KEEPER, User::ROLE_PROCUREMENT, User::ROLE_SUPER_ADMIN], true);
+        $canView = $request->user()?->hasModuleAccess('rejected_list') ?? false;
 
         if (! $canView) {
             return Inertia::render('Rejections/Index', [
@@ -671,12 +680,12 @@ class ProcurementController extends Controller
         return $code;
     }
 
-    private function authorizeRole(Request $request, array $roles): void
+    private function authorizeModule(Request $request, string $module): void
     {
         abort_unless(
-            in_array($request->user()->role, $roles, true),
+            $request->user()?->hasModuleAccess($module),
             403,
-            'Unauthorized role.'
+            'Unauthorized module.'
         );
     }
 

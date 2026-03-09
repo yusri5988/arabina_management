@@ -81,6 +81,10 @@ class User extends Authenticatable
 
     public function hasModuleAccess(string $module): bool
     {
+        if ($this->isSuperAdmin()) {
+            return true;
+        }
+
         if (!Schema::hasColumn($this->getTable(), 'module_permissions')) {
             // Backward-compatible fallback before migration is applied.
             return true;

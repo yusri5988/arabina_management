@@ -65,6 +65,17 @@ const CustomSelect = ({ value, onChange, options, className = "" }) => {
 };
 
 export default function Index({ items }) {
+  const bomScopeOptions = [
+    { value: 'cabin', label: 'Cabin' },
+    { value: 'hardware', label: 'Hardware' },
+    { value: 'hardware_site', label: 'Hardware Site' },
+  ];
+  const bomSections = [
+    { key: 'cabin', label: 'BOM Cabin' },
+    { key: 'hardware', label: 'BOM Hardware' },
+    { key: 'hardware_site', label: 'BOM Hardware Site' },
+  ];
+
   const [inventory, setInventory] = useState(items ?? []);
   const [processing, setProcessing] = useState(false);
   const [errors, setErrors] = useState({});
@@ -85,7 +96,8 @@ export default function Index({ items }) {
     sku: '',
     name: '',
     length_m: '',
-    unit: 'pcs'
+    unit: 'pcs',
+    bom_scope: 'hardware'
   });
 
   const csrfToken = useMemo(
@@ -140,6 +152,13 @@ export default function Index({ items }) {
     return result;
   }, [inventory, search, sortConfig]);
 
+  const filteredByBom = useMemo(() => {
+    return bomSections.map((section) => ({
+      ...section,
+      rows: filtered.filter((item) => String(item.bom_scope ?? 'hardware') === section.key),
+    }));
+  }, [filtered]);
+
   const SortIndicator = ({ columnKey }) => {
     const isSorted = sortConfig.key === columnKey;
     return (
@@ -191,7 +210,7 @@ export default function Index({ items }) {
 
       if (response.status === 201) {
         setInventory(prev => [payload.data, ...prev]);
-        setData({ sku: '', name: '', length_m: '', unit: 'pcs' });
+        setData({ sku: '', name: '', length_m: '', unit: 'pcs', bom_scope: 'hardware' });
         showNotification('success', 'Item registered successfully.');
       } else if (response.status === 422) {
         setErrors(payload.errors);
@@ -210,6 +229,7 @@ export default function Index({ items }) {
       name: item.name,
       length_m: item.length_m ?? '',
       unit: item.unit,
+      bom_scope: item.bom_scope ?? 'hardware',
     });
     setEditErrors({});
   };
@@ -320,10 +340,11 @@ export default function Index({ items }) {
           item_name: String(row.item_name ?? '').trim(),
           length_m: row.length_m !== '' && row.length_m != null ? Number(row.length_m) : null,
           unit: String(row.unit ?? 'pcs').toLowerCase().trim(),
+          bom_scope: String(row.bom_scope ?? 'hardware').toLowerCase().trim(),
         };
       }).filter(r => r.sku && r.item_name);
 
-      if (!rows.length) { setBulkError('No valid rows found. Ensure columns: sku, item_name, length_m, unit'); return; }
+      if (!rows.length) { setBulkError('No valid rows found. Ensure columns: sku, item_name, length_m, unit, bom_scope'); return; }
       setBulkRows(rows);
     } catch (err) {
       setBulkError('Failed to parse file: ' + err.message);
@@ -430,6 +451,15 @@ export default function Index({ items }) {
                   ]}
                 />
               </div>
+              <div>
+                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5 ml-1">BOM Category</label>
+                <CustomSelect
+                  value={data.bom_scope}
+                  onChange={val => setData(prev => ({ ...prev, bom_scope: val }))}
+                  options={bomScopeOptions}
+                />
+                {errors.bom_scope && <p className="text-xs text-red-500 mt-1">{errors.bom_scope[0]}</p>}
+              </div>
             </div>
 
             <button
@@ -446,7 +476,7 @@ export default function Index({ items }) {
         <div className="bg-white rounded-[2rem] shadow-sm border border-slate-100 pt-4 px-6 pb-6 md:pt-5 md:px-8 md:pb-8">
           <h2 className="text-lg font-bold text-slate-800 border-b border-slate-100 pb-4">Bulk Upload (Excel)</h2>
           <div className="mt-5 space-y-4">
-            <p className="text-xs text-slate-500">Upload an <strong>.xlsx</strong>, <strong>.xls</strong>, or <strong>.csv</strong> file with columns: <code className="bg-slate-100 px-1.5 py-0.5 rounded text-slate-700">sku</code>, <code className="bg-slate-100 px-1.5 py-0.5 rounded text-slate-700">item_name</code>, <code className="bg-slate-100 px-1.5 py-0.5 rounded text-slate-700">length_m</code>, <code className="bg-slate-100 px-1.5 py-0.5 rounded text-slate-700">unit</code></p>
+            <p className="text-xs text-slate-500">Upload an <strong>.xlsx</strong>, <strong>.xls</strong>, or <strong>.csv</strong> file with columns: <code className="bg-slate-100 px-1.5 py-0.5 rounded text-slate-700">sku</code>, <code className="bg-slate-100 px-1.5 py-0.5 rounded text-slate-700">item_name</code>, <code className="bg-slate-100 px-1.5 py-0.5 rounded text-slate-700">length_m</code>, <code className="bg-slate-100 px-1.5 py-0.5 rounded text-slate-700">unit</code>, <code className="bg-slate-100 px-1.5 py-0.5 rounded text-slate-700">bom_scope</code></p>
             <input
               ref={fileRef}
               type="file"
@@ -467,6 +497,7 @@ export default function Index({ items }) {
                         <th className="px-4 py-2.5">Item Name</th>
                         <th className="px-4 py-2.5">Length (m)</th>
                         <th className="px-4 py-2.5">Unit</th>
+                        <th className="px-4 py-2.5">BOM</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-50">
@@ -479,6 +510,7 @@ export default function Index({ items }) {
                           <td className="px-4 py-2">
                             <span className="inline-block bg-slate-100 text-slate-600 text-xs font-semibold px-2 py-0.5 rounded-full">{row.unit}</span>
                           </td>
+                          <td className="px-4 py-2 text-slate-600 text-xs uppercase">{row.bom_scope}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -528,52 +560,41 @@ export default function Index({ items }) {
             </div>
           </div>
 
-          <div className="bg-white rounded-[2rem] shadow-sm border border-slate-100 overflow-hidden">
+          <div className="space-y-5">
             {inventory.length === 0 ? (
               <p className="text-sm text-slate-400 text-center py-12 font-medium">No items registered yet.</p>
             ) : (
-              <div className="overflow-x-auto">
-                <table className="min-w-full divide-y divide-slate-100">
-                  <thead className="bg-slate-50">
-                    <tr>
-                      <th className="px-4 py-3 text-left text-[10px] font-bold text-slate-500 uppercase tracking-wider">#</th>
-                      <th
-                        className="px-4 py-3 text-left text-[10px] font-bold text-slate-500 uppercase tracking-wider cursor-pointer hover:bg-slate-100 group transition-colors"
-                        onClick={() => requestSort('sku')}
-                      >
-                        <div className="flex items-center gap-1">
-                          SKU <SortIndicator columnKey="sku" />
-                        </div>
-                      </th>
-                      <th
-                        className="px-4 py-3 text-left text-[10px] font-bold text-slate-500 uppercase tracking-wider cursor-pointer hover:bg-slate-100 group transition-colors"
-                        onClick={() => requestSort('name')}
-                      >
-                        <div className="flex items-center gap-1">
-                          Name <SortIndicator columnKey="name" />
-                        </div>
-                      </th>
-                      <th
-                        className="px-4 py-3 text-left text-[10px] font-bold text-slate-500 uppercase tracking-wider cursor-pointer hover:bg-slate-100 group transition-colors"
-                        onClick={() => requestSort('length_m')}
-                      >
-                        <div className="flex items-center gap-1">
-                          Length (m) <SortIndicator columnKey="length_m" />
-                        </div>
-                      </th>
-                      <th
-                        className="px-4 py-3 text-left text-[10px] font-bold text-slate-500 uppercase tracking-wider cursor-pointer hover:bg-slate-100 group transition-colors"
-                        onClick={() => requestSort('unit')}
-                      >
-                        <div className="flex items-center gap-1">
-                          Unit <SortIndicator columnKey="unit" />
-                        </div>
-                      </th>
-                      <th className="px-4 py-3 text-right text-[10px] font-bold text-slate-500 uppercase tracking-wider">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody className="bg-white divide-y divide-slate-50">
-                    {filtered.map((item, idx) => (
+              filteredByBom.map((section) => (
+                <div key={section.key} className="bg-white rounded-[2rem] shadow-sm border border-slate-100 overflow-hidden">
+                  <div className="px-5 py-3 border-b border-slate-100 bg-slate-50/70 flex items-center justify-between">
+                    <h4 className="text-xs font-black uppercase tracking-wider text-slate-700">{section.label}</h4>
+                    <span className="text-xs font-bold text-slate-500">{section.rows.length} SKU</span>
+                  </div>
+                  <div className="overflow-x-auto">
+                    <table className="min-w-full divide-y divide-slate-100">
+                      <thead className="bg-slate-50">
+                        <tr>
+                          <th className="px-4 py-3 text-left text-[10px] font-bold text-slate-500 uppercase tracking-wider">#</th>
+                          <th className="px-4 py-3 text-left text-[10px] font-bold text-slate-500 uppercase tracking-wider cursor-pointer hover:bg-slate-100 group transition-colors" onClick={() => requestSort('sku')}>
+                            <div className="flex items-center gap-1">SKU <SortIndicator columnKey="sku" /></div>
+                          </th>
+                          <th className="px-4 py-3 text-left text-[10px] font-bold text-slate-500 uppercase tracking-wider cursor-pointer hover:bg-slate-100 group transition-colors" onClick={() => requestSort('name')}>
+                            <div className="flex items-center gap-1">Name <SortIndicator columnKey="name" /></div>
+                          </th>
+                          <th className="px-4 py-3 text-left text-[10px] font-bold text-slate-500 uppercase tracking-wider cursor-pointer hover:bg-slate-100 group transition-colors" onClick={() => requestSort('length_m')}>
+                            <div className="flex items-center gap-1">Length (m) <SortIndicator columnKey="length_m" /></div>
+                          </th>
+                          <th className="px-4 py-3 text-left text-[10px] font-bold text-slate-500 uppercase tracking-wider cursor-pointer hover:bg-slate-100 group transition-colors" onClick={() => requestSort('unit')}>
+                            <div className="flex items-center gap-1">Unit <SortIndicator columnKey="unit" /></div>
+                          </th>
+                          <th className="px-4 py-3 text-left text-[10px] font-bold text-slate-500 uppercase tracking-wider cursor-pointer hover:bg-slate-100 group transition-colors" onClick={() => requestSort('bom_scope')}>
+                            <div className="flex items-center gap-1">BOM <SortIndicator columnKey="bom_scope" /></div>
+                          </th>
+                          <th className="px-4 py-3 text-right text-[10px] font-bold text-slate-500 uppercase tracking-wider">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody className="bg-white divide-y divide-slate-50">
+                    {section.rows.map((item, idx) => (
                       <tr key={item.id ?? idx} className="hover:bg-slate-50 transition-colors">
                         {editingId === item.id ? (
                           <>
@@ -602,6 +623,15 @@ export default function Index({ items }) {
                                 className="w-full"
                               />
                             </td>
+                            <td className="px-4 py-2">
+                              <CustomSelect
+                                value={editData.bom_scope}
+                                onChange={val => setEditData(prev => ({ ...prev, bom_scope: val }))}
+                                options={bomScopeOptions}
+                                className="w-full"
+                              />
+                              {editErrors.bom_scope && <p className="text-xs text-red-500 mt-0.5 font-medium">{editErrors.bom_scope[0]}</p>}
+                            </td>
                             <td className="px-4 py-2 text-right whitespace-nowrap">
                               <button type="button" onClick={() => saveEdit(item.id)} disabled={processing} className="inline-flex items-center px-4 py-2 rounded-xl bg-emerald-600 text-white text-[10px] font-black uppercase tracking-wider hover:bg-emerald-700 disabled:opacity-50 transition-all mr-1.5 shadow-sm shadow-emerald-100">
                                 Save
@@ -619,6 +649,9 @@ export default function Index({ items }) {
                             <td className="px-4 py-3 text-xs text-slate-600 font-semibold">{item.length_m ? Number(item.length_m).toFixed(2) : '—'}</td>
                             <td className="px-4 py-3">
                               <span className="inline-block bg-slate-100 text-slate-600 text-[10px] font-bold uppercase px-2 py-0.5 rounded-full">{item.unit}</span>
+                            </td>
+                            <td className="px-4 py-3 text-xs">
+                              <span className="inline-block bg-slate-100 text-slate-600 text-[10px] font-bold uppercase px-2 py-0.5 rounded-full">{item.bom_scope}</span>
                             </td>
                             <td className="px-4 py-3 text-right whitespace-nowrap">
                               <button type="button" onClick={() => startEdit(item)} className="inline-flex items-center px-3 py-1.5 rounded-xl bg-amber-500 text-white text-[10px] font-bold uppercase tracking-wider hover:bg-amber-600 transition-all mr-1.5 shadow-sm">
@@ -643,9 +676,16 @@ export default function Index({ items }) {
                         )}
                       </tr>
                     ))}
-                  </tbody>
-                </table>
-              </div>
+                    {section.rows.length === 0 && (
+                      <tr>
+                        <td colSpan={7} className="px-4 py-8 text-center text-sm text-slate-500">No SKU in {section.label.toLowerCase()}.</td>
+                      </tr>
+                    )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              ))
             )}
           </div>
         </div>

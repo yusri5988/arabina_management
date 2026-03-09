@@ -8,6 +8,19 @@ import DatePicker from "react-datepicker";
 import "react-datepicker/dist/react-datepicker.css";
 import { format, parseISO } from 'date-fns';
 
+const BOM_GROUPS = [
+  { key: 'cabin', label: 'BOM Cabin' },
+  { key: 'hardware', label: 'BOM Hardware' },
+  { key: 'hardware_site', label: 'BOM Hardware Site' },
+];
+const KNOWN_BOM_KEYS = new Set(BOM_GROUPS.map((group) => group.key));
+
+const getDefaultLineForm = (line) => ({
+  received_qty: Number(line?.remaining_qty ?? 0),
+  rejected_qty: 0,
+  rejection_reason: '',
+});
+
 export default function CrnIndex({ pendingProcurements = [], activeCrns = [], notes = [], canManage = false }) {
   const [notification, setNotification] = useState(null);
   const [processingId, setProcessingId] = useState(null);
@@ -19,6 +32,27 @@ export default function CrnIndex({ pendingProcurements = [], activeCrns = [], no
   const [forms, setForms] = useState({});
   const [selectedNote, setSelectedNote] = useState(null);
 
+  const refreshCrnPage = () => window.location.reload();
+
+  const runCrnAction = async ({ processingKey, request, successMessage }) => {
+    setNotification(null);
+    setProcessingId(processingKey);
+
+    try {
+      const { response, payload } = await request();
+      if (response.ok) {
+        setNotification({ type: 'success', message: successMessage });
+        refreshCrnPage();
+      } else {
+        setNotification({ type: 'error', message: payload.message });
+      }
+    } catch (_) {
+      setNotification({ type: 'error', message: 'Network error.' });
+    } finally {
+      setProcessingId(null);
+    }
+  };
+
   const toggleOrder = (order) => {
     setOpenOrderId((prev) => (prev === order.id ? null : order.id));
     setConfirmSubmitOrderId((prev) => (prev === order.id ? null : prev));
@@ -26,11 +60,7 @@ export default function CrnIndex({ pendingProcurements = [], activeCrns = [], no
       if (prev[order.id]) return prev;
       const mapped = {};
       (order.lines ?? []).forEach((line) => {
-        mapped[line.line_id] = {
-          received_qty: Number(line.remaining_qty ?? 0),
-          rejected_qty: 0,
-          rejection_reason: '',
-        };
+        mapped[line.line_id] = getDefaultLineForm(line);
       });
       return { ...prev, [order.id]: mapped };
     });
@@ -38,11 +68,7 @@ export default function CrnIndex({ pendingProcurements = [], activeCrns = [], no
 
   const setLineValue = (orderId, lineId, field, value, remainingQty) => {
     setForms((prev) => {
-      const existing = prev?.[orderId]?.[lineId] ?? {
-        received_qty: Number(remainingQty ?? 0),
-        rejected_qty: 0,
-        rejection_reason: '',
-      };
+      const existing = prev?.[orderId]?.[lineId] ?? getDefaultLineForm({ remaining_qty: remainingQty });
       let next = { ...existing, [field]: value };
       if (field === 'received_qty') {
         const received = Math.min(Math.max(Number(value || 0), 0), Number(remainingQty || 0));
@@ -60,67 +86,39 @@ export default function CrnIndex({ pendingProcurements = [], activeCrns = [], no
 
   const submitAllLines = async (order) => {
     const linesPayload = (order.lines ?? []).map(line => {
-      const current = forms?.[order.id]?.[line.line_id] ?? { received_qty: Number(line.remaining_qty ?? 0), rejected_qty: 0, rejection_reason: '' };
+      const current = forms?.[order.id]?.[line.line_id] ?? getDefaultLineForm(line);
       return { line_id: line.line_id, received_qty: Number(current.received_qty || 0), rejected_qty: Number(current.rejected_qty || 0), rejection_reason: current.rejection_reason || null };
     });
-    setNotification(null);
     setConfirmSubmitOrderId(null);
-    setProcessingId(`all-${order.id}`);
-    try {
-      const { response, payload } = await apiFetchJson(`/warehouse/crn/procurement/${order.id}/receive`, {
+    await runCrnAction({
+      processingKey: `all-${order.id}`,
+      successMessage: 'All SKU submitted.',
+      request: () => apiFetchJson(`/warehouse/crn/procurement/${order.id}/receive`, {
         method: 'POST',
         body: JSON.stringify({ lines: linesPayload }),
-      });
-      if (response.ok) {
-        setNotification({ type: 'success', message: 'All SKU submitted.' });
-        window.location.reload();
-      } else {
-        setNotification({ type: 'error', message: payload.message });
-      }
-    } catch (_) {
-      setNotification({ type: 'error', message: 'Network error.' });
-    } finally {
-      setProcessingId(null);
-    }
+      }),
+    });
   };
 
   const submitEta = async (crnId) => {
     const eta = etaDates[crnId];
     if (!eta) return;
-    setProcessingId(`eta-${crnId}`);
-    try {
-      const { response, payload } = await apiFetchJson(`/warehouse/crn/${crnId}/eta`, {
+    await runCrnAction({
+      processingKey: `eta-${crnId}`,
+      successMessage: 'ETA updated. Status: Shipping.',
+      request: () => apiFetchJson(`/warehouse/crn/${crnId}/eta`, {
         method: 'POST',
         body: JSON.stringify({ eta }),
-      });
-      if (response.ok) {
-        setNotification({ type: 'success', message: 'ETA updated. Status: Shipping.' });
-        window.location.reload();
-      } else {
-        setNotification({ type: 'error', message: payload.message });
-      }
-    } catch (_) {
-      setNotification({ type: 'error', message: 'Network error.' });
-    } finally {
-      setProcessingId(null);
-    }
+      }),
+    });
   };
 
   const markArrived = async (crnId) => {
-    setProcessingId(`arrived-${crnId}`);
-    try {
-      const { response, payload } = await apiFetchJson(`/warehouse/crn/${crnId}/arrived`, { method: 'POST' });
-      if (response.ok) {
-        setNotification({ type: 'success', message: 'Arrived! Checklist available below.' });
-        window.location.reload();
-      } else {
-        setNotification({ type: 'error', message: payload.message });
-      }
-    } catch (_) {
-      setNotification({ type: 'error', message: 'Network error.' });
-    } finally {
-      setProcessingId(null);
-    }
+    await runCrnAction({
+      processingKey: `arrived-${crnId}`,
+      successMessage: 'Arrived! Checklist available below.',
+      request: () => apiFetchJson(`/warehouse/crn/${crnId}/arrived`, { method: 'POST' }),
+    });
   };
 
   const incomingCrns = crnList.filter(c => ['awaiting_shipping', 'shipping'].includes(c.status));
@@ -375,7 +373,7 @@ export default function CrnIndex({ pendingProcurements = [], activeCrns = [], no
                                     </thead>
                                     <tbody className="divide-y divide-slate-50 bg-white">
                                       {order.lines.map((line) => {
-                                        const current = orderForm?.[line.line_id] ?? { received_qty: Number(line.remaining_qty ?? 0), rejected_qty: 0, rejection_reason: '' };
+                                        const current = orderForm?.[line.line_id] ?? getDefaultLineForm(line);
                                         return (
                                           <tr key={line.line_id} className="hover:bg-slate-50/60">
                                             <td className="px-4 py-3">
@@ -494,29 +492,92 @@ export default function CrnIndex({ pendingProcurements = [], activeCrns = [], no
                 </button>
               </div>
               <div className="overflow-y-auto p-6 md:p-8">
-                <table className="w-full text-left">
-                  <thead>
-                    <tr className="text-[10px] font-bold text-slate-400 uppercase tracking-widest border-b border-slate-100">
-                      <th className="pb-3">SKU / Item</th>
-                      <th className="pb-3 text-center">Expected</th>
-                      <th className="pb-3 text-center text-emerald-600">Received</th>
-                      <th className="pb-3 text-center text-red-600">Rejected</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-50 text-xs">
-                    {selectedNote.items?.map((item) => (
-                      <tr key={item.id}>
-                        <td className="py-3">
-                          <p className="font-bold text-slate-800">{item.item_variant?.item?.sku}</p>
-                          <p className="text-[10px] text-slate-500 line-clamp-1">{item.item_variant?.item?.name}</p>
-                        </td>
-                        <td className="py-3 text-center font-medium text-slate-600">{item.expected_qty}</td>
-                        <td className="py-3 text-center font-bold text-emerald-600 bg-emerald-50/30">{item.received_qty}</td>
-                        <td className="py-3 text-center font-bold text-red-600">{item.rejected_qty}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+                <div className="space-y-6">
+                  {BOM_GROUPS.map((group) => {
+                    const groupedItems = (selectedNote.items ?? []).filter((item) => String(item.item_variant?.item?.bom_scope ?? 'hardware') === group.key);
+
+                    return (
+                      <div key={group.key} className="space-y-3">
+                        <div className="flex items-center justify-between">
+                          <h4 className="text-[11px] font-black uppercase tracking-widest text-slate-500">{group.label}</h4>
+                          <span className="text-[10px] font-bold text-slate-400">{groupedItems.length} SKU</span>
+                        </div>
+
+                        <table className="w-full text-left">
+                          <thead>
+                            <tr className="text-[10px] font-bold text-slate-400 uppercase tracking-widest border-b border-slate-100">
+                              <th className="pb-3">SKU / Item</th>
+                              <th className="pb-3 text-center">Expected</th>
+                              <th className="pb-3 text-center text-emerald-600">Received</th>
+                              <th className="pb-3 text-center text-red-600">Rejected</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-50 text-xs">
+                            {groupedItems.length > 0 ? groupedItems.map((item) => (
+                              <tr key={item.id}>
+                                <td className="py-3">
+                                  <p className="font-bold text-slate-800">{item.item_variant?.item?.sku}</p>
+                                  <p className="text-[10px] text-slate-500 line-clamp-1">{item.item_variant?.item?.name}</p>
+                                </td>
+                                <td className="py-3 text-center font-medium text-slate-600">{item.expected_qty}</td>
+                                <td className="py-3 text-center font-bold text-emerald-600 bg-emerald-50/30">{item.received_qty}</td>
+                                <td className="py-3 text-center font-bold text-red-600">{item.rejected_qty}</td>
+                              </tr>
+                            )) : (
+                              <tr>
+                                <td colSpan={4} className="py-4 text-center text-xs text-slate-400">No SKU in this BOM category.</td>
+                              </tr>
+                            )}
+                          </tbody>
+                        </table>
+                      </div>
+                    );
+                  })}
+
+                  {(() => {
+                    const otherItems = (selectedNote.items ?? []).filter((item) => {
+                      const scope = String(item.item_variant?.item?.bom_scope ?? 'hardware');
+                      return !KNOWN_BOM_KEYS.has(scope);
+                    });
+
+                    if (otherItems.length === 0) {
+                      return null;
+                    }
+
+                    return (
+                      <div className="space-y-3">
+                        <div className="flex items-center justify-between">
+                          <h4 className="text-[11px] font-black uppercase tracking-widest text-slate-500">Unclassified BOM</h4>
+                          <span className="text-[10px] font-bold text-slate-400">{otherItems.length} SKU</span>
+                        </div>
+
+                        <table className="w-full text-left">
+                          <thead>
+                            <tr className="text-[10px] font-bold text-slate-400 uppercase tracking-widest border-b border-slate-100">
+                              <th className="pb-3">SKU / Item</th>
+                              <th className="pb-3 text-center">Expected</th>
+                              <th className="pb-3 text-center text-emerald-600">Received</th>
+                              <th className="pb-3 text-center text-red-600">Rejected</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-50 text-xs">
+                            {otherItems.map((item) => (
+                              <tr key={item.id}>
+                                <td className="py-3">
+                                  <p className="font-bold text-slate-800">{item.item_variant?.item?.sku}</p>
+                                  <p className="text-[10px] text-slate-500 line-clamp-1">{item.item_variant?.item?.name}</p>
+                                </td>
+                                <td className="py-3 text-center font-medium text-slate-600">{item.expected_qty}</td>
+                                <td className="py-3 text-center font-bold text-emerald-600 bg-emerald-50/30">{item.received_qty}</td>
+                                <td className="py-3 text-center font-bold text-red-600">{item.rejected_qty}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    );
+                  })()}
+                </div>
               </div>
               <div className="p-6 border-t border-slate-100 bg-slate-50 flex justify-end gap-3">
                 <a

@@ -24,6 +24,11 @@ export default function AuthenticatedLayout({ children, title, showWelcome = fal
   const { auth, url } = usePage().props;
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [warehouseOpen, setWarehouseOpen] = useState(() => url?.startsWith('/warehouse') || url?.startsWith('/items/stocks') || url?.startsWith('/items/stock/out') || url?.startsWith('/packages'));
+  const userPermissions = auth?.user?.module_permissions ?? [];
+
+  const hasModuleAccess = (moduleKey) => {
+    return userPermissions.includes(moduleKey);
+  };
 
   const logout = () => {
     router.post('/logout');
@@ -36,31 +41,36 @@ export default function AuthenticatedLayout({ children, title, showWelcome = fal
     return false;
   };
 
-  const navLinks = [
-    { name: 'Dashboard', path: '/dashboard', icon: HomeIcon },
-    ...(auth?.user?.role !== 'store_keeper' && auth?.user?.role !== 'procurement' ? [
-      { name: 'Order', path: '/orders', icon: ShoppingCartIcon },
-    ] : []),
-    ...(auth?.user?.role === 'procurement' || auth?.user?.role === 'super_admin'
-      ? [{ name: 'Procurement', path: '/procurement', icon: TruckIcon }]
-      : []),
-    ...(auth?.user?.role !== 'sales' && auth?.user?.role !== 'procurement'
-      ? [{ name: 'Warehouse', path: '/warehouse', icon: BuildingStorefrontIcon }]
-      : []),
-    ...(auth?.user?.role === 'super_admin' ? [{ name: 'Users', path: '/admin/users', icon: UsersIcon }] : []),
-    ...(auth?.user?.role === 'super_admin' ? [{ name: 'Activity Logs', path: '/admin/logs', icon: ClockIcon }] : []),
-    { name: 'Profile', path: '/profile', icon: UserCircleIcon },
-  ];
-
-  const showWarehouseMenu = auth?.user?.role !== 'sales' && auth?.user?.role !== 'procurement';
   const warehouseChildren = [
     { name: 'CRN (Container)', path: '/warehouse/crn', icon: DocumentTextIcon },
     { name: 'Item Catalog', path: '/items', icon: ArchiveBoxIcon },
     { name: 'Stock List', path: '/items/stocks', icon: TableCellsIcon },
     { name: 'Delivery Order', path: '/items/stock/out', icon: ArrowUpTrayIcon },
     { name: 'Rejected List', path: '/warehouse/rejections', icon: ExclamationTriangleIcon },
-    ...(auth?.user?.role === 'super_admin' ? [{ name: 'Create Package', path: '/packages', icon: CubeIcon }] : []),
-  ];
+    { name: 'Create Package', path: '/packages', icon: CubeIcon },
+  ].filter((child) => {
+    const moduleMap = {
+      '/warehouse/crn': 'crn',
+      '/items': 'item_catalog',
+      '/items/stocks': 'stock_list',
+      '/items/stock/out': 'delivery_order',
+      '/warehouse/rejections': 'rejected_list',
+      '/packages': 'create_package',
+    };
+
+    return hasModuleAccess(moduleMap[child.path]);
+  });
+  const showWarehouseMenu = warehouseChildren.length > 0;
+
+  const navLinks = [
+    { name: 'Dashboard', path: '/dashboard', icon: HomeIcon, visible: true },
+    { name: 'Order', path: '/orders', icon: ShoppingCartIcon, visible: hasModuleAccess('sales_orders') },
+    { name: 'Procurement', path: '/procurement', icon: TruckIcon, visible: hasModuleAccess('procurement') },
+    { name: 'Warehouse', path: '/warehouse', icon: BuildingStorefrontIcon, visible: showWarehouseMenu },
+    { name: 'Users', path: '/admin/users', icon: UsersIcon, visible: hasModuleAccess('admin_users') },
+    { name: 'Activity Logs', path: '/admin/logs', icon: ClockIcon, visible: hasModuleAccess('admin_logs') },
+    { name: 'Profile', path: '/profile', icon: UserCircleIcon, visible: true },
+  ].filter((link) => link.visible);
 
   return (
     <div className="min-h-screen bg-slate-50 flex font-sans">
@@ -157,7 +167,9 @@ export default function AuthenticatedLayout({ children, title, showWelcome = fal
              </div>
              <div className="flex-1 overflow-hidden">
                 <p className="text-sm font-bold text-white truncate">{auth?.user?.name}</p>
-                <p className="text-[10px] text-emerald-300 uppercase tracking-widest truncate font-semibold">{auth?.user?.role?.replace('_', ' ')}</p>
+                <p className="text-[10px] text-emerald-300 uppercase tracking-widest truncate font-semibold">
+                  {`${userPermissions.length} MODULE${userPermissions.length === 1 ? '' : 'S'}`}
+                </p>
              </div>
           </div>
           <button 

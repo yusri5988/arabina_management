@@ -10,6 +10,10 @@ import {
 
 export default function Dashboard({ stats, canViewLogs }) {
   const { auth } = usePage().props;
+  const permissions = auth?.user?.module_permissions ?? [];
+  const hasModuleAccess = (moduleKey) => permissions.includes(moduleKey);
+  const canAccessWarehouse = ['crn', 'item_catalog', 'stock_list', 'delivery_order', 'rejected_list', 'create_package']
+    .some((moduleKey) => hasModuleAccess(moduleKey));
 
   return (
     <AuthenticatedLayout title="Dashboard" showWelcome={true}>
@@ -22,7 +26,7 @@ export default function Dashboard({ stats, canViewLogs }) {
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
 
           {/* Action 1: Sales Form */}
-          {auth?.user?.role !== 'store_keeper' && auth?.user?.role !== 'procurement' && (
+          {hasModuleAccess('sales_orders') && (
             <Link
               href="/orders"
               className="group relative bg-white p-6 rounded-2xl shadow-sm border border-cyan-100 hover:border-cyan-300 hover:shadow-lg hover:shadow-cyan-100/50 transition-all duration-300 active:scale-[0.98] overflow-hidden"
@@ -41,7 +45,7 @@ export default function Dashboard({ stats, canViewLogs }) {
           )}
 
           {/* Action 2: Procurement */}
-          {(auth?.user?.role === 'procurement' || auth?.user?.role === 'super_admin') && (
+          {hasModuleAccess('procurement') && (
             <Link
               href="/procurement"
               className="group relative bg-white p-6 rounded-2xl shadow-sm border border-amber-100 hover:border-amber-300 hover:shadow-lg hover:shadow-amber-100/50 transition-all duration-300 active:scale-[0.98] overflow-hidden"
@@ -60,7 +64,7 @@ export default function Dashboard({ stats, canViewLogs }) {
           )}
 
           {/* Action 3: Warehouse */}
-          {auth?.user?.role !== 'sales' && auth?.user?.role !== 'procurement' && (
+          {canAccessWarehouse && (
             <Link
               href="/warehouse"
               className="group relative bg-white p-6 rounded-2xl shadow-sm border border-teal-100 hover:border-teal-300 hover:shadow-lg hover:shadow-teal-100/50 transition-all duration-300 active:scale-[0.98] overflow-hidden"
@@ -79,7 +83,7 @@ export default function Dashboard({ stats, canViewLogs }) {
           )}
 
           {/* Action 4: User Management (Admin Only) */}
-          {auth?.user?.role === 'super_admin' && (
+          {hasModuleAccess('admin_users') && (
             <Link
               href="/admin/users"
               className="group relative bg-white p-6 rounded-2xl shadow-sm border border-purple-100 hover:border-purple-300 hover:shadow-lg hover:shadow-purple-100/50 transition-all duration-300 active:scale-[0.98] overflow-hidden"
@@ -121,4 +125,3 @@ export default function Dashboard({ stats, canViewLogs }) {
     </AuthenticatedLayout>
   );
 }
-
