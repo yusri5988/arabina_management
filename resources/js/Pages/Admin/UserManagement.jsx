@@ -1,6 +1,7 @@
 import { Head } from '@inertiajs/react';
-import { useMemo, useState, useEffect } from 'react';
+import { useMemo, useState } from 'react';
 import AuthenticatedLayout from '../../Layouts/AuthenticatedLayout';
+import { apiFetchJson } from '../../lib/http';
 import { 
   UsersIcon, 
   UserPlusIcon, 
@@ -34,11 +35,6 @@ export default function UserManagement({ users, moduleOptions = [] }) {
   const [notification, setNotification] = useState(null);
   const [showForm, setShowForm] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
-
-  const csrfToken = useMemo(
-    () => document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') ?? '',
-    [],
-  );
 
   const filteredAccounts = useMemo(() => {
     if (!searchQuery) return accounts;
@@ -97,19 +93,10 @@ export default function UserManagement({ users, moduleOptions = [] }) {
     };
 
     try {
-      const response = await fetch(endpoint, {
+      const { response, payload } = await apiFetchJson(endpoint, {
         method,
-        credentials: 'same-origin',
-        headers: {
-          'Content-Type': 'application/json',
-          Accept: 'application/json',
-          'X-Requested-With': 'XMLHttpRequest',
-          'X-CSRF-TOKEN': csrfToken,
-        },
         body: JSON.stringify(requestPayload),
       });
-
-      const payload = await response.json().catch(() => ({}));
 
       if (!isEditing && response.status === 201 && payload?.data) {
         setAccounts((prev) => [payload.data, ...prev]);
@@ -173,17 +160,9 @@ export default function UserManagement({ users, moduleOptions = [] }) {
     setDeletingId(user.id);
 
     try {
-      const response = await fetch(`/admin/users/${user.id}`, {
+      const { response, payload } = await apiFetchJson(`/admin/users/${user.id}`, {
         method: 'DELETE',
-        credentials: 'same-origin',
-        headers: {
-          Accept: 'application/json',
-          'X-Requested-With': 'XMLHttpRequest',
-          'X-CSRF-TOKEN': csrfToken,
-        },
       });
-
-      const payload = await response.json().catch(() => ({}));
 
       if (response.ok) {
         setAccounts((prev) => prev.filter((item) => item.id !== user.id));
