@@ -1,9 +1,107 @@
 import { Head, Link } from '@inertiajs/react';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import AuthenticatedLayout from '../../Layouts/AuthenticatedLayout';
 import { apiFetchJson } from '../../lib/http';
 
 const initialLine = { type: 'package', package_id: '', package_quantity: '', item_sku: '', item_quantity: '' };
+
+const SearchableSelect = ({ value, onChange, options, placeholder, className = '' }) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const [search, setSearch] = useState('');
+  const containerRef = useRef(null);
+
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (containerRef.current && !containerRef.current.contains(event.target)) {
+        setIsOpen(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const filteredOptions = useMemo(() => {
+    if (!search) {
+      return options;
+    }
+
+    const keyword = search.toLowerCase();
+
+    return options.filter((option) => option.label.toLowerCase().includes(keyword));
+  }, [options, search]);
+
+  const selectedOption = options.find((option) => option.value === value);
+
+  return (
+    <div className={`relative ${className}`} ref={containerRef}>
+      <button
+        type="button"
+        onClick={() => {
+          setIsOpen(!isOpen);
+          if (!isOpen) {
+            setSearch('');
+          }
+        }}
+        className="w-full flex items-center justify-between rounded-xl border border-slate-200 px-4 py-2.5 text-sm focus:ring-2 focus:ring-arabina-accent focus:outline-none bg-white text-left transition-all hover:border-slate-300 shadow-sm"
+      >
+        <span className={selectedOption ? 'font-bold text-slate-700' : 'text-slate-400 font-medium'}>
+          {selectedOption ? selectedOption.label : placeholder}
+        </span>
+        <svg
+          className={`w-4 h-4 text-slate-400 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`}
+          fill="none"
+          stroke="currentColor"
+          viewBox="0 0 24 24"
+        >
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" />
+        </svg>
+      </button>
+
+      {isOpen && (
+        <div className="absolute z-50 mt-2 w-full bg-white rounded-2xl shadow-xl border border-slate-100 overflow-hidden flex flex-col py-1 animate-in fade-in slide-in-from-top-2 duration-200">
+          <div className="px-3 py-2 border-b border-slate-50">
+            <input
+              type="text"
+              autoFocus
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search..."
+              className="w-full px-3 py-1.5 text-xs border border-slate-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-arabina-accent/20 bg-slate-50"
+            />
+          </div>
+          <div className="max-h-60 overflow-y-auto custom-scrollbar">
+            {filteredOptions.length > 0 ? (
+              filteredOptions.map((option) => (
+                <button
+                  key={option.value}
+                  type="button"
+                  onClick={() => {
+                    onChange(option.value);
+                    setIsOpen(false);
+                  }}
+                  className={`w-full px-4 py-2.5 text-xs text-left transition-colors hover:bg-slate-50 flex items-center justify-between ${
+                    value === option.value ? 'bg-emerald-50 text-emerald-700 font-bold' : 'text-slate-600'
+                  }`}
+                >
+                  {option.label}
+                  {value === option.value && (
+                    <svg className="w-4 h-4 text-emerald-600" fill="currentColor" viewBox="0 0 20 20">
+                      <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                    </svg>
+                  )}
+                </button>
+              ))
+            ) : (
+              <p className="px-4 py-3 text-xs text-slate-400 italic text-center">No results found</p>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
 
 export default function Orders({ packages = [], items = [], orders = [], availability = [], databaseReady = true, canCreate = false }) {
   const [form, setForm] = useState({
@@ -222,8 +320,19 @@ export default function Orders({ packages = [], items = [], orders = [], availab
               </div>
 
               <div className="space-y-3">
-                {lines.map((line, index) => (
-                  <div key={index} className="bg-slate-50 rounded-xl p-3 border border-slate-100 transition-all hover:border-slate-200">
+                {lines.map((line, index) => {
+                  const packageOptions = packages.map((pkg) => ({
+                    value: pkg.id.toString(),
+                    label: `${pkg.code} - ${pkg.name}`,
+                  }));
+
+                  const itemOptions = items.map((item) => ({
+                    value: item.sku,
+                    label: `${item.sku} - ${item.name}`,
+                  }));
+
+                  return (
+                    <div key={index} className="bg-slate-50 rounded-xl p-3 border border-slate-100 transition-all hover:border-slate-200">
                     <div className="flex items-center justify-between mb-2">
                       <span className={`text-[9px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-md ${line.type === 'package' ? 'bg-emerald-100 text-emerald-700' : 'bg-blue-100 text-blue-700'}`}>
                         {line.type === 'package' ? 'Package' : 'Loose SKU'}
@@ -238,33 +347,19 @@ export default function Orders({ packages = [], items = [], orders = [], availab
                     <div className="grid grid-cols-12 gap-2">
                       <div className="col-span-8">
                         {line.type === 'package' ? (
-                          <select
+                          <SearchableSelect
                             value={line.package_id}
-                            onChange={(e) => updateLine(index, 'package_id', e.target.value)}
-                            className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm bg-white focus:ring-2 focus:ring-arabina-accent focus:outline-none"
-                            required
-                          >
-                            <option value="">Select Package</option>
-                            {packages.map((pkg) => (
-                              <option key={pkg.id} value={pkg.id}>
-                                {pkg.code} - {pkg.name}
-                              </option>
-                            ))}
-                          </select>
+                            onChange={(value) => updateLine(index, 'package_id', value)}
+                            options={packageOptions}
+                            placeholder="Select Package..."
+                          />
                         ) : (
-                          <select
+                          <SearchableSelect
                             value={line.item_sku}
-                            onChange={(e) => updateLine(index, 'item_sku', e.target.value)}
-                            className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm bg-white focus:ring-2 focus:ring-arabina-accent focus:outline-none"
-                            required
-                          >
-                            <option value="">Select SKU</option>
-                            {items.map((item) => (
-                              <option key={item.id} value={item.sku}>
-                                {item.sku} - {item.name}
-                              </option>
-                            ))}
-                          </select>
+                            onChange={(value) => updateLine(index, 'item_sku', value)}
+                            options={itemOptions}
+                            placeholder="Select SKU..."
+                          />
                         )}
                       </div>
                       <div className="col-span-4">
@@ -283,8 +378,9 @@ export default function Orders({ packages = [], items = [], orders = [], availab
                     {errors[`lines.${index}.item_sku`] && <p className="text-[10px] text-red-500 mt-1">{errors[`lines.${index}.item_sku`][0]}</p>}
                     {errors[`lines.${index}.package_quantity`] && <p className="text-[10px] text-red-500 mt-1">{errors[`lines.${index}.package_quantity`][0]}</p>}
                     {errors[`lines.${index}.item_quantity`] && <p className="text-[10px] text-red-500 mt-1">{errors[`lines.${index}.item_quantity`][0]}</p>}
-                  </div>
-                ))}
+                    </div>
+                  );
+                })}
                 {errors.lines && typeof errors.lines === 'string' && <p className="text-xs text-red-500">{errors.lines}</p>}
               </div>
             </div>
