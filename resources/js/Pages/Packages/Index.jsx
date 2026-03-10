@@ -63,7 +63,7 @@ export default function Index({ items, packages, schemaReady = true }) {
   const [duplicateSourceCode, setDuplicateSourceCode] = useState(null);
   const [notification, setNotification] = useState(null);
   const [bulkRows, setBulkRows] = useState([]);
-  const [bulkError, setBulkError] = useState(null);
+  const [bulkErrors, setBulkErrors] = useState([]);
   const [bulkUploading, setBulkUploading] = useState(false);
   const fileRef = useRef(null);
   const xlsxRef = useRef(null);
@@ -152,10 +152,23 @@ export default function Index({ items, packages, schemaReady = true }) {
     return xlsxModule;
   }, []);
 
+  const setBulkErrorMessage = (message) => {
+    setBulkErrors(message ? [message] : []);
+  };
+
+  const extractBulkErrors = (payload) => {
+    const errors = Object.values(payload?.errors ?? {})
+      .flat()
+      .map((message) => String(message ?? '').trim())
+      .filter(Boolean);
+
+    return [...new Set(errors)];
+  };
+
   const handleFileChange = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    setBulkError(null);
+    setBulkErrors([]);
     setBulkRows([]);
 
     try {
@@ -164,11 +177,11 @@ export default function Index({ items, packages, schemaReady = true }) {
       const workbook = XLSX.read(buffer, { type: 'array' });
       const worksheet = workbook.Sheets[workbook.SheetNames[0]];
       const json = XLSX.utils.sheet_to_json(worksheet, { defval: '' });
-      if (!json.length) return setBulkError('File is empty.');
+      if (!json.length) return setBulkErrorMessage('File is empty.');
 
       const headers = Object.keys(json[0] ?? {}).map((key) => String(key).trim().toLowerCase());
       const missingColumns = templateColumns.filter((column) => !headers.includes(column));
-      if (missingColumns.length) return setBulkError(`Missing required column: ${missingColumns[0]}`);
+      if (missingColumns.length) return setBulkErrorMessage(`Missing required column: ${missingColumns[0]}`);
 
       const rows = json.map((raw) => {
         const row = {};
@@ -181,27 +194,27 @@ export default function Index({ items, packages, schemaReady = true }) {
         };
       }).filter((row) => row.package_code || row.package_name || row.sku || row.quantity);
 
-      if (!rows.length) return setBulkError('No valid rows found. Use the downloaded template columns.');
+      if (!rows.length) return setBulkErrorMessage('No valid rows found. Use the downloaded template columns.');
 
       const invalidRow = rows.findIndex((row) => !row.package_code || !row.package_name || !row.sku || !row.quantity);
-      if (invalidRow !== -1) return setBulkError(`Row ${invalidRow + 2} is incomplete. Required: package_code, package_name, sku, quantity.`);
+      if (invalidRow !== -1) return setBulkErrorMessage(`Row ${invalidRow + 2} is incomplete. Required: package_code, package_name, sku, quantity.`);
 
       setBulkRows(rows);
     } catch (error) {
-      setBulkError('Failed to read file. Please use .xlsx, .xls, or .csv format.');
+      setBulkErrorMessage('Failed to read file. Please use .xlsx, .xls, or .csv format.');
     }
   };
 
   const cancelBulk = () => {
     setBulkRows([]);
-    setBulkError(null);
+    setBulkErrors([]);
     if (fileRef.current) fileRef.current.value = '';
   };
 
   const submitBulk = async () => {
     if (!bulkRows.length) return;
     setBulkUploading(true);
-    setBulkError(null);
+    setBulkErrors([]);
     setNotification(null);
     try {
       const response = await fetch('/packages/bulk', {
@@ -215,13 +228,13 @@ export default function Index({ items, packages, schemaReady = true }) {
         setNotification({ type: 'success', message: payload.message ?? 'Bulk package upload completed.' });
         cancelBulk();
       } else if (response.status === 422) {
-        const firstError = Object.values(payload.errors ?? {}).flat()[0];
-        setBulkError(firstError ?? 'Bulk upload validation failed.');
+        const nextErrors = extractBulkErrors(payload);
+        setBulkErrors(nextErrors.length ? nextErrors : ['Bulk upload validation failed.']);
       } else {
-        setBulkError(payload.message ?? 'Bulk upload failed.');
+        setBulkErrorMessage(payload.message ?? 'Bulk upload failed.');
       }
     } catch (error) {
-      setBulkError('Network error. Please try again.');
+      setBulkErrorMessage('Network error. Please try again.');
     } finally {
       setBulkUploading(false);
     }
@@ -322,9 +335,19 @@ export default function Index({ items, packages, schemaReady = true }) {
             <a href="/packages/bulk/template" className="text-xs font-bold text-arabina-accent uppercase tracking-widest">Download Template</a>
           </div>
           <div className="space-y-4">
-            <p className="text-xs text-slate-500">Upload fail <strong>.xlsx</strong>, <strong>.xls</strong>, atau <strong>.csv</strong> dengan kolum <code className="bg-slate-100 px-1.5 py-0.5 rounded text-slate-700">package_code</code>, <code className="bg-slate-100 px-1.5 py-0.5 rounded text-slate-700">package_name</code>, <code className="bg-slate-100 px-1.5 py-0.5 rounded text-slate-700">sku</code>, <code className="bg-slate-100 px-1.5 py-0.5 rounded text-slate-700">quantity</code>.</p>
+            <p className="text-xs text-slate-500">Upload a <strong>.xlsx</strong>, <strong>.xls</strong>, or <strong>.csv</strong> file with the columns <code className="bg-slate-100 px-1.5 py-0.5 rounded text-slate-700">package_code</code>, <code className="bg-slate-100 px-1.5 py-0.5 rounded text-slate-700">package_name</code>, <code className="bg-slate-100 px-1.5 py-0.5 rounded text-slate-700">sku</code>, and <code className="bg-slate-100 px-1.5 py-0.5 rounded text-slate-700">quantity</code>. BOM assignment is handled automatically based on the SKU category in the item master.</p>
             <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" onChange={handleFileChange} className="block w-full text-sm text-slate-500 file:mr-4 file:py-2.5 file:px-5 file:rounded-2xl file:border-0 file:text-sm file:font-bold file:bg-slate-100 file:text-slate-700 hover:file:bg-slate-200 cursor-pointer" />
-            {bulkError && <p className="text-xs text-red-500">{bulkError}</p>}
+            {bulkErrors.length > 0 && (
+              <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-xs text-red-700">
+                {bulkErrors.length === 1 ? (
+                  <p>{bulkErrors[0]}</p>
+                ) : (
+                  <ul className="list-disc pl-4 space-y-1">
+                    {bulkErrors.map((message) => <li key={message}>{message}</li>)}
+                  </ul>
+                )}
+              </div>
+            )}
             {bulkRows.length > 0 && (
               <div className="flex gap-3">
                 <button type="button" onClick={submitBulk} disabled={bulkUploading || !schemaReady} className="flex-1 bg-[#1b580e] text-white py-3.5 rounded-2xl text-sm font-bold hover:bg-emerald-950 disabled:opacity-50">{bulkUploading ? 'Uploading...' : `Upload ${bulkRows.length} Row(s)`}</button>
