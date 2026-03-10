@@ -25,7 +25,10 @@ class ItemController extends Controller
     public function index(): Response
     {
         return Inertia::render('Inventory/Index', [
-            'items' => Item::latest()->get(['id', 'sku', 'name', 'length_m', 'unit', 'bom_scope']),
+            'items' => Item::query()
+                ->select(['id', 'sku', 'name', 'length_m', 'unit', 'bom_scope'])
+                ->latest()
+                ->get(),
         ]);
     }
 

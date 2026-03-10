@@ -147,15 +147,9 @@ export default function Index({ items, packages, schemaReady = true }) {
 
   const loadXlsx = useCallback(async () => {
     if (xlsxRef.current) return xlsxRef.current;
-    const script = document.createElement('script');
-    script.src = 'https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js';
-    document.head.appendChild(script);
-    await new Promise((resolve, reject) => {
-      script.onload = resolve;
-      script.onerror = reject;
-    });
-    xlsxRef.current = window.XLSX;
-    return window.XLSX;
+    const xlsxModule = await import('xlsx');
+    xlsxRef.current = xlsxModule;
+    return xlsxModule;
   }, []);
 
   const handleFileChange = async (e) => {

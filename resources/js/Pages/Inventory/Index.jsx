@@ -76,12 +76,19 @@ export default function Index({ items }) {
     { key: 'hardware_site', label: 'BOM Hardware Site' },
   ];
 
-  const [inventory, setInventory] = useState(items ?? []);
+  const normalizedItems = useMemo(() => {
+    if (Array.isArray(items)) {
+      return items;
+    }
 
-  useEffect(() => {
-    setInventory(items ?? []);
+    if (Array.isArray(items?.data)) {
+      return items.data;
+    }
+
+    return [];
   }, [items]);
 
+  const [inventory, setInventory] = useState(normalizedItems);
   const [processing, setProcessing] = useState(false);
   const [errors, setErrors] = useState({});
   const [notification, setNotification] = useState(null);
@@ -90,12 +97,14 @@ export default function Index({ items }) {
   const [editErrors, setEditErrors] = useState({});
   const [deleteConfirmId, setDeleteConfirmId] = useState(null);
   const [search, setSearch] = useState('');
+  const [activeBom, setActiveBom] = useState('all');
   const [sortConfig, setSortConfig] = useState({ key: null, direction: 'asc' });
   const [bulkRows, setBulkRows] = useState([]);
   const [bulkError, setBulkError] = useState(null);
   const [bulkUploading, setBulkUploading] = useState(false);
   const fileRef = useRef(null);
   const xlsxRef = useRef(null);
+  const totalItems = inventory.length;
 
   const [data, setData] = useState({
     sku: '',
@@ -105,10 +114,24 @@ export default function Index({ items }) {
     bom_scope: 'hardware'
   });
 
+  const formatLength = (value) => {
+    if (value === null || value === undefined || value === '') {
+      return '—';
+    }
+
+    const numericValue = Number(value);
+
+    return Number.isNaN(numericValue) ? '—' : numericValue.toFixed(2);
+  };
+
   const csrfToken = useMemo(
     () => document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') ?? '',
     [],
   );
+
+  useEffect(() => {
+    setInventory(normalizedItems);
+  }, [normalizedItems]);
 
   const requestSort = (key) => {
     let direction = 'asc';
@@ -123,27 +146,23 @@ export default function Index({ items }) {
   const filtered = useMemo(() => {
     let result = [...inventory];
 
-    // Search filter
     if (search.trim()) {
       const q = search.toLowerCase();
-      result = result.filter(i => 
-        i.sku?.toLowerCase().includes(q) || 
-        i.name?.toLowerCase().includes(q)
+      result = result.filter((item) =>
+        item.sku?.toLowerCase().includes(q) ||
+        item.name?.toLowerCase().includes(q)
       );
     }
 
-    // Sort logic
     if (sortConfig.key && sortConfig.direction) {
       result.sort((a, b) => {
         let valA = a[sortConfig.key];
         let valB = b[sortConfig.key];
 
         if (sortConfig.key === 'length_m') {
-          // Numeric sort for length
           valA = valA === null || valA === '' ? 0 : Number(valA);
           valB = valB === null || valB === '' ? 0 : Number(valB);
         } else {
-          // String sort for others (name, sku, unit)
           valA = (valA || '').toString().toLowerCase();
           valB = (valB || '').toString().toLowerCase();
         }
@@ -161,8 +180,8 @@ export default function Index({ items }) {
     return bomSections.map((section) => ({
       ...section,
       rows: filtered.filter((item) => String(item.bom_scope ?? 'hardware') === section.key),
-    }));
-  }, [filtered]);
+    })).filter((section) => activeBom === 'all' || section.key === activeBom);
+  }, [activeBom, filtered]);
 
   const SortIndicator = ({ columnKey }) => {
     const isSorted = sortConfig.key === columnKey;
@@ -219,6 +238,8 @@ export default function Index({ items }) {
         showNotification('success', 'Item registered successfully.');
       } else if (response.status === 422) {
         setErrors(payload.errors);
+      } else {
+        showNotification('error', payload.message ?? 'Failed to register item.');
       }
     } catch (error) {
       showNotification('error', 'Something went wrong.');
@@ -313,12 +334,9 @@ export default function Index({ items }) {
   // Lazy-load SheetJS
   const loadXlsx = useCallback(async () => {
     if (xlsxRef.current) return xlsxRef.current;
-    const script = document.createElement('script');
-    script.src = 'https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js';
-    document.head.appendChild(script);
-    await new Promise((resolve, reject) => { script.onload = resolve; script.onerror = reject; });
-    xlsxRef.current = window.XLSX;
-    return window.XLSX;
+    const xlsxModule = await import('xlsx');
+    xlsxRef.current = xlsxModule;
+    return xlsxModule;
   }, []);
 
   const handleFileChange = async (e) => {
@@ -389,13 +407,12 @@ export default function Index({ items }) {
 
     router.post('/items/bulk', { items: bulkRows }, {
       onSuccess: (page) => {
-        // Since Inertia reloads the page with fresh data, 
-        // we just need to update local state if needed or rely on fresh props.
-        // But for Index.jsx, inventory state is local, so let's update it from props.
-        if (page.props.items) {
-          setInventory(page.props.items);
+        const nextItems = page.props.items;
+        if (Array.isArray(nextItems)) {
+          setInventory(nextItems);
+        } else if (Array.isArray(nextItems?.data)) {
+          setInventory(nextItems.data);
         }
-        
         showNotification('success', 'Bulk items processed successfully.');
         setBulkRows([]);
         if (fileRef.current) fileRef.current.value = '';
@@ -548,7 +565,7 @@ export default function Index({ items }) {
                             <td className="px-4 py-2 text-slate-400">{i + 1}</td>
                             <td className="px-4 py-2 font-mono font-semibold text-slate-700">{row.sku}</td>
                             <td className="px-4 py-2 text-slate-600">{row.item_name}</td>
-                            <td className="px-4 py-2 text-slate-500">{row.length_m ?? '—'}</td>
+                            <td className="px-4 py-2 text-slate-500">{formatLength(row.length_m)}</td>
                             <td className="px-4 py-2">
                               <span className={`inline-block text-xs font-bold px-2 py-0.5 rounded-full ${
                                 isValidUnit ? 'bg-slate-100 text-slate-600' : 'bg-red-100 text-red-600 ring-1 ring-red-200'
@@ -598,11 +615,15 @@ export default function Index({ items }) {
         <div className="space-y-4">
           <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between px-2">
             <div>
-              <h3 className="text-sm font-bold text-slate-800">All Registered SKUs ({filtered.length})</h3>
-              <p className="text-xs text-slate-500">Manage your product catalog and SKUs.</p>
+              <h3 className="text-sm font-bold text-slate-800">All Registered SKUs ({totalItems})</h3>
+              <p className="text-xs text-slate-500">
+                {search.trim()
+                  ? `Showing ${filtered.length} matched SKU${filtered.length === 1 ? '' : 's'}.`
+                  : `Showing ${totalItems} SKU${totalItems === 1 ? '' : 's'}.`}
+              </p>
             </div>
 
-            <div className="flex flex-col sm:flex-row gap-2 sm:items-center">
+            <div className="flex flex-col sm:flex-row gap-2 sm:items-center sm:flex-wrap sm:justify-end">
               <input
                 type="text"
                 value={search}
@@ -610,12 +631,41 @@ export default function Index({ items }) {
                 placeholder="Search SKU or name..."
                 className="w-full sm:w-80 lg:w-96 rounded-xl border border-slate-200 px-3 py-2 text-sm bg-white focus:ring-2 focus:ring-arabina-accent focus:outline-none"
               />
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => setActiveBom('all')}
+                  className={`px-3 py-2 rounded-xl text-xs font-bold uppercase tracking-wider transition-colors ${
+                    activeBom === 'all'
+                      ? 'bg-[#1b580e] text-white'
+                      : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-100'
+                  }`}
+                >
+                  All BOM
+                </button>
+                {bomSections.map((section) => (
+                  <button
+                    key={section.key}
+                    type="button"
+                    onClick={() => setActiveBom(section.key)}
+                    className={`px-3 py-2 rounded-xl text-xs font-bold uppercase tracking-wider transition-colors ${
+                      activeBom === section.key
+                        ? 'bg-[#1b580e] text-white'
+                        : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-100'
+                    }`}
+                  >
+                    {section.label.replace('BOM ', '')}
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
 
           <div className="space-y-5">
-            {inventory.length === 0 ? (
-              <p className="text-sm text-slate-400 text-center py-12 font-medium">No items registered yet.</p>
+            {filtered.length === 0 ? (
+              <p className="text-sm text-slate-400 text-center py-12 font-medium">
+                {search.trim() ? 'No items match the current search.' : 'No items registered yet.'}
+              </p>
             ) : (
               filteredByBom.map((section) => (
                 <div key={section.key} className="bg-white rounded-[2rem] shadow-sm border border-slate-100 overflow-hidden">
@@ -709,7 +759,7 @@ export default function Index({ items }) {
                             <td className="px-4 py-3 text-slate-400 font-medium text-xs">{idx + 1}</td>
                             <td className="px-4 py-3 text-xs font-bold text-slate-700 font-mono">{item.sku}</td>
                             <td className="px-4 py-3 text-sm text-slate-800 font-medium">{item.name}</td>
-                            <td className="px-4 py-3 text-xs text-slate-600 font-semibold">{item.length_m ? Number(item.length_m).toFixed(2) : '—'}</td>
+                            <td className="px-4 py-3 text-xs text-slate-600 font-semibold">{formatLength(item.length_m)}</td>
                             <td className="px-4 py-3">
                               <span className="inline-block bg-slate-100 text-slate-600 text-[10px] font-bold uppercase px-2 py-0.5 rounded-full">{item.unit}</span>
                             </td>
