@@ -87,7 +87,7 @@ export default function AuthenticatedLayout({ children, title, showWelcome = fal
         <div className="p-6 flex items-center justify-between border-b border-white/10">
           <div className="flex items-center space-x-3">
             <img
-              src="/images/logo.png"
+              src="/images/arabina%20logo%20png.png"
               alt="Logo"
               className="h-10 w-auto object-contain"
             />

@@ -24,7 +24,7 @@ export default function Login() {
           <div className="text-center mb-0">
             <div className="inline-flex items-center justify-center mb-0 transition-transform hover:scale-105 duration-500">
               <img
-                src="/images/logo.png"
+                src="/images/arabina%20logo%20png.png"
                 alt="Arabina Eco Tiny Homes"
                 className="h-28 w-auto object-contain"
               />
