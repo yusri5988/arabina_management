@@ -11,6 +11,7 @@ use App\Models\Package;
 use App\Models\SalesOrder;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Validation\Rule;
@@ -326,7 +327,7 @@ class ItemController extends Controller
             'sku' => 'required|string|unique:items,sku',
             'name' => 'required|string|max:255',
             'length_m' => 'nullable|numeric',
-            'unit' => 'required|in:pcs,set,roll',
+            'unit' => 'required|in:pcs,unit,set,roll,bag,btg,pek,tong,helai,can,pellet,cut,scope',
             'bom_scope' => 'required|in:cabin,hardware,hardware_site',
         ]);
 
@@ -351,14 +352,20 @@ class ItemController extends Controller
         ], 201);
     }
 
-    public function bulkStore(Request $request): JsonResponse
+    public function bulkStore(Request $request)
     {
+        $items = $request->input('items', []);
+        
+        if (isset($items[182])) {
+            Log::info('Bulk Upload Item at index 182:', $items[182]);
+        }
+
         $validated = $request->validate([
             'items' => 'required|array|min:1|max:500',
             'items.*.sku' => 'required|string|max:100',
             'items.*.item_name' => 'required|string|max:255',
             'items.*.length_m' => 'nullable|numeric',
-            'items.*.unit' => 'required|in:pcs,set,roll',
+            'items.*.unit' => 'required|in:pcs,unit,set,roll,bag,btg,pek,tong,helai,can,pellet,cut,scope',
             'items.*.bom_scope' => 'required|in:cabin,hardware,hardware_site',
         ]);
 
@@ -398,11 +405,7 @@ class ItemController extends Controller
             'skipped_skus' => $skipped,
         ]);
 
-        return response()->json([
-            'message' => count($created) . ' item(s) created. ' . count($skipped) . ' skipped (duplicate SKU).',
-            'data' => $created,
-            'skipped' => $skipped,
-        ], 201);
+        return redirect()->back()->with('success', count($created) . ' item(s) created.');
     }
 
     public function update(Request $request, Item $item): JsonResponse
@@ -415,7 +418,7 @@ class ItemController extends Controller
             'sku' => ['required', 'string', Rule::unique('items', 'sku')->ignore($item->id)],
             'name' => 'required|string|max:255',
             'length_m' => ['nullable', 'numeric'],
-            'unit' => 'required|in:pcs,set,roll',
+            'unit' => 'required|in:pcs,unit,set,roll,bag,btg,pek,tong,helai,can,pellet,cut,scope',
             'bom_scope' => 'required|in:cabin,hardware,hardware_site',
         ]);
 

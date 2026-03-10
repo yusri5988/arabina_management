@@ -1,4 +1,4 @@
-import { Head } from '@inertiajs/react';
+import { Head, router } from '@inertiajs/react';
 import { useMemo, useState, useRef, useCallback, useEffect } from 'react';
 import AuthenticatedLayout from '../../Layouts/AuthenticatedLayout';
 
@@ -77,6 +77,11 @@ export default function Index({ items }) {
   ];
 
   const [inventory, setInventory] = useState(items ?? []);
+
+  useEffect(() => {
+    setInventory(items ?? []);
+  }, [items]);
+
   const [processing, setProcessing] = useState(false);
   const [errors, setErrors] = useState({});
   const [notification, setNotification] = useState(null);
@@ -332,15 +337,42 @@ export default function Index({ items }) {
       if (!json.length) { setBulkError('File is empty.'); return; }
 
       // Normalize column headers (case-insensitive)
+      const unitMap = {
+        'pcs': 'pcs', 'pc': 'pcs', 'nos': 'pcs',
+        'unit': 'unit', 'units': 'unit',
+        'set': 'set', 'sets': 'set',
+        'roll': 'roll', 'rolls': 'roll',
+        'bag': 'bag', 'bags': 'bag', 'beg': 'bag',
+        'btg': 'btg', 'btgs': 'btg', 'batang': 'btg',
+        'pek': 'pek', 'peks': 'pek', 'pack': 'pek', 'packs': 'pek',
+        'tong': 'tong', 'tongs': 'tong',
+        'helai': 'helai', 'helais': 'helai',
+        'can': 'can', 'cans': 'can', 'tin': 'can',
+        'pellet': 'pellet', 'pellets': 'pellet',
+        'cut': 'cut', 'cuts': 'cut',
+        'scope': 'scope', 'scopes': 'scope'
+      };
+
       const rows = json.map(r => {
         const row = {};
         Object.keys(r).forEach(k => { row[k.toLowerCase().trim()] = r[k]; });
+        
+        const rawUnit = String(row.unit ?? 'pcs').toLowerCase().replace(/[^a-z]/g, '').trim();
+        const normalizedUnit = unitMap[rawUnit] || rawUnit;
+
+        const rawBom = String(row.bom_scope ?? 'hardware').toLowerCase().trim();
+        // Allow common synonyms for BOM scope
+        let normalizedBom = rawBom;
+        if (rawBom.includes('cabin')) normalizedBom = 'cabin';
+        else if (rawBom.includes('hardware') && rawBom.includes('site')) normalizedBom = 'hardware_site';
+        else if (rawBom.includes('hardware')) normalizedBom = 'hardware';
+
         return {
           sku: String(row.sku ?? '').trim(),
           item_name: String(row.item_name ?? '').trim(),
           length_m: row.length_m !== '' && row.length_m != null ? Number(row.length_m) : null,
-          unit: String(row.unit ?? 'pcs').toLowerCase().trim(),
-          bom_scope: String(row.bom_scope ?? 'hardware').toLowerCase().trim(),
+          unit: normalizedUnit,
+          bom_scope: normalizedBom,
         };
       }).filter(r => r.sku && r.item_name);
 
@@ -354,31 +386,27 @@ export default function Index({ items }) {
   const submitBulk = async () => {
     setBulkUploading(true);
     setBulkError(null);
-    try {
-      const response = await fetch('/items/bulk', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Accept: 'application/json', 'X-CSRF-TOKEN': csrfToken, 'X-Requested-With': 'XMLHttpRequest' },
-        body: JSON.stringify({ items: bulkRows }),
-      });
-      const payload = await parseResponsePayload(response);
-      if (response.status === 201) {
-        if (payload.data?.length) {
-          setInventory(prev => [...payload.data, ...prev]);
+
+    router.post('/items/bulk', { items: bulkRows }, {
+      onSuccess: (page) => {
+        // Since Inertia reloads the page with fresh data, 
+        // we just need to update local state if needed or rely on fresh props.
+        // But for Index.jsx, inventory state is local, so let's update it from props.
+        if (page.props.items) {
+          setInventory(page.props.items);
         }
-        const msg = payload.message + (payload.skipped?.length ? ' Skipped: ' + payload.skipped.join(', ') : '');
-        showNotification('success', msg);
+        
+        showNotification('success', 'Bulk items processed successfully.');
         setBulkRows([]);
         if (fileRef.current) fileRef.current.value = '';
-      } else if (response.status === 422) {
-        setBulkError(payload.message || 'Validation error.');
-      } else {
-        setBulkError(payload.message || 'Upload failed.');
+      },
+      onError: (errs) => {
+        setBulkError(Object.values(errs).join(', ') || 'Validation error.');
+      },
+      onFinish: () => {
+        setBulkUploading(false);
       }
-    } catch (err) {
-      setBulkError('Upload failed: ' + err.message);
-    } finally {
-      setBulkUploading(false);
-    }
+    });
   };
 
   const cancelBulk = () => {
@@ -446,8 +474,18 @@ export default function Index({ items }) {
                   onChange={val => setData(prev => ({ ...prev, unit: val }))}
                   options={[
                     { value: 'pcs', label: 'pcs' },
+                    { value: 'unit', label: 'unit' },
                     { value: 'set', label: 'set' },
-                    { value: 'roll', label: 'roll' }
+                    { value: 'roll', label: 'roll' },
+                    { value: 'bag', label: 'bag' },
+                    { value: 'btg', label: 'btg' },
+                    { value: 'pek', label: 'pek' },
+                    { value: 'tong', label: 'tong' },
+                    { value: 'helai', label: 'helai' },
+                    { value: 'can', label: 'can' },
+                    { value: 'pellet', label: 'pellet' },
+                    { value: 'cut', label: 'cut' },
+                    { value: 'scope', label: 'scope' }
                   ]}
                 />
               </div>
@@ -501,18 +539,33 @@ export default function Index({ items }) {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-50">
-                      {bulkRows.slice(0, 20).map((row, i) => (
-                        <tr key={i} className="hover:bg-slate-50/60">
-                          <td className="px-4 py-2 text-slate-400">{i + 1}</td>
-                          <td className="px-4 py-2 font-mono font-semibold text-slate-700">{row.sku}</td>
-                          <td className="px-4 py-2 text-slate-600">{row.item_name}</td>
-                          <td className="px-4 py-2 text-slate-500">{row.length_m ?? '—'}</td>
-                          <td className="px-4 py-2">
-                            <span className="inline-block bg-slate-100 text-slate-600 text-xs font-semibold px-2 py-0.5 rounded-full">{row.unit}</span>
-                          </td>
-                          <td className="px-4 py-2 text-slate-600 text-xs uppercase">{row.bom_scope}</td>
-                        </tr>
-                      ))}
+                      {bulkRows.slice(0, 20).map((row, i) => {
+                        const isValidUnit = ['pcs', 'unit', 'set', 'roll', 'bag', 'btg', 'pek', 'tong', 'helai', 'can', 'pellet', 'cut', 'scope'].includes(row.unit);
+                        const isValidBom = ['cabin', 'hardware', 'hardware_site'].includes(row.bom_scope);
+
+                        return (
+                          <tr key={i} className="hover:bg-slate-50/60">
+                            <td className="px-4 py-2 text-slate-400">{i + 1}</td>
+                            <td className="px-4 py-2 font-mono font-semibold text-slate-700">{row.sku}</td>
+                            <td className="px-4 py-2 text-slate-600">{row.item_name}</td>
+                            <td className="px-4 py-2 text-slate-500">{row.length_m ?? '—'}</td>
+                            <td className="px-4 py-2">
+                              <span className={`inline-block text-xs font-bold px-2 py-0.5 rounded-full ${
+                                isValidUnit ? 'bg-slate-100 text-slate-600' : 'bg-red-100 text-red-600 ring-1 ring-red-200'
+                              }`}>
+                                {row.unit}
+                                {!isValidUnit && <span className="ml-1 text-[8px] font-black underline">!INVALID</span>}
+                              </span>
+                            </td>
+                            <td className={`px-4 py-2 text-xs uppercase font-bold ${
+                              isValidBom ? 'text-slate-600' : 'text-red-600'
+                            }`}>
+                              {row.bom_scope}
+                              {!isValidBom && <div className="text-[8px] font-black underline">INVALID SCOPE</div>}
+                            </td>
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </table>
                   {bulkRows.length > 20 && (
@@ -617,8 +670,18 @@ export default function Index({ items }) {
                                 onChange={val => setEditData(prev => ({ ...prev, unit: val }))} 
                                 options={[
                                   { value: 'pcs', label: 'pcs' },
+                                  { value: 'unit', label: 'unit' },
                                   { value: 'set', label: 'set' },
-                                  { value: 'roll', label: 'roll' }
+                                  { value: 'roll', label: 'roll' },
+                                  { value: 'bag', label: 'bag' },
+                                  { value: 'btg', label: 'btg' },
+                                  { value: 'pek', label: 'pek' },
+                                  { value: 'tong', label: 'tong' },
+                                  { value: 'helai', label: 'helai' },
+                                  { value: 'can', label: 'can' },
+                                  { value: 'pellet', label: 'pellet' },
+                                  { value: 'cut', label: 'cut' },
+                                  { value: 'scope', label: 'scope' }
                                 ]}
                                 className="w-full"
                               />
