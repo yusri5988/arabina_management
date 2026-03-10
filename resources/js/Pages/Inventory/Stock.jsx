@@ -2,6 +2,7 @@ import { Head, Link, router } from '@inertiajs/react';
 import QtyInput from '../../components/QtyInput.jsx';
 import { useEffect, useMemo, useState } from 'react';
 import AuthenticatedLayout from '../../Layouts/AuthenticatedLayout';
+import { apiFetchJson } from '../../lib/http.js';
 
 const initialAlacarteLine = { item_id: '', quantity: '' };
 const BOM_GROUPS = [
@@ -74,11 +75,6 @@ export default function Stock({ items, packages, salesOrders = [], type = 'in', 
   });
   const noPackages = (packages?.length ?? 0) === 0;
   const noItems = (items?.length ?? 0) === 0;
-
-  const csrfToken = useMemo(
-    () => document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') ?? '',
-    [],
-  );
 
   const itemStockById = useMemo(() => {
     const map = new Map();
@@ -291,31 +287,10 @@ export default function Stock({ items, packages, salesOrders = [], type = 'in', 
         };
 
     try {
-      let currentCsrfToken = csrfToken;
-      let attempt = 0;
-      let response;
-      while (attempt < 2) {
-        response = await fetch(endpoint, {
-          method: 'POST',
-          credentials: 'include',
-          headers: {
-            'Content-Type': 'application/json',
-            Accept: 'application/json',
-            'X-Requested-With': 'XMLHttpRequest',
-            'X-CSRF-TOKEN': currentCsrfToken,
-          },
-          body: JSON.stringify(payload),
-        });
-        if (response.status === 419 && attempt === 0) {
-          await fetch('/sanctum/csrf-cookie', { credentials: 'include' });
-          currentCsrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') ?? '';
-          attempt++;
-          continue;
-        }
-        break;
-      }
-
-      const result = await response.json().catch(() => ({}));
+      const { response, payload: result } = await apiFetchJson(endpoint, {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      });
 
       if (response.ok) {
         setNotification({ type: 'success', message: result.message ?? 'Transaction saved.' });
