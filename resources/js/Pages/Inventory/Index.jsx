@@ -111,7 +111,8 @@ export default function Index({ items }) {
     name: '',
     length_m: '',
     unit: 'pcs',
-    bom_scope: 'hardware'
+    bom_scope: 'hardware',
+    supplier: ''
   });
 
   const formatLength = (value) => {
@@ -234,7 +235,7 @@ export default function Index({ items }) {
 
       if (response.status === 201) {
         setInventory(prev => [payload.data, ...prev]);
-        setData({ sku: '', name: '', length_m: '', unit: 'pcs', bom_scope: 'hardware' });
+        setData({ sku: '', name: '', length_m: '', unit: 'pcs', bom_scope: 'hardware', supplier: '' });
         showNotification('success', 'Item registered successfully.');
       } else if (response.status === 422) {
         setErrors(payload.errors);
@@ -256,6 +257,7 @@ export default function Index({ items }) {
       length_m: item.length_m ?? '',
       unit: item.unit,
       bom_scope: item.bom_scope ?? 'hardware',
+      supplier: item.supplier ?? '',
     });
     setEditErrors({});
   };
@@ -515,6 +517,17 @@ export default function Index({ items }) {
                 />
                 {errors.bom_scope && <p className="text-xs text-red-500 mt-1">{errors.bom_scope[0]}</p>}
               </div>
+              <div>
+                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5 ml-1">Supplier Name</label>
+                <input
+                  type="text"
+                  value={data.supplier}
+                  onChange={e => setData(prev => ({ ...prev, supplier: e.target.value }))}
+                  className="w-full rounded-2xl border border-slate-200 px-4 py-2.5 text-sm focus:ring-2 focus:ring-arabina-accent focus:outline-none bg-slate-50"
+                  placeholder="e.g. Supplier A"
+                />
+                {errors.supplier && <p className="text-xs text-red-500 mt-1">{errors.supplier[0]}</p>}
+              </div>
             </div>
 
             <button
@@ -693,6 +706,9 @@ export default function Index({ items }) {
                           <th className="px-4 py-3 text-left text-[10px] font-bold text-slate-500 uppercase tracking-wider cursor-pointer hover:bg-slate-100 group transition-colors" onClick={() => requestSort('bom_scope')}>
                             <div className="flex items-center gap-1">BOM <SortIndicator columnKey="bom_scope" /></div>
                           </th>
+                          <th className="px-4 py-3 text-left text-[10px] font-bold text-slate-500 uppercase tracking-wider cursor-pointer hover:bg-slate-100 group transition-colors" onClick={() => requestSort('supplier')}>
+                            <div className="flex items-center gap-1">Supplier <SortIndicator columnKey="supplier" /></div>
+                          </th>
                           <th className="px-4 py-3 text-right text-[10px] font-bold text-slate-500 uppercase tracking-wider">Actions</th>
                         </tr>
                       </thead>
@@ -745,6 +761,10 @@ export default function Index({ items }) {
                               />
                               {editErrors.bom_scope && <p className="text-xs text-red-500 mt-0.5 font-medium">{editErrors.bom_scope[0]}</p>}
                             </td>
+                            <td className="px-4 py-2">
+                              <input type="text" value={editData.supplier} onChange={e => setEditData(prev => ({ ...prev, supplier: e.target.value }))} className={inputClass} placeholder="Supplier" />
+                              {editErrors.supplier && <p className="text-xs text-red-500 mt-0.5 font-medium">{editErrors.supplier[0]}</p>}
+                            </td>
                             <td className="px-4 py-2 text-right whitespace-nowrap">
                               <button type="button" onClick={() => saveEdit(item.id)} disabled={processing} className="inline-flex items-center px-4 py-2 rounded-xl bg-emerald-600 text-white text-[10px] font-black uppercase tracking-wider hover:bg-emerald-700 disabled:opacity-50 transition-all mr-1.5 shadow-sm shadow-emerald-100">
                                 Save
@@ -765,6 +785,9 @@ export default function Index({ items }) {
                             </td>
                             <td className="px-4 py-3 text-xs">
                               <span className="inline-block bg-slate-100 text-slate-600 text-[10px] font-bold uppercase px-2 py-0.5 rounded-full">{item.bom_scope}</span>
+                            </td>
+                            <td className="px-4 py-3 text-xs">
+                              <span className="text-slate-600 font-medium">{item.supplier || '—'}</span>
                             </td>
                             <td className="px-4 py-3 text-right whitespace-nowrap">
                               <button type="button" onClick={() => startEdit(item)} className="inline-flex items-center px-3 py-1.5 rounded-xl bg-amber-500 text-white text-[10px] font-bold uppercase tracking-wider hover:bg-amber-600 transition-all mr-1.5 shadow-sm">

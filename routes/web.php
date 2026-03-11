@@ -10,8 +10,16 @@ use App\Http\Controllers\SalesOrderController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\CrnController;
 use App\Http\Controllers\LogsController;
+use App\Http\Controllers\MaterialReceivingNoteController;
+use App\Http\Controllers\SiteReceivingNoteController;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
+
+$procurementScopes = [
+    'cabin' => 'cabin',
+    'hardware' => 'hardware',
+    'hardware_site' => 'hardware-site',
+];
 
 Route::get('/', function () {
     return auth()->check()
@@ -24,7 +32,7 @@ Route::middleware('guest')->group(function () {
     Route::post('/login', [AuthController::class, 'login'])->middleware('throttle:5,1')->name('login.store');
 });
 
-Route::middleware('auth')->group(function () {
+Route::middleware('auth')->group(function () use ($procurementScopes) {
     Route::get('/csrf-token', function () {
         return response()->json([
             'token' => csrf_token(),
@@ -34,7 +42,7 @@ Route::middleware('auth')->group(function () {
     Route::get('/dashboard', [DashboardController::class, 'index'])->name('dashboard');
     Route::get('/warehouse', function () {
         $user = request()->user();
-        $warehouseModules = ['crn', 'item_catalog', 'stock_list', 'delivery_order', 'rejected_list', 'create_package'];
+        $warehouseModules = ['crn', 'mrn', 'srn', 'item_catalog', 'stock_list', 'delivery_order', 'rejected_list', 'create_package'];
         $canAccessWarehouse = $user && collect($warehouseModules)->contains(fn ($module) => $user->hasModuleAccess($module));
 
         abort_unless($canAccessWarehouse, 403, 'Unauthorized module.');
@@ -87,15 +95,28 @@ Route::middleware('auth')->group(function () {
         Route::post('/orders', [SalesOrderController::class, 'store'])->name('sales.orders.store');
     });
 
-    Route::middleware('module:procurement')->group(function () {
-        Route::get('/procurement', [ProcurementController::class, 'index'])->name('procurement.index');
-        Route::post('/procurement/orders', [ProcurementController::class, 'store'])->name('procurement.orders.store');
-        Route::get('/procurement/orders/{order}/pdf', [ProcurementController::class, 'pdf'])->name('procurement.orders.pdf');
-        Route::post('/procurement/orders/{order}/lines', [ProcurementController::class, 'addLine'])->name('procurement.orders.lines.store');
-        Route::post('/procurement/orders/{order}/packages', [ProcurementController::class, 'addPackageLine'])->name('procurement.orders.packages.store');
-        Route::put('/procurement/orders/{order}/submit', [ProcurementController::class, 'submit'])->name('procurement.orders.submit');
-        Route::put('/procurement/orders/{order}/receive', [ProcurementController::class, 'receive'])->name('procurement.orders.receive');
-        Route::delete('/procurement/orders/{order}', [ProcurementController::class, 'destroy'])->name('procurement.orders.destroy');
+    Route::middleware('module:procurement')->group(function () use ($procurementScopes) {
+        Route::redirect('/procurement', '/procurement/cabin')->name('procurement.index');
+
+        Route::get('/procurement/suppliers', [ProcurementController::class, 'suppliersIndex'])->name('procurement.suppliers.index');
+        Route::post('/procurement/suppliers', [ProcurementController::class, 'suppliersStore'])->name('procurement.suppliers.store');
+        Route::put('/procurement/suppliers/{supplier}', [ProcurementController::class, 'suppliersUpdate'])->name('procurement.suppliers.update');
+        Route::delete('/procurement/suppliers/{supplier}', [ProcurementController::class, 'suppliersDestroy'])->name('procurement.suppliers.destroy');
+
+        foreach ($procurementScopes as $scope => $path) {
+            Route::prefix('/procurement/' . $path)
+                ->name('procurement.' . $scope . '.')
+                ->group(function () use ($scope) {
+                    Route::get('/', [ProcurementController::class, 'index'])->defaults('procurement_scope', $scope)->name('index');
+                    Route::post('/orders', [ProcurementController::class, 'store'])->defaults('procurement_scope', $scope)->name('orders.store');
+                    Route::get('/orders/{order}/pdf', [ProcurementController::class, 'pdf'])->defaults('procurement_scope', $scope)->name('orders.pdf');
+                    Route::post('/orders/{order}/lines', [ProcurementController::class, 'addLine'])->defaults('procurement_scope', $scope)->name('orders.lines.store');
+                    Route::post('/orders/{order}/packages', [ProcurementController::class, 'addPackageLine'])->defaults('procurement_scope', $scope)->name('orders.packages.store');
+                    Route::put('/orders/{order}/submit', [ProcurementController::class, 'submit'])->defaults('procurement_scope', $scope)->name('orders.submit');
+                    Route::put('/orders/{order}/receive', [ProcurementController::class, 'receive'])->defaults('procurement_scope', $scope)->name('orders.receive');
+                    Route::delete('/orders/{order}', [ProcurementController::class, 'destroy'])->defaults('procurement_scope', $scope)->name('orders.destroy');
+                });
+        }
     });
 
     Route::prefix('warehouse')->group(function () {
@@ -109,6 +130,20 @@ Route::middleware('auth')->group(function () {
             Route::post('/crn/procurement/{order}/receive', [CrnController::class, 'receiveProcurement'])->name('warehouse.crn.procurement.receive');
             Route::post('/crn/procurement/{order}/lines/{line}/safe', [CrnController::class, 'safeProcurementLine'])->name('warehouse.crn.procurement.lines.safe');
             Route::post('/crn/{crn}/transfer', [CrnController::class, 'transfer'])->name('warehouse.crn.transfer');
+        });
+        Route::middleware('module:mrn')->group(function () {
+            Route::get('/mrn', [MaterialReceivingNoteController::class, 'index'])->name('warehouse.mrn.index');
+            Route::get('/mrn/{mrn}/pdf', [MaterialReceivingNoteController::class, 'downloadPdf'])->name('warehouse.mrn.pdf');
+            Route::post('/mrn/{mrn}/eta', [MaterialReceivingNoteController::class, 'updateEta'])->name('warehouse.mrn.eta');
+            Route::post('/mrn/{mrn}/arrived', [MaterialReceivingNoteController::class, 'markAsArrived'])->name('warehouse.mrn.arrived');
+            Route::post('/mrn/procurement/{order}/receive', [MaterialReceivingNoteController::class, 'receiveProcurement'])->name('warehouse.mrn.procurement.receive');
+        });
+        Route::middleware('module:srn')->group(function () {
+            Route::get('/srn', [SiteReceivingNoteController::class, 'index'])->name('warehouse.srn.index');
+            Route::get('/srn/{srn}/pdf', [SiteReceivingNoteController::class, 'downloadPdf'])->name('warehouse.srn.pdf');
+            Route::post('/srn/{srn}/eta', [SiteReceivingNoteController::class, 'updateEta'])->name('warehouse.srn.eta');
+            Route::post('/srn/{srn}/arrived', [SiteReceivingNoteController::class, 'markAsArrived'])->name('warehouse.srn.arrived');
+            Route::post('/srn/procurement/{order}/receive', [SiteReceivingNoteController::class, 'receiveProcurement'])->name('warehouse.srn.procurement.receive');
         });
         Route::get('/rejections', [ProcurementController::class, 'rejectedList'])->middleware('module:rejected_list')->name('warehouse.rejections.index');
     });

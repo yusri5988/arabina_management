@@ -24,6 +24,7 @@ export default function AuthenticatedLayout({ children, title, showWelcome = fal
   const { auth, url } = usePage().props;
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [warehouseOpen, setWarehouseOpen] = useState(() => url?.startsWith('/warehouse') || url?.startsWith('/items/stocks') || url?.startsWith('/items/stock/out') || url?.startsWith('/packages'));
+  const [procurementOpen, setProcurementOpen] = useState(() => url?.startsWith('/procurement'));
   const userPermissions = auth?.user?.module_permissions ?? [];
 
   const hasModuleAccess = (moduleKey) => {
@@ -43,6 +44,8 @@ export default function AuthenticatedLayout({ children, title, showWelcome = fal
 
   const warehouseChildren = [
     { name: 'CRN (Container)', path: '/warehouse/crn', icon: DocumentTextIcon },
+    { name: 'MRN (Material)', path: '/warehouse/mrn', icon: DocumentTextIcon },
+    { name: 'SRN (Site)', path: '/warehouse/srn', icon: DocumentTextIcon },
     { name: 'Item Catalog', path: '/items', icon: ArchiveBoxIcon },
     { name: 'Stock List', path: '/items/stocks', icon: TableCellsIcon },
     { name: 'Delivery Order', path: '/items/stock/out', icon: ArrowUpTrayIcon },
@@ -51,6 +54,8 @@ export default function AuthenticatedLayout({ children, title, showWelcome = fal
   ].filter((child) => {
     const moduleMap = {
       '/warehouse/crn': 'crn',
+      '/warehouse/mrn': 'mrn',
+      '/warehouse/srn': 'srn',
       '/items': 'item_catalog',
       '/items/stocks': 'stock_list',
       '/items/stock/out': 'delivery_order',
@@ -61,11 +66,17 @@ export default function AuthenticatedLayout({ children, title, showWelcome = fal
     return hasModuleAccess(moduleMap[child.path]);
   });
   const showWarehouseMenu = warehouseChildren.length > 0;
+  const procurementChildren = [
+    { name: 'BOM Cabin', path: '/procurement/cabin', icon: TruckIcon },
+    { name: 'BOM Hardware', path: '/procurement/hardware', icon: TruckIcon },
+    { name: 'BOM Hardware Site', path: '/procurement/hardware-site', icon: TruckIcon },
+  ];
+  const showProcurementMenu = hasModuleAccess('procurement');
 
   const navLinks = [
     { name: 'Dashboard', path: '/dashboard', icon: HomeIcon, visible: true },
     { name: 'Order', path: '/orders', icon: ShoppingCartIcon, visible: hasModuleAccess('sales_orders') },
-    { name: 'Procurement', path: '/procurement', icon: TruckIcon, visible: hasModuleAccess('procurement') },
+    { name: 'Procurement', path: '/procurement/cabin', icon: TruckIcon, visible: showProcurementMenu },
     { name: 'Warehouse', path: '/warehouse', icon: BuildingStorefrontIcon, visible: showWarehouseMenu },
     { name: 'Users', path: '/admin/users', icon: UsersIcon, visible: hasModuleAccess('admin_users') },
     { name: 'Activity Logs', path: '/admin/logs', icon: ClockIcon, visible: hasModuleAccess('admin_logs') },
@@ -100,6 +111,49 @@ export default function AuthenticatedLayout({ children, title, showWelcome = fal
         <nav className="flex-1 px-4 py-6 space-y-1.5 overflow-y-auto">
           <p className="px-4 text-[10px] font-bold text-emerald-300/60 uppercase tracking-widest mb-4">Main Menu</p>
           {navLinks.map((link) => {
+            if (link.name === 'Procurement' && showProcurementMenu) {
+              const procurementActive = isActive('/procurement');
+
+              return (
+                <div key={link.name} className="space-y-1.5">
+                  <button
+                    type="button"
+                    onClick={() => setProcurementOpen((prev) => !prev)}
+                    className={`flex w-full items-center justify-between px-4 py-3.5 rounded-2xl transition-all ${
+                      procurementActive
+                        ? 'bg-emerald-800/80 text-white font-bold shadow-inner border border-emerald-700/50'
+                        : 'text-emerald-100/70 hover:bg-emerald-800/40 hover:text-white border border-transparent'
+                    }`}
+                  >
+                    <span className="flex items-center space-x-3">
+                      <link.icon className={`w-5 h-5 ${procurementActive ? 'text-emerald-300' : ''}`} strokeWidth={procurementActive ? 2.5 : 2} />
+                      <span>{link.name}</span>
+                    </span>
+                    <ChevronDownIcon className={`w-4 h-4 transition-transform ${procurementOpen ? 'rotate-180' : ''}`} strokeWidth={2.5} />
+                  </button>
+
+                  {procurementOpen && (
+                    <div className="ml-4 space-y-1 border-l border-emerald-800/60 pl-3">
+                      {procurementChildren.map((child) => (
+                        <Link
+                          key={child.name}
+                          href={child.path}
+                          className={`flex items-center space-x-3 px-3 py-2.5 rounded-xl text-sm transition-all ${
+                            isActive(child.path)
+                              ? 'bg-emerald-700/70 text-white font-semibold border border-emerald-600/60'
+                              : 'text-emerald-100/70 hover:bg-emerald-800/30 hover:text-white border border-transparent'
+                          }`}
+                        >
+                          <child.icon className={`w-4 h-4 ${isActive(child.path) ? 'text-emerald-200' : ''}`} strokeWidth={2} />
+                          <span>{child.name}</span>
+                        </Link>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            }
+
             if (link.name === 'Warehouse' && showWarehouseMenu) {
               const warehouseActive = isActive('/warehouse') || isActive('/items/stocks') || isActive('/items/stock/out') || isActive('/packages');
 

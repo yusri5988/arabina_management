@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Bom;
 use App\Models\ItemVariant;
 use App\Models\Item;
 use App\Models\Package;
@@ -11,10 +12,16 @@ use App\Models\TransactionLog;
 use App\Models\ContainerReceivingNote;
 use App\Models\CrnItem;
 use App\Models\RejectedItem;
+use App\Models\MaterialReceivingNote;
+use App\Models\MaterialReceivingNoteItem;
 use App\Models\SalesOrder;
+use App\Models\SiteReceivingNote;
+use App\Models\SiteReceivingNoteItem;
+use App\Services\ProcurementService;
+use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Barryvdh\DomPDF\Facade\Pdf;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
@@ -22,16 +29,44 @@ use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
 
+use App\Models\Supplier;
+
 class ProcurementController extends Controller
 {
+    private ProcurementService $service;
+
+    public function __construct(ProcurementService $service)
+    {
+        $this->service = $service;
+    }
+
+    private const PROCUREMENT_SCOPES = [
+        Bom::TYPE_CABIN => [
+            'label' => 'BOM Cabin',
+            'path' => 'cabin',
+        ],
+        Bom::TYPE_HARDWARE => [
+            'label' => 'BOM Hardware',
+            'path' => 'hardware',
+        ],
+        Bom::TYPE_HARDWARE_SITE => [
+            'label' => 'BOM Hardware Site',
+            'path' => 'hardware-site',
+        ],
+    ];
+
     private const ORDER_RELATIONS = [
         'packageLines.package:id,code,name',
         'packageLines.package.packageItems.item:id,sku,name,unit',
         'lines.item:id,sku,name,unit,bom_scope',
+        'supplier:id,name',
     ];
 
     public function index(Request $request): Response
     {
+        $scope = $this->resolveScope($request);
+        $scopeConfig = $this->scopeConfig($scope);
+
         $databaseReady = Schema::hasTable('sales_orders')
             && Schema::hasTable('sales_order_lines')
             && Schema::hasTable('procurement_orders')
@@ -47,183 +82,110 @@ class ProcurementController extends Controller
         $orders = collect();
         $items = collect();
         $packages = collect();
+        $suppliers = collect();
 
         if ($databaseReady) {
+            $suppliers = Supplier::all(['id', 'name']);
+            
             $orders = ProcurementOrder::query()
                 ->with(self::ORDER_RELATIONS)
                 ->where('status', '!=', 'received')
+                ->where('procurement_scope', $scope)
                 ->latest()
-                ->get(['id', 'code', 'status', 'notes', 'created_at']);
+                ->get(['id', 'code', 'status', 'supplier_id', 'supplier_name', 'notes', 'created_at']);
 
-            // 1. Get Incoming Stock (Ordered but not yet received)
-            $incomingStock = ProcurementOrderLine::query()
-                ->whereHas('procurementOrder', function($q) {
-                    $q->whereIn('status', ['submitted', 'partial']);
-                })
-                ->selectRaw('item_id, SUM(ordered_quantity - received_quantity) as incoming_qty')
-                ->groupBy('item_id')
-                ->pluck('incoming_qty', 'item_id')
-                ->toArray();
-
-            // 2. Calculate Gross SKU Demand from all open Sales Orders
-            $openOrders = SalesOrder::query()
-                ->whereIn('status', ['open', 'partial'])
-                ->with(['lines.package.packageItems'])
-                ->get();
-
-            $totalSkuDemandMap = []; // [item_id => total_qty_needed]
-            $requestedPackagesMap = []; // [package_id => total_qty_requested]
-            $sourceOrders = [];
-
-            foreach ($openOrders as $so) {
-                $hasUncoveredDemand = false;
-                $soDetail = ['id' => $so->id, 'code' => $so->code, 'customer' => $so->customer_name, 'packages' => [], 'loose_skus' => []];
-                
-                foreach ($so->lines as $line) {
-                    if ($line->package_id) {
-                        $qty = max(0, $this->normalizeQuantity($line->package_quantity - $line->shipped_quantity));
-                        if ($qty > 0) {
-                            $soDetail['packages'][] = ['code' => $line->package?->code, 'qty' => $qty];
-                            $requestedPackagesMap[$line->package_id] = ($requestedPackagesMap[$line->package_id] ?? 0) + $qty;
-                            
-                            if ($line->package && $line->package->packageItems) {
-                                foreach ($line->package->packageItems as $pItem) {
-                                    $itemId = $pItem->item_id;
-                                    $needed = $this->normalizeQuantity($qty * $pItem->quantity);
-                                    $totalSkuDemandMap[$itemId] = $this->normalizeQuantity(($totalSkuDemandMap[$itemId] ?? 0) + $needed);
-                                }
-                            }
-                        }
-                    } elseif ($line->item_sku) {
-                        $item = Item::where('sku', $line->item_sku)->first();
-                        if ($item) {
-                            $qty = max(0, $this->normalizeQuantity($line->item_quantity - $line->shipped_quantity));
-                            if ($qty > 0) {
-                                $totalSkuDemandMap[$item->id] = $this->normalizeQuantity(($totalSkuDemandMap[$item->id] ?? 0) + $qty);
-                                $soDetail['loose_skus'][] = ['sku' => $line->item_sku, 'qty' => $qty];
-                            }
-                        }
-                    }
-                }
-
-                // Check if this SO has any items not covered by (Stock + Incoming)
-                foreach ($so->lines as $line) {
-                    if ($line->package_id && $line->package) {
-                        foreach ($line->package->packageItems as $pItem) {
-                            $itemId = $pItem->item_id;
-                            $stock = ItemVariant::where('item_id', $itemId)->whereNull('color')->first()?->stock_current ?? 0;
-                            $incoming = $incomingStock[$itemId] ?? 0;
-                            if (($stock + $incoming) < $totalSkuDemandMap[$itemId]) {
-                                $hasUncoveredDemand = true;
-                                break 2;
-                            }
-                        }
-                    } elseif ($line->item_sku) {
-                        $item = Item::where('sku', $line->item_sku)->first();
-                        if ($item) {
-                            $stock = ItemVariant::where('item_id', $item->id)->whereNull('color')->first()?->stock_current ?? 0;
-                            $incoming = $incomingStock[$item->id] ?? 0;
-                            if (($stock + $incoming) < $totalSkuDemandMap[$item->id]) {
-                                $hasUncoveredDemand = true;
-                                break;
-                            }
-                        }
-                    }
-                }
-
-                if ($hasUncoveredDemand) {
-                    $sourceOrders[] = $soDetail;
-                }
-            }
-
-            // 3. Fulfill shortages using requested packages first, but only if actually short
-            foreach ($requestedPackagesMap as $pkgId => $qty) {
-                $pkg = Package::with(['packageItems', 'boms.bomItems.item'])->find($pkgId);
-                if ($pkg) {
-                    // Check if any item in this package is still short
-                    $needsOrdering = false;
-                    foreach ($pkg->packageItems as $pItem) {
-                        $itemId = $pItem->item_id;
-                        $stock = ItemVariant::where('item_id', $itemId)->whereNull('color')->first()?->stock_current ?? 0;
-                        $incoming = $incomingStock[$itemId] ?? 0;
-                        if (($stock + $incoming) < $totalSkuDemandMap[$itemId]) {
-                            $needsOrdering = true;
-                            break;
-                        }
-                    }
-
-                    if ($needsOrdering) {
-                        $suggestion['package_lines'][] = [
-                            'package_id' => $pkg->id,
-                            'code' => $pkg->code,
-                            'name' => $pkg->name,
-                            'quantity' => $qty,
-                            'boms' => $pkg->boms->map(fn($bom) => [
-                                'type' => $bom->type,
-                                'code' => $bom->code,
-                                'name' => $bom->name,
-                                'items' => $bom->bomItems->map(fn($bi) => [
-                                    'sku' => $bi->item?->sku,
-                                    'name' => $bi->item?->name,
-                                    'quantity' => $bi->quantity,
-                                ]),
-                            ]),
-                        ];
-                        // Subtract package contents from loose shortage calculation
-                        foreach ($pkg->packageItems as $pItem) {
-                            if (isset($totalSkuDemandMap[$pItem->item_id])) {
-                                $totalSkuDemandMap[$pItem->item_id] = $this->normalizeQuantity(
-                                    $totalSkuDemandMap[$pItem->item_id] - ($qty * $pItem->quantity)
-                                );
-                            }
-                        }
-                    }
-                }
-            }
-
-            // 4. Final calculation: Residual SKU Demand - (Current Stock + Incoming Stock)
-            foreach ($totalSkuDemandMap as $itemId => $residualDemand) {
-                $item = Item::with(['variants' => fn($q) => $q->whereNull('color')->orWhere('color', '')])->find($itemId);
-                if ($item) {
-                    $stock = $item->variants->first()?->stock_current ?? 0;
-                    $incoming = $incomingStock[$itemId] ?? 0;
-                    // Final Shortage = Remaining Demand - (Stock + Incoming)
-                    $shortage = $residualDemand - $stock - $incoming;
-                    
-                    if ($shortage > 0) {
-                        $suggestion['sku_lines'][] = [
-                            'item_id' => $item->id,
-                            'sku' => $item->sku,
-                            'name' => $item->name,
-                            'unit' => $item->unit,
-                            'demand_qty' => $residualDemand,
-                            'stock_qty' => $stock,
-                            'incoming_qty' => $incoming,
-                            'shortage_qty' => $shortage,
-                        ];
-                    }
-                }
-            }
+            $suggestion = $this->service->getShortageSuggestions($scope);
             
-            $suggestion['source_orders'] = $sourceOrders;
-            $items = Item::query()->orderBy('sku')->get(['id', 'sku', 'name', 'unit', 'bom_scope']);
-            $packages = Package::query()->orderBy('code')->get(['id', 'code', 'name']);
+            $packageAvailability = $scope === Bom::TYPE_CABIN 
+                ? $this->service->calculatePackageAvailability($scope) 
+                : [];
+            
+            $items = Item::query()
+                ->where('bom_scope', $scope)
+                ->orderBy('sku')
+                ->get(['id', 'sku', 'name', 'unit', 'bom_scope']);
+
+            $packages = Package::query()
+                ->with(['boms' => function ($query) use ($scope) {
+                    $query->where('type', $scope)->with('bomItems.item');
+                }])
+                ->whereHas('boms', function ($query) use ($scope) {
+                    $query->where('type', $scope)->whereHas('bomItems');
+                })
+                ->orderBy('code')
+                ->get();
         }
 
         return Inertia::render('Procurement/Index', [
             'databaseReady' => $databaseReady,
             'canManage' => $request->user()?->hasModuleAccess('procurement') ?? false,
             'canReceive' => $request->user()?->hasModuleAccess('procurement') ?? false,
+            'scopeKey' => $scope,
+            'scopeLabel' => $scopeConfig['label'],
+            'routeBase' => '/procurement/' . $scopeConfig['path'],
             'suggestion' => $suggestion,
             'orders' => $orders,
             'items' => $items,
             'packages' => $packages,
+            'suppliers' => $suppliers,
+            'packageAvailability' => $packageAvailability,
+        ]);
+    }
+
+    public function suppliersIndex(): Response
+    {
+        return Inertia::render('Procurement/Suppliers', [
+            'suppliers' => Supplier::latest()->get(),
+        ]);
+    }
+
+    public function suppliersStore(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'name' => 'required|string|max:255',
+            'contact_person' => 'nullable|string|max:255',
+            'phone' => 'nullable|string|max:20',
+            'address' => 'nullable|string|max:500',
+        ]);
+
+        $supplier = Supplier::create($validated);
+
+        return response()->json([
+            'message' => 'Supplier registered successfully.',
+            'data' => $supplier,
+        ], 201);
+    }
+
+    public function suppliersUpdate(Request $request, Supplier $supplier): JsonResponse
+    {
+        $validated = $request->validate([
+            'name' => 'required|string|max:255',
+            'contact_person' => 'nullable|string|max:255',
+            'phone' => 'nullable|string|max:20',
+            'address' => 'nullable|string|max:500',
+        ]);
+
+        $supplier->update($validated);
+
+        return response()->json([
+            'message' => 'Supplier updated successfully.',
+            'data' => $supplier,
+        ]);
+    }
+
+    public function suppliersDestroy(Supplier $supplier): JsonResponse
+    {
+        $supplier->delete();
+
+        return response()->json([
+            'message' => 'Supplier deleted successfully.',
         ]);
     }
 
     public function store(Request $request): JsonResponse
     {
         $this->authorizeModule($request, 'procurement');
+        $scope = $this->resolveScope($request);
 
         $validated = $request->validate([
             'package_lines' => 'nullable|array',
@@ -231,7 +193,17 @@ class ProcurementController extends Controller
             'package_lines.*.quantity' => 'required|integer|min:1',
             'sku_lines' => 'nullable|array',
             'sku_lines.*.item_id' => 'required|integer|exists:items,id|distinct',
-            'sku_lines.*.quantity' => $this->decimalQuantityRules(),
+            'sku_lines.*.quantity' => [
+                'required',
+                'numeric',
+                function (string $attribute, mixed $value, \Closure $fail): void {
+                    if (! preg_match('/^-?\d+(?:\.\d)?$/', trim((string) $value))) {
+                        $fail('The ' . str_replace('_', ' ', $attribute) . ' field must have at most 1 decimal place.');
+                    }
+                },
+            ],
+            'sku_lines.*.unit' => 'nullable|string|max:50',
+            'sku_suppliers' => 'nullable|array', // { item_id => supplier_id }
             'notes' => 'nullable|string|max:500',
         ]);
 
@@ -241,94 +213,135 @@ class ProcurementController extends Controller
             ], 422);
         }
 
-        $order = DB::transaction(function () use ($request, $validated) {
-            $order = ProcurementOrder::create([
-                'code' => $this->generateCode(),
-                'status' => 'submitted',
-                'created_by' => $request->user()->id,
-                'notes' => $validated['notes'] ?? null,
-            ]);
+        $scopedItems = Item::query()
+            ->whereIn('id', collect($validated['sku_lines'] ?? [])->pluck('item_id'))
+            ->where('bom_scope', $scope)
+            ->get()
+            ->keyBy('id');
 
-            $skuTotals = [];
+        $scopedPackages = $this->scopedPackagesById(collect($validated['package_lines'] ?? [])->pluck('package_id'), $scope);
 
-            foreach ($validated['package_lines'] ?? [] as $pLine) {
-                $packageId = (int) $pLine['package_id'];
-                $packageQty = (int) $pLine['quantity'];
+        // Grouping logic: [supplier_id => [item_id => qty]]
+        // Using 0 as a placeholder for "General/No Supplier Selected"
+        $supplierGroups = []; 
+        $skuSuppliersMap = ($scope === Bom::TYPE_HARDWARE) ? ($validated['sku_suppliers'] ?? []) : [];
 
-                $order->packageLines()->create([
-                    'package_id' => $packageId,
-                    'quantity' => $packageQty,
-                ]);
+        // Process Packages -> Aggregate their SKUs
+        foreach ($validated['package_lines'] ?? [] as $pLine) {
+            $packageId = (int) $pLine['package_id'];
+            $packageQty = (int) $pLine['quantity'];
+            $package = $scopedPackages->get($packageId);
+            $scopeBom = $this->packageBomForScope($package, $scope);
 
-                $package = Package::with('packageItems')->find($packageId);
-                if ($package && $package->packageItems) {
-                    foreach ($package->packageItems as $pItem) {
-                        $itemId = (int) $pItem->item_id;
-                        $totalNeeded = $this->normalizeQuantity($packageQty * $pItem->quantity);
-                        $skuTotals[$itemId] = $this->normalizeQuantity(($skuTotals[$itemId] ?? 0) + $totalNeeded);
+            if ($scopeBom) {
+                foreach ($scopeBom->bomItems as $bomItem) {
+                    $itemId = (int) $bomItem->item_id;
+                    $supplierId = (int) ($skuSuppliersMap[$itemId] ?? 0);
+                    $needed = $this->normalizeQuantity($packageQty * $bomItem->quantity);
+
+                    if (!isset($supplierGroups[$supplierId][$itemId])) {
+                        $supplierGroups[$supplierId][$itemId] = ['qty' => 0, 'unit' => $bomItem->item?->unit];
                     }
+                    $supplierGroups[$supplierId][$itemId]['qty'] = $this->normalizeQuantity($supplierGroups[$supplierId][$itemId]['qty'] + $needed);
+                }
+            }
+        }
+
+        // Process Loose SKUs
+        foreach ($validated['sku_lines'] ?? [] as $sLine) {
+            $itemId = (int) $sLine['item_id'];
+            $supplierId = (int) ($skuSuppliersMap[$itemId] ?? 0);
+            $qty = $this->normalizeQuantity($sLine['quantity']);
+            $unit = $sLine['unit'] ?? null;
+            
+            if (!isset($supplierGroups[$supplierId][$itemId])) {
+                $supplierGroups[$supplierId][$itemId] = ['qty' => 0, 'unit' => $unit];
+            } else if ($unit) {
+                $supplierGroups[$supplierId][$itemId]['unit'] = $unit;
+            }
+
+            $supplierGroups[$supplierId][$itemId]['qty'] = $this->normalizeQuantity($supplierGroups[$supplierId][$itemId]['qty'] + $qty);
+        }
+
+        foreach ($supplierGroups as $supplierId => $items) {
+            foreach ($items as $itemId => $data) {
+                if ($this->normalizeQuantity($data['qty']) <= 0) {
+                    unset($supplierGroups[$supplierId][$itemId]);
                 }
             }
 
-            foreach ($validated['sku_lines'] ?? [] as $sLine) {
-                $itemId = (int) $sLine['item_id'];
-                $qty = $this->normalizeQuantity($sLine['quantity']);
-                $skuTotals[$itemId] = $this->normalizeQuantity(($skuTotals[$itemId] ?? 0) + $qty);
+            if (empty($supplierGroups[$supplierId])) {
+                unset($supplierGroups[$supplierId]);
             }
+        }
 
-            foreach ($skuTotals as $itemId => $totalQty) {
-                $order->lines()->create([
-                    'item_id' => $itemId,
-                    'suggested_quantity' => $totalQty,
-                    'ordered_quantity' => $totalQty,
-                    'received_quantity' => 0,
-                    'rejected_quantity' => 0,
+        if (empty($supplierGroups)) {
+            return response()->json([
+                'message' => 'Please keep at least one SKU quantity above 0.',
+            ], 422);
+        }
+
+        $createdOrders = DB::transaction(function () use ($request, $validated, $scope, $supplierGroups) {
+            $orders = [];
+            foreach ($supplierGroups as $supplierId => $items) {
+                $supplier = $supplierId > 0 ? Supplier::find($supplierId) : null;
+                $supplierName = $supplier?->name ?? 'General';
+
+                $order = ProcurementOrder::create([
+                    'code' => $this->generateCode(),
+                    'status' => 'submitted',
+                    'supplier_id' => $supplierId > 0 ? $supplierId : null,
+                    'supplier_name' => $supplierName,
+                    'procurement_scope' => $scope,
+                    'created_by' => $request->user()->id,
+                    'notes' => $validated['notes'] ?? null,
                 ]);
-            }
 
-            $crnNumber = 'CRN-' . now()->format('Ymd') . '-' . Str::upper(Str::random(4));
-            while (ContainerReceivingNote::where('crn_number', $crnNumber)->exists()) {
-                $crnNumber = 'CRN-' . now()->format('Ymd') . '-' . Str::upper(Str::random(4));
-            }
+                if ($scope !== Bom::TYPE_HARDWARE) {
+                    foreach ($validated['package_lines'] ?? [] as $packageLine) {
+                        $order->packageLines()->create([
+                            'package_id' => (int) $packageLine['package_id'],
+                            'quantity' => (int) $packageLine['quantity'],
+                        ]);
+                    }
+                }
 
-            $crn = ContainerReceivingNote::create([
-                'crn_number' => $crnNumber,
-                'procurement_order_id' => $order->id,
-                'status' => 'awaiting_shipping',
-                'created_by' => $request->user()->id,
-            ]);
+                foreach ($items as $itemId => $data) {
+                    $order->lines()->create([
+                        'item_id' => $itemId,
+                        'suggested_quantity' => $data['qty'],
+                        'ordered_quantity' => $data['qty'],
+                        'item_unit' => $data['unit'],
+                        'received_quantity' => 0,
+                        'rejected_quantity' => 0,
+                    ]);
+                }
 
-            $order->load('lines');
-
-            foreach ($order->lines as $line) {
-                $variant = $this->findOrCreateDefaultVariant($line->item_id);
+                $this->createReceivingNoteForScope($order, $scope, $request->user()->id);
                 
-                CrnItem::create([
-                    'crn_id' => $crn->id,
-                    'item_variant_id' => $variant->id,
-                    'expected_qty' => $line->ordered_quantity,
-                    'received_qty' => 0,
-                    'rejected_qty' => 0,
+                TransactionLog::record('procurement_order_created', [
+                    'id' => $order->id,
+                    'code' => $order->code,
+                    'supplier_id' => $supplierId,
+                    'supplier_name' => $supplierName,
                 ]);
-            }
 
-            return $order;
+                $orders[] = $order;
+            }
+            return $orders;
         });
 
-        TransactionLog::record('procurement_order_created', [
-            'id' => $order->id,
-            'code' => $order->code,
-        ]);
-
         return response()->json([
-            'message' => 'Procurement order created and submitted to CRN.',
-            'data' => $this->findOrderWithRelations($order->id),
+            'message' => count($createdOrders) . ' procurement orders generated by supplier selection.',
+            'data' => $this->findOrderWithRelations($createdOrders[0]->id),
         ], 201);
     }
 
     public function receive(Request $request, ProcurementOrder $order): JsonResponse
     {
         $this->authorizeModule($request, 'procurement');
+        $scope = $this->resolveScope($request);
+        $this->ensureOrderMatchesScope($order, $scope);
 
         $validated = $request->validate([
             'lines' => 'required|array|min:1',
@@ -340,7 +353,7 @@ class ProcurementController extends Controller
 
         $order->load('lines');
 
-        DB::transaction(function () use ($order, $inputByLineId) {
+        DB::transaction(function () use ($order, $inputByLineId, $validated) {
             foreach ($order->lines as $line) {
                 if (! $inputByLineId->has($line->id)) {
                     continue;
@@ -390,6 +403,8 @@ class ProcurementController extends Controller
     public function addLine(Request $request, ProcurementOrder $order): JsonResponse
     {
         $this->authorizeModule($request, 'procurement');
+        $scope = $this->resolveScope($request);
+        $this->ensureOrderMatchesScope($order, $scope);
 
         if ($order->status !== 'draft') {
             return response()->json([
@@ -401,6 +416,8 @@ class ProcurementController extends Controller
             'item_id' => 'required|integer|exists:items,id',
             'quantity' => $this->decimalQuantityRules(),
         ]);
+
+        $this->scopedItemsById(collect([(int) $validated['item_id']]), $scope);
 
         DB::transaction(function () use ($order, $validated) {
             $line = $order->lines()
@@ -435,6 +452,8 @@ class ProcurementController extends Controller
     public function addPackageLine(Request $request, ProcurementOrder $order): JsonResponse
     {
         $this->authorizeModule($request, 'procurement');
+        $scope = $this->resolveScope($request);
+        $this->ensureOrderMatchesScope($order, $scope);
 
         if ($order->status !== 'draft') {
             return response()->json([
@@ -447,7 +466,9 @@ class ProcurementController extends Controller
             'quantity' => 'required|integer|min:1',
         ]);
 
-        DB::transaction(function () use ($order, $validated) {
+        $scopedPackages = $this->scopedPackagesById(collect([(int) $validated['package_id']]), $scope);
+
+        DB::transaction(function () use ($order, $validated, $scope, $scopedPackages) {
             $packageId = (int) $validated['package_id'];
             $packageQuantity = (int) $validated['quantity'];
 
@@ -456,12 +477,12 @@ class ProcurementController extends Controller
                 'quantity' => $packageQuantity,
             ]);
 
-            $package = Package::with('packageItems')->find($packageId);
-            if (! $package || ! $package->packageItems) {
+            $scopeBom = $this->packageBomForScope($scopedPackages->get($packageId), $scope);
+            if (! $scopeBom) {
                 return;
             }
 
-            foreach ($package->packageItems as $packageItem) {
+            foreach ($scopeBom->bomItems as $packageItem) {
                 $itemId = (int) $packageItem->item_id;
                 $totalQty = $this->normalizeQuantity($packageQuantity * $packageItem->quantity);
 
@@ -495,6 +516,8 @@ class ProcurementController extends Controller
     public function submit(Request $request, ProcurementOrder $order): JsonResponse
     {
         $this->authorizeModule($request, 'procurement');
+        $scope = $this->resolveScope($request);
+        $this->ensureOrderMatchesScope($order, $scope);
 
         if ($order->status !== 'draft') {
             return response()->json([
@@ -508,32 +531,10 @@ class ProcurementController extends Controller
             ], 422);
         }
 
-        $orderData = DB::transaction(function () use ($request, $order) {
+        $orderData = DB::transaction(function () use ($request, $order, $scope) {
             $order->update(['status' => 'submitted']);
 
-            $crnNumber = 'CRN-' . now()->format('Ymd') . '-' . Str::upper(Str::random(4));
-            while (ContainerReceivingNote::where('crn_number', $crnNumber)->exists()) {
-                $crnNumber = 'CRN-' . now()->format('Ymd') . '-' . Str::upper(Str::random(4));
-            }
-
-            $crn = ContainerReceivingNote::create([
-                'crn_number' => $crnNumber,
-                'procurement_order_id' => $order->id,
-                'status' => 'awaiting_shipping',
-                'created_by' => $request->user()->id,
-            ]);
-
-            foreach ($order->lines as $line) {
-                $variant = $this->findOrCreateDefaultVariant($line->item_id);
-                
-                CrnItem::create([
-                    'crn_id' => $crn->id,
-                    'item_variant_id' => $variant->id,
-                    'expected_qty' => $line->ordered_quantity,
-                    'received_qty' => 0,
-                    'rejected_qty' => 0,
-                ]);
-            }
+            $this->createReceivingNoteForScope($order, $scope, $request->user()->id);
 
             TransactionLog::record('procurement_order_submitted', [
                 'id' => $order->id,
@@ -544,7 +545,7 @@ class ProcurementController extends Controller
         });
 
         return response()->json([
-            'message' => 'Procurement order submitted and CRN generated.',
+            'message' => $this->submitSuccessMessage($scope, false),
             'data' => $orderData,
         ]);
     }
@@ -552,6 +553,8 @@ class ProcurementController extends Controller
     public function destroy(Request $request, ProcurementOrder $order): JsonResponse
     {
         $this->authorizeModule($request, 'procurement');
+        $scope = $this->resolveScope($request);
+        $this->ensureOrderMatchesScope($order, $scope);
 
         if ($order->status !== 'draft') {
             return response()->json([
@@ -566,8 +569,10 @@ class ProcurementController extends Controller
         ]);
     }
 
-    public function pdf(ProcurementOrder $order)
+    public function pdf(Request $request, ProcurementOrder $order)
     {
+        $scope = $this->resolveScope($request);
+        $this->ensureOrderMatchesScope($order, $scope);
         $order->load(self::ORDER_RELATIONS);
 
         return Pdf::loadView('procurement.order-pdf', [
@@ -592,6 +597,8 @@ class ProcurementController extends Controller
                 'item:id,sku,name,unit',
                 'procurementOrder:id,code,status,created_at',
                 'crn:id,crn_number,status,created_at',
+                'mrn:id,mrn_number,status,created_at',
+                'srn:id,srn_number,status,created_at',
                 'rejectable',
             ])
             ->orderByDesc('rejected_at')
@@ -606,6 +613,14 @@ class ProcurementController extends Controller
                     return 'crn:' . $rejection->crn->id;
                 }
 
+                if ($rejection->mrn) {
+                    return 'mrn:' . $rejection->mrn->id;
+                }
+
+                if ($rejection->srn) {
+                    return 'srn:' . $rejection->srn->id;
+                }
+
                 return $rejection->rejectable_type . ':' . $rejection->rejectable_id;
             })
             ->map(function ($group) {
@@ -618,12 +633,16 @@ class ProcurementController extends Controller
                 $latest = $sortedGroup->first();
                 $procurementOrder = $latest?->procurementOrder;
                 $crn = $latest?->crn;
+                $mrn = $latest?->mrn;
+                $srn = $latest?->srn;
 
                 return [
-                    'source' => $procurementOrder ? 'Procurement Order' : 'CRN',
-                    'id' => $procurementOrder?->id ?? $crn?->id ?? $latest?->id,
-                    'code' => $procurementOrder?->code ?? $crn?->crn_number ?? '-',
-                    'status' => $procurementOrder?->status ?? $crn?->status ?? '-',
+                    'source' => $procurementOrder
+                        ? 'Procurement Order'
+                        : ($crn ? 'CRN' : ($mrn ? 'MRN' : ($srn ? 'SRN' : 'Receiving Note'))),
+                    'id' => $procurementOrder?->id ?? $crn?->id ?? $mrn?->id ?? $srn?->id ?? $latest?->id,
+                    'code' => $procurementOrder?->code ?? $crn?->crn_number ?? $mrn?->mrn_number ?? $srn?->srn_number ?? '-',
+                    'status' => $procurementOrder?->status ?? $crn?->status ?? $mrn?->status ?? $srn?->status ?? '-',
                     'created_at' => optional($latest?->rejected_at ?? $latest?->created_at)->toDateTimeString(),
                     'lines' => $sortedGroup
                         ->map(function (RejectedItem $rejection) {
@@ -669,6 +688,108 @@ class ProcurementController extends Controller
         return [0, 0];
     }
 
+    private function resolveScope(Request $request): string
+    {
+        $scope = (string) $request->route('procurement_scope');
+
+        abort_unless(array_key_exists($scope, self::PROCUREMENT_SCOPES), 404);
+
+        return $scope;
+    }
+
+    private function scopeConfig(string $scope): array
+    {
+        return self::PROCUREMENT_SCOPES[$scope];
+    }
+
+    private function ensureOrderMatchesScope(ProcurementOrder $order, string $scope): void
+    {
+        $order->loadMissing('lines.item:id,bom_scope');
+
+        if ($order->lines->isEmpty()) {
+            return;
+        }
+
+        abort_unless($order->matchesBomScope($scope), 404);
+    }
+
+    private function scopedItemsById(Collection $itemIds, string $scope): Collection
+    {
+        $ids = $itemIds
+            ->filter()
+            ->map(fn ($id) => (int) $id)
+            ->unique()
+            ->values();
+
+        if ($ids->isEmpty()) {
+            return collect();
+        }
+
+        $items = Item::query()
+            ->whereIn('id', $ids)
+            ->where('bom_scope', $scope)
+            ->get(['id', 'bom_scope'])
+            ->keyBy('id');
+
+        if ($items->count() !== $ids->count()) {
+            throw ValidationException::withMessages([
+                'sku_lines' => ['Selected SKU does not belong to this procurement flow.'],
+            ]);
+        }
+
+        return $items;
+    }
+
+    private function scopedPackagesById(Collection $packageIds, string $scope): Collection
+    {
+        $ids = $packageIds
+            ->filter()
+            ->map(fn ($id) => (int) $id)
+            ->unique()
+            ->values();
+
+        if ($ids->isEmpty()) {
+            return collect();
+        }
+
+        $packages = Package::query()
+            ->whereIn('id', $ids)
+            ->with([
+                'boms' => function ($query) use ($scope) {
+                    $query->where('type', $scope)->with('bomItems');
+                },
+            ])
+            ->get()
+            ->keyBy('id');
+
+        foreach ($ids as $packageId) {
+            $scopeBom = $packages->get($packageId)?->boms->firstWhere('type', $scope);
+
+            if (! $scopeBom || $scopeBom->bomItems->isEmpty()) {
+                throw ValidationException::withMessages([
+                    'package_lines' => ['Selected package does not have lines for this procurement flow.'],
+                ]);
+            }
+        }
+
+        return $packages;
+    }
+
+    private function packageBomForScope(?Package $package, string $scope): ?Bom
+    {
+        if (! $package) {
+            return null;
+        }
+
+        $package->loadMissing([
+            'boms' => function ($query) use ($scope) {
+                $query->where('type', $scope)->with('bomItems.item:id,sku,name,unit,bom_scope');
+            },
+        ]);
+
+        return $package->boms->firstWhere('type', $scope);
+    }
+
     private function generateCode(): string
     {
         $datePrefix = now()->format('Ymd');
@@ -678,6 +799,143 @@ class ProcurementController extends Controller
         } while (ProcurementOrder::query()->where('code', $code)->exists());
 
         return $code;
+    }
+
+    private function createReceivingNoteForScope(ProcurementOrder $order, string $scope, int $userId): void
+    {
+        $order->loadMissing('lines');
+
+        if ($order->lines->isEmpty()) {
+            return;
+        }
+
+        if ($scope === Bom::TYPE_CABIN) {
+            if ($order->crns()->exists()) {
+                return;
+            }
+
+            $number = 'CRN-' . now()->format('Ymd') . '-' . Str::upper(Str::random(4));
+            while (ContainerReceivingNote::where('crn_number', $number)->exists()) {
+                $number = 'CRN-' . now()->format('Ymd') . '-' . Str::upper(Str::random(4));
+            }
+
+            $note = ContainerReceivingNote::create([
+                'crn_number' => $number,
+                'procurement_order_id' => $order->id,
+                'status' => 'awaiting_shipping',
+                'created_by' => $userId,
+            ]);
+
+            foreach ($order->lines as $line) {
+                $variant = $this->findOrCreateDefaultVariant($line->item_id);
+
+                CrnItem::create([
+                    'crn_id' => $note->id,
+                    'item_variant_id' => $variant->id,
+                    'expected_qty' => $line->ordered_quantity,
+                    'received_qty' => 0,
+                    'rejected_qty' => 0,
+                ]);
+            }
+
+            TransactionLog::record('crn_created', [
+                'id' => $note->id,
+                'crn_number' => $note->crn_number,
+                'items_count' => $order->lines->count(),
+            ]);
+
+            return;
+        }
+
+        if ($scope === Bom::TYPE_HARDWARE) {
+            if ($order->mrns()->exists()) {
+                return;
+            }
+
+            $number = 'MRN-' . now()->format('Ymd') . '-' . Str::upper(Str::random(4));
+            while (MaterialReceivingNote::where('mrn_number', $number)->exists()) {
+                $number = 'MRN-' . now()->format('Ymd') . '-' . Str::upper(Str::random(4));
+            }
+
+            $note = MaterialReceivingNote::create([
+                'mrn_number' => $number,
+                'procurement_order_id' => $order->id,
+                'status' => 'arrived',
+                'created_by' => $userId,
+            ]);
+
+            foreach ($order->lines as $line) {
+                $variant = $this->findOrCreateDefaultVariant($line->item_id);
+
+                MaterialReceivingNoteItem::create([
+                    'mrn_id' => $note->id,
+                    'item_variant_id' => $variant->id,
+                    'expected_qty' => $line->ordered_quantity,
+                    'received_qty' => 0,
+                    'rejected_qty' => 0,
+                ]);
+            }
+
+            TransactionLog::record('mrn_created', [
+                'id' => $note->id,
+                'mrn_number' => $note->mrn_number,
+                'items_count' => $order->lines->count(),
+            ]);
+
+            return;
+        }
+
+        if ($scope === Bom::TYPE_HARDWARE_SITE) {
+            if ($order->srns()->exists()) {
+                return;
+            }
+
+            $number = 'SRN-' . now()->format('Ymd') . '-' . Str::upper(Str::random(4));
+            while (SiteReceivingNote::where('srn_number', $number)->exists()) {
+                $number = 'SRN-' . now()->format('Ymd') . '-' . Str::upper(Str::random(4));
+            }
+
+            $note = SiteReceivingNote::create([
+                'srn_number' => $number,
+                'procurement_order_id' => $order->id,
+                'status' => 'arrived',
+                'created_by' => $userId,
+            ]);
+
+            foreach ($order->lines as $line) {
+                $variant = $this->findOrCreateDefaultVariant($line->item_id);
+
+                SiteReceivingNoteItem::create([
+                    'srn_id' => $note->id,
+                    'item_variant_id' => $variant->id,
+                    'expected_qty' => $line->ordered_quantity,
+                    'received_qty' => 0,
+                    'rejected_qty' => 0,
+                ]);
+            }
+
+            TransactionLog::record('srn_created', [
+                'id' => $note->id,
+                'srn_number' => $note->srn_number,
+                'items_count' => $order->lines->count(),
+            ]);
+        }
+    }
+
+    private function submitSuccessMessage(string $scope, bool $created): string
+    {
+        return match ($scope) {
+            Bom::TYPE_CABIN => $created
+                ? 'Procurement order created and submitted to CRN.'
+                : 'Procurement order submitted and CRN generated.',
+            Bom::TYPE_HARDWARE => $created
+                ? 'Procurement order created and submitted to MRN.'
+                : 'Procurement order submitted and MRN generated.',
+            Bom::TYPE_HARDWARE_SITE => $created
+                ? 'Procurement order created and submitted to SRN.'
+                : 'Procurement order submitted and SRN generated.',
+            default => 'Procurement order submitted successfully.',
+        };
     }
 
     private function authorizeModule(Request $request, string $module): void

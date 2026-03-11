@@ -1,4 +1,4 @@
-import { Head } from '@inertiajs/react';
+import { Head, usePage, Link } from '@inertiajs/react';
 import { useState, useRef, useEffect, useMemo } from 'react';
 import AuthenticatedLayout from '../../Layouts/AuthenticatedLayout';
 import { apiFetchJson } from '../../lib/http';
@@ -8,7 +8,35 @@ const BOM_GROUPS = [
   { key: 'hardware', label: 'BOM Hardware' },
   { key: 'hardware_site', label: 'BOM Hardware Site' },
 ];
-const KNOWN_BOM_KEYS = new Set(BOM_GROUPS.map((group) => group.key));
+const PROCUREMENT_FLOWS = {
+  cabin: {
+    key: 'cabin',
+    label: 'BOM Cabin',
+    basePath: '/procurement/cabin',
+    receivingLabel: 'Container Receiving Notes (CRN)',
+    supportsCrn: true,
+  },
+  hardware: {
+    key: 'hardware',
+    label: 'BOM Hardware',
+    basePath: '/procurement/hardware',
+    receivingLabel: 'Material Receiving Notes',
+    supportsCrn: false,
+  },
+  hardware_site: {
+    key: 'hardware_site',
+    label: 'BOM Hardware Site',
+    basePath: '/procurement/hardware-site',
+    receivingLabel: 'Site Receiving Notes',
+    supportsCrn: false,
+  },
+};
+
+const detectFlowFromPath = (path) => {
+  if (path.startsWith('/procurement/hardware-site')) return PROCUREMENT_FLOWS.hardware_site;
+  if (path.startsWith('/procurement/hardware')) return PROCUREMENT_FLOWS.hardware;
+  return PROCUREMENT_FLOWS.cabin;
+};
 
 const getOrderPackageLines = (order) => order.packageLines ?? order.package_lines ?? [];
 const getOrderLines = (order) => order.lines ?? [];
@@ -137,8 +165,50 @@ export default function ProcurementIndex({
     orders = [], 
     items = [], 
     packages = [],
+    suppliers = [],
+    packageAvailability = {},
     suggestion = { package_lines: [], sku_lines: [], source_orders: [] }
 }) {
+  const page = usePage();
+  const currentPath = String(page?.url ?? '/procurement').split('?')[0];
+  const activeFlow = useMemo(() => detectFlowFromPath(currentPath), [currentPath]);
+  
+  const suppliersLink = (
+    <Link 
+      href="/procurement/suppliers" 
+      className="text-[10px] font-black text-white bg-[#10b981] !bg-emerald-500 px-5 py-2.5 rounded-xl hover:bg-emerald-600 transition-all uppercase tracking-[0.15em] shadow-xl shadow-emerald-500/30 flex items-center gap-2 border border-emerald-400/30 ring-4 ring-emerald-500/10"
+    >
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4"><path d="M10 8a3 3 0 1 0 0-6 3 3 0 0 0 0 6ZM3.465 14.493a1.23 1.23 0 0 0 .41 1.412A9.957 9.957 0 0 0 10 18c2.31 0 4.438-.784 6.131-2.1.43-.333.604-.903.408-1.41a7.002 7.002 0 0 0-13.074.003Z" /></svg>
+      Manage Suppliers
+    </Link>
+  );
+
+  const orderApiBase = `${activeFlow.basePath}/orders`;
+  const scopedBomGroups = useMemo(
+    () => BOM_GROUPS.filter((group) => group.key === activeFlow.key),
+    [activeFlow.key]
+  );
+  const scopedItems = useMemo(
+    () => (Array.isArray(items) ? items : []).filter((item) => String(item.bom_scope ?? 'hardware') === activeFlow.key),
+    [items, activeFlow.key]
+  );
+  const itemScopeById = useMemo(
+    () => new Map((Array.isArray(items) ? items : []).map((item) => [Number(item.id), String(item.bom_scope ?? 'hardware')])),
+    [items]
+  );
+  const scopedSuggestion = useMemo(() => ({
+    package_lines: (suggestion?.package_lines ?? [])
+      .map((line) => ({
+        ...line,
+        boms: (line?.boms ?? []).filter((bom) => String(bom?.type) === activeFlow.key),
+      }))
+      .filter((line) => (line?.boms ?? []).length > 0),
+    sku_lines: (suggestion?.sku_lines ?? []).filter(
+      (line) => itemScopeById.get(Number(line?.item_id)) === activeFlow.key
+    ),
+    source_orders: suggestion?.source_orders ?? [],
+  }), [suggestion, activeFlow.key, itemScopeById]);
+
   const [notification, setNotification] = useState(null);
   const [processingCreate, setProcessingCreate] = useState(false);
   const [processingDeleteId, setProcessingDeleteId] = useState(null);
@@ -148,8 +218,19 @@ export default function ProcurementIndex({
   const [newOrderPackageLines, setNewOrderPackageLines] = useState([]);
   const [newOrderSkuLines, setNewOrderSkuLines] = useState([]);
   const [newOrderNotes, setNewOrderNotes] = useState('');
+  const [skuSuppliers, setSkuSuppliers] = useState({}); // { item_id: supplier_id }
   const [newOrderAddPackageForm, setNewOrderAddPackageForm] = useState({ package_id: null, quantity: '' });
   const [newOrderAddSkuForm, setNewOrderAddSkuForm] = useState({ item_id: null, quantity: '' });
+
+  const normalizeSkuQuantity = (value) => {
+    const numeric = Number(value);
+
+    if (!Number.isFinite(numeric)) {
+      return 0;
+    }
+
+    return Math.round(numeric * 10) / 10;
+  };
 
   const toggleReceiveForm = (orderId) => {
     setExpandedReceiveForms((prev) => ({
@@ -158,21 +239,56 @@ export default function ProcurementIndex({
     }));
   };
 
-  const addNewOrderPackageLine = () => {
-    const packageId = Number(newOrderAddPackageForm.package_id);
-    const quantity = Number(newOrderAddPackageForm.quantity);
-
-    if (packageId && quantity > 0) {
-      const pkg = packages.find(p => p.id === packageId);
-      if (pkg) {
-        setNewOrderPackageLines(prev => [...prev, { package_id: pkg.id, quantity, package_code: pkg.code, package_name: pkg.name }]);
-        setNewOrderAddPackageForm({ package_id: null, quantity: '' });
-      }
+  const handlePackageSelect = (packageId) => {
+    const pkg = (Array.isArray(packages) ? packages : []).find(p => p.id === Number(packageId));
+    if (pkg) {
+      setNewOrderPackageLines(prev => [...prev, { package_id: pkg.id, quantity: 1, package_code: pkg.code, package_name: pkg.name }]);
     }
   };
 
-  const removeNewOrderPackageLine = (index) => {
-    setNewOrderPackageLines(prev => prev.filter((_, i) => i !== index));
+  const handleSkuSelect = (itemId) => {
+    const item = (Array.isArray(items) ? items : []).find(i => i.id === Number(itemId));
+    if (item) {
+      setNewOrderSkuLines((prev) => {
+        const existing = prev.find((line) => line.item_id === item.id);
+
+        if (existing) {
+          return prev.map((line) => (
+            line.item_id === item.id
+              ? { ...line, quantity: normalizeSkuQuantity(line.quantity) + 1 }
+              : line
+          ));
+        }
+
+        return [...prev, { item_id: item.id, quantity: 1, sku: item.sku, name: item.name, unit: item.unit || 'pcs' }];
+      });
+    }
+  };
+
+  const updateNewOrderSkuUnit = (itemId, unit) => {
+    setNewOrderSkuLines((prev) => {
+      const existing = prev.find((line) => line.item_id === itemId);
+      const item = (Array.isArray(items) ? items : []).find((row) => row.id === Number(itemId));
+
+      if (existing) {
+        return prev.map((line) => (line.item_id === itemId ? { ...line, unit } : line));
+      }
+
+      return [
+        ...prev,
+        {
+          item_id: Number(itemId),
+          quantity: 0,
+          sku: item?.sku,
+          name: item?.name,
+          unit,
+        },
+      ];
+    });
+  };
+
+  const removeNewOrderSkuLine = (itemId) => {
+    setNewOrderSkuLines(prev => prev.filter(l => l.item_id !== itemId));
   };
 
   const updateNewOrderPackageQuantity = (index, delta) => {
@@ -184,46 +300,105 @@ export default function ProcurementIndex({
     }));
   };
 
-  const addNewOrderSkuLine = () => {
-    const itemId = Number(newOrderAddSkuForm.item_id);
-    const quantity = Number(newOrderAddSkuForm.quantity);
-
-    if (itemId && quantity > 0) {
-      const item = items.find(i => i.id === itemId);
-      if (item) {
-        setNewOrderSkuLines(prev => [...prev, { item_id: item.id, quantity, sku: item.sku, name: item.name }]);
-        setNewOrderAddSkuForm({ item_id: null, quantity: '' });
-      }
-    }
+  const handleSkuSupplierChange = (itemId, supplierId) => {
+    setSkuSuppliers(prev => ({ ...prev, [itemId]: supplierId }));
   };
 
-  const removeNewOrderSkuLine = (index) => {
-    setNewOrderSkuLines(prev => prev.filter((_, i) => i !== index));
+  const packageDerivedSkus = useMemo(() => {
+    const map = new Map();
+
+    (newOrderPackageLines ?? []).forEach((pLine) => {
+      const pkg = (Array.isArray(packages) ? packages : []).find(p => p.id === pLine.package_id);
+      if (!pkg) return;
+
+      const scopeBom = (pkg?.boms ?? []).find(b => b.type === activeFlow.key);
+      if (scopeBom) {
+        const itemsList = scopeBom.bomItems || scopeBom.bom_items || [];
+        itemsList.forEach((bi) => {
+          const itemId = Number(bi.item_id);
+          const itemData = bi.item || {};
+          const current = map.get(itemId) || { item_id: itemId, sku: itemData.sku, name: itemData.name, unit: itemData.unit || 'pcs', quantity: 0 };
+          map.set(itemId, {
+            ...current,
+            quantity: normalizeSkuQuantity(current.quantity + (Number(pLine.quantity) * Number(bi.quantity))),
+          });
+        });
+      }
+    });
+
+    return map;
+  }, [newOrderPackageLines, packages, activeFlow.key]);
+
+  const consolidatedSkus = useMemo(() => {
+    const map = new Map(
+      Array.from(packageDerivedSkus.entries()).map(([itemId, line]) => [
+        itemId,
+        { ...line },
+      ])
+    );
+
+    (newOrderSkuLines ?? []).forEach((sLine) => {
+      const itemId = Number(sLine.item_id);
+      const current = map.get(itemId) || { item_id: itemId, sku: sLine.sku, name: sLine.name, unit: sLine.unit || 'pcs', quantity: 0 };
+      map.set(itemId, {
+        ...current,
+        quantity: normalizeSkuQuantity(current.quantity + Number(sLine.quantity)),
+        unit: sLine.unit || current.unit || 'pcs',
+      });
+    });
+
+    return Array.from(map.values())
+      .filter((line) => normalizeSkuQuantity(line.quantity) > 0)
+      .sort((a, b) => String(a.sku ?? '').localeCompare(String(b.sku ?? '')));
+  }, [packageDerivedSkus, newOrderSkuLines]);
+
+  const setConsolidatedSkuQuantity = (skuLine, nextQuantity) => {
+    const safeQuantity = normalizeSkuQuantity(nextQuantity);
+    const baseQuantity = normalizeSkuQuantity(packageDerivedSkus.get(skuLine.item_id)?.quantity ?? 0);
+    const adjustment = normalizeSkuQuantity(safeQuantity - baseQuantity);
+
+    setNewOrderSkuLines((prev) => {
+      const remaining = prev.filter((line) => line.item_id !== skuLine.item_id);
+
+      if (adjustment === 0) {
+        return remaining;
+      }
+
+      return [
+        ...remaining,
+        {
+          item_id: skuLine.item_id,
+          quantity: adjustment,
+          sku: skuLine.sku,
+          name: skuLine.name,
+          unit: skuLine.unit || 'pcs',
+        },
+      ];
+    });
   };
 
-  const updateNewOrderSkuQuantity = (index, delta) => {
-    setNewOrderSkuLines(prev => prev.map((line, i) => {
-      if (i === index) {
-        return { ...line, quantity: Math.max(0.1, Math.round((line.quantity + delta) * 10) / 10) };
-      }
-      return line;
-    }));
+  const adjustConsolidatedSkuQuantity = (skuLine, delta) => {
+    const currentQuantity = normalizeSkuQuantity(skuLine.quantity);
+    const nextQuantity = normalizeSkuQuantity(Math.max(0, currentQuantity + delta));
+
+    setConsolidatedSkuQuantity(skuLine, nextQuantity);
   };
 
   const useSuggestion = () => {
-    setNewOrderPackageLines(suggestion.package_lines.map(p => ({
+    setNewOrderPackageLines((scopedSuggestion?.package_lines ?? []).map(p => ({
         package_id: p.package_id,
         quantity: p.quantity,
         package_code: p.code,
         package_name: p.name
     })));
-    setNewOrderSkuLines(suggestion.sku_lines.map(s => ({
+    setNewOrderSkuLines((scopedSuggestion?.sku_lines ?? []).map(s => ({
         item_id: s.item_id,
         quantity: s.shortage_qty,
         sku: s.sku,
-        name: s.name
+        name: s.name,
+        unit: s.unit || 'pcs'
     })));
-    setNewOrderNotes(`Based on shortage suggestion for ${suggestion.source_orders.length} unfulfilled orders.`);
+    setNewOrderNotes(`Based on ${activeFlow.label} shortage suggestion for ${(scopedSuggestion?.source_orders ?? []).length} unfulfilled orders.`);
   };
 
   const createDraft = async () => {
@@ -231,21 +406,30 @@ export default function ProcurementIndex({
     setProcessingCreate(true);
 
     try {
-      const { response, payload } = await apiFetchJson('/procurement/orders', {
+      const { response, payload } = await apiFetchJson(orderApiBase, {
         method: 'POST',
         body: JSON.stringify({
           package_lines: newOrderPackageLines.map(line => ({ package_id: line.package_id, quantity: line.quantity })),
-          sku_lines: newOrderSkuLines.map(line => ({ item_id: line.item_id, quantity: line.quantity })),
+          sku_lines: newOrderSkuLines
+            .filter((line) => normalizeSkuQuantity(line.quantity) !== 0)
+            .map(line => ({ item_id: line.item_id, quantity: line.quantity, unit: line.unit })),
+          sku_suppliers: skuSuppliers,
           notes: newOrderNotes,
         }),
       });
 
       if (response.ok) {
-        setNotification({ type: 'success', message: payload.message ?? 'Draft created.' });
+        setNotification({ type: 'success', message: payload.message || 'Draft created.' });
         setList((prev) => [payload.data, ...prev]);
         setNewOrderPackageLines([]);
         setNewOrderSkuLines([]);
         setNewOrderNotes('');
+        setSkuSuppliers({});
+        
+        // Refresh page to update history and suggestions
+        setTimeout(() => {
+          window.location.reload();
+        }, 1000);
       } else {
         setNotification({ type: 'error', message: payload.message ?? 'Failed to create draft.' });
       }
@@ -261,7 +445,7 @@ export default function ProcurementIndex({
     setProcessingDeleteId(order.id);
 
     try {
-      const { response, payload } = await apiFetchJson(`/procurement/orders/${order.id}`, {
+      const { response, payload } = await apiFetchJson(`${orderApiBase}/${order.id}`, {
         method: 'DELETE',
       });
 
@@ -279,9 +463,9 @@ export default function ProcurementIndex({
   };
 
   return (
-    <AuthenticatedLayout title="Procurement" backUrl="__back__">
+    <AuthenticatedLayout title={`Procurement • ${activeFlow.label}`} backUrl="__back__">
       <>
-        <Head title="Procurement" />
+        <Head title={`Procurement ${activeFlow.label}`} />
 
         <div className="space-y-8 pb-20">
           {!databaseReady && (
@@ -308,7 +492,7 @@ export default function ProcurementIndex({
                           </h2>
                           <p className="text-[10px] text-slate-500 font-bold mt-1 uppercase tracking-tighter">Analyzing {suggestion.source_orders.length} unfulfilled orders for stock requirements</p>
                       </div>
-                      {suggestion.source_orders.length > 0 && (
+                      {scopedSuggestion.source_orders.length > 0 && (
                           <button 
                               onClick={useSuggestion}
                               className="w-full md:w-auto text-[11px] font-black text-amber-700 bg-amber-100 hover:bg-amber-200 px-6 py-2.5 rounded-xl transition-all shadow-sm active:scale-95 uppercase tracking-widest flex items-center justify-center gap-2 border border-amber-200"
@@ -318,14 +502,13 @@ export default function ProcurementIndex({
                           </button>
                       )}
                   </div>
-                  
                   <div className="pt-4 px-6 pb-6">
                       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
                           <div className="lg:col-span-8">
                               <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-4">Recommended Replenishment</h3>
-                              {(suggestion.package_lines.length > 0 || suggestion.sku_lines.length > 0) ? (
+                              {(scopedSuggestion.package_lines.length > 0 || scopedSuggestion.sku_lines.length > 0) ? (
                                   <div className="flex flex-col gap-4">
-                                      {suggestion.package_lines.map((p, idx) => (
+                                      {scopedSuggestion.package_lines.map((p, idx) => (
                                           <div key={`pkg-${idx}`} className="group flex flex-col p-6 rounded-3xl bg-emerald-50/50 border border-emerald-100 hover:border-emerald-300 transition-all shadow-sm">
                                               <div className="flex items-center justify-between mb-6">
                                                   <div className="flex items-center gap-5">
@@ -339,53 +522,17 @@ export default function ProcurementIndex({
                                                       <p className="text-lg font-black text-emerald-700">x{p.quantity}</p>
                                                   </div>
                                               </div>
-
-                                              {p.boms && p.boms.length > 0 && (
-                                                  <div className="mt-2 pt-6 border-t border-emerald-200/50">
-                                                      <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-                                                          {BOM_GROUPS.map((group) => {
-                                                              const bom = p.boms.find(b => b.type === group.key);
-                                                              if (!bom) return <div key={group.key} className="hidden md:block"></div>;
-
-                                                              return (
-                                                                  <div key={group.key} className="flex flex-col">
-                                                                      <p className="text-[9px] font-black text-emerald-800 uppercase tracking-[0.2em] mb-3 flex items-center gap-2">
-                                                                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
-                                                                          {group.label}: <span className="text-emerald-600/70">{bom.code}</span>
-                                                                      </p>
-                                                                      <div className="space-y-1.5">
-                                                                          {bom.items.map((item, iIdx) => (
-                                                                              <div key={iIdx} className="flex justify-between items-start text-[10px] group/item py-0.5">
-                                                                                  <span className="text-emerald-700 font-bold leading-tight flex-1">
-                                                                                      {item.sku} - <span className="text-emerald-600/80 font-medium">{item.name}</span>
-                                                                                  </span>
-                                                                                  <span className="text-emerald-900 font-black ml-4 bg-emerald-100 px-2 py-0.5 rounded-md min-w-[32px] text-center">x{item.quantity}</span>
-                                                                              </div>
-                                                                          ))}
-                                                                      </div>
-                                                                  </div>
-                                                              );
-                                                          })}
-                                                      </div>
-                                                  </div>
-                                              )}
                                           </div>
                                       ))}
-                                      
-                                      {suggestion.sku_lines.length > 0 && (
+                                      {scopedSuggestion.sku_lines.length > 0 && (
                                           <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-2">
-                                              {suggestion.sku_lines.map((s, idx) => (
+                                              {scopedSuggestion.sku_lines.map((s, idx) => (
                                                   <div key={`sku-${idx}`} className="group flex items-center justify-between p-4 rounded-2xl bg-blue-50/50 border border-blue-100 hover:border-blue-300 transition-all">
                                                       <div className="flex items-center gap-4">
                                                           <div className="w-10 h-10 rounded-xl bg-blue-100 flex items-center justify-center text-blue-600 shadow-sm group-hover:scale-110 transition-transform text-lg">🧩</div>
-                                                          <div>
-                                                              <p className="text-xs font-black text-blue-900 leading-tight">{s.sku}</p>
-                                                              <p className="text-[9px] text-blue-600 font-bold uppercase tracking-tight">{s.name}</p>
-                                                          </div>
+                                                          <div><p className="text-xs font-black text-blue-900 leading-tight">{s.sku}</p></div>
                                                       </div>
-                                                      <div className="text-right">
-                                                          <p className="text-sm font-black text-blue-700">+{s.shortage_qty}</p>
-                                                      </div>
+                                                      <div className="text-right"><p className="text-sm font-black text-blue-700">+{s.shortage_qty}</p></div>
                                                   </div>
                                               ))}
                                           </div>
@@ -398,177 +545,179 @@ export default function ProcurementIndex({
                           <div className="lg:col-span-4 border-t lg:border-t-0 lg:border-l border-slate-100 pt-6 lg:pt-0 lg:pl-8">
                               <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-4">Pending Demand Source</h3>
                               <div className="space-y-2 max-h-64 overflow-y-auto pr-2 custom-scrollbar">
-                                  {suggestion.source_orders.map(so => (
+                                  {scopedSuggestion.source_orders.map(so => (
                                       <div key={so.id} className="p-4 rounded-2xl border border-slate-100 bg-white hover:border-slate-300 hover:shadow-sm transition-all group">
                                           <div className="flex justify-between items-center mb-2">
                                               <span className="text-[11px] font-black text-slate-800">{so.code}</span>
                                               <span className="text-[9px] text-slate-400 font-bold uppercase truncate max-w-[100px]">{so.customer}</span>
                                           </div>
-                                          <div className="flex flex-wrap gap-1.5">
-                                              {so.packages.map((p, i) => <span key={i} className="text-[8px] px-2 py-0.5 rounded-lg bg-emerald-50 text-emerald-700 font-black border border-emerald-100/50">{p.code} (x{p.qty})</span>)}
-                                              {so.loose_skus.map((s, i) => <span key={i} className="text-[8px] px-2 py-0.5 rounded-lg bg-blue-50 text-blue-700 font-black border border-blue-100/50">{s.sku} (x{s.qty})</span>)}
-                                          </div>
                                       </div>
                                   ))}
-                                  {suggestion.source_orders.length === 0 && <p className="text-[11px] text-slate-400 italic text-center py-8">No unfulfilled sales orders</p>}
                               </div>
                           </div>
                       </div>
                   </div>
               </div>
 
-              {/* Row 2: Order Builder */}
+              {/* Row 2: Order Builder (New Redesigned Fast Flow) */}
               <div className="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden">
                   <div className="bg-slate-900 py-5 px-8 relative overflow-hidden">
                       <div className="absolute top-0 right-0 w-64 h-64 bg-emerald-500/5 rounded-full -translate-y-32 translate-x-32 blur-3xl"></div>
-                      <div className="relative z-10">
-                          <h2 className="text-xl font-black text-white flex items-center gap-3">
-                              <div className="w-10 h-10 rounded-2xl bg-emerald-500 flex items-center justify-center shadow-lg shadow-emerald-500/20">
-                                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" className="w-6 h-6 text-white">
-                                      <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
-                                  </svg>
-                              </div>
-                              Create Procurement Order
-                          </h2>
-                          <p className="text-slate-400 text-sm mt-2 font-medium tracking-tight">Draft a new request for inventory replenishment</p>
+                      <div className="relative z-10 flex items-center justify-between">
+                          <div>
+                              <h2 className="text-xl font-black text-white flex items-center gap-3">
+                                  <div className="w-10 h-10 rounded-2xl bg-emerald-500 flex items-center justify-center shadow-lg shadow-emerald-500/20">
+                                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" className="w-6 h-6 text-white">
+                                          <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+                                      </svg>
+                                  </div>
+                                  Create Procurement Order
+                              </h2>
+                              <p className="text-slate-400 text-sm mt-2 font-medium tracking-tight">Draft a new request for inventory replenishment</p>
+                          </div>
+                          {activeFlow.key === 'hardware' && suppliersLink}
                       </div>
                   </div>
 
                   <div className="pt-4 px-6 md:pt-5 md:px-8 pb-8 space-y-8">
-                      {/* Section: Packages */}
-                      <div className="space-y-4">
-                          <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-                              <h3 className="text-[11px] font-black text-slate-800 uppercase tracking-[0.2em] flex items-center gap-3"><span className="w-1.5 h-5 bg-blue-500 rounded-full"></span>Package Configuration</h3>
-                              <span className="text-[9px] font-black text-blue-600 bg-blue-50 px-3 py-1 rounded-full border border-blue-100">{newOrderPackageLines.length} Items Added</span>
+                      {/* Unified Selection Header */}
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pb-8 border-b border-slate-100">
+                          <div className="space-y-3">
+                              <label className="block text-[11px] font-black text-slate-500 uppercase tracking-widest ml-1">Step 1: Choose Package</label>
+                              <CustomSelect
+                                  placeholder="Select a package to explode items..."
+                                  value={null}
+                                  onChange={handlePackageSelect}
+                                  options={(Array.isArray(packages) ? packages : []).map(pkg => {
+                                    const avail = packageAvailability[pkg.id];
+                                    const label = avail !== undefined 
+                                        ? `${pkg.code} — ${pkg.name} (Available: ${avail})`
+                                        : `${pkg.code} — ${pkg.name}`;
+                                    return { value: pkg.id, label };
+                                  })}
+                              />
                           </div>
-                          <div className="bg-slate-50/50 rounded-3xl border border-slate-100 p-4 md:p-6 space-y-4">
-                              <div className="flex flex-col md:flex-row gap-2 items-center">
-                                  <CustomSelect
-                                      className="flex-1 w-full"
-                                      placeholder="Select Package..."
-                                      value={newOrderAddPackageForm.package_id}
-                                      onChange={(val) => setNewOrderAddPackageForm({ ...newOrderAddPackageForm, package_id: val })}
-                                      options={packages.map(pkg => ({
-                                          value: pkg.id,
-                                          label: `${pkg.code} — ${pkg.name}`
-                                      }))}
-                                  />
-                                  <div className="flex items-center gap-1 bg-white border border-slate-200 rounded-xl p-1 shadow-sm h-[46px] w-full md:w-auto">
-                                      <button 
-                                          onClick={() => setNewOrderAddPackageForm(prev => ({ ...prev, quantity: Math.max(0, (Number(prev.quantity) || 0) - 1) }))}
-                                          className="w-8 h-8 flex items-center justify-center bg-slate-50 rounded-lg text-slate-400 hover:text-blue-600 border border-slate-100 transition-all active:scale-90 font-black"
-                                      >-</button>
-                                      <input 
-                                          type="number" 
-                                          value={newOrderAddPackageForm.quantity} 
-                                          onChange={(e) => setNewOrderAddPackageForm({ ...newOrderAddPackageForm, quantity: e.target.value })} 
-                                          placeholder="Qty" 
-                                          className="w-12 border-none text-xs font-black text-center bg-transparent focus:ring-0 p-0 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none" 
-                                      />
-                                      <button 
-                                          onClick={() => setNewOrderAddPackageForm(prev => ({ ...prev, quantity: (Number(prev.quantity) || 0) + 1 }))}
-                                          className="w-8 h-8 flex items-center justify-center bg-slate-50 rounded-lg text-slate-400 hover:text-blue-600 border border-slate-100 transition-all active:scale-90 font-black"
-                                      >+</button>
-                                  </div>
-                                  <button onClick={addNewOrderPackageLine} className="bg-blue-600 hover:bg-blue-700 text-white h-[46px] px-6 rounded-xl text-[10px] font-black uppercase tracking-widest w-full md:w-48 shadow-md active:scale-95 transition-all">Add Package</button>
-                              </div>
-                              <div className="flex flex-col gap-2">
-                                  {newOrderPackageLines.map((line, index) => (
-                                      <div key={index} className="flex items-center justify-between bg-white border border-slate-100 rounded-2xl py-3 px-5 shadow-sm group hover:border-blue-300 transition-all">
-                                          <div className="flex items-center gap-5">
-                                              <div className="w-9 h-9 rounded-xl bg-slate-50 flex items-center justify-center text-[10px] font-black text-slate-400 group-hover:bg-blue-50 group-hover:text-blue-500 transition-colors border border-slate-100 shrink-0">{index + 1}</div>
-                                              <div>
-                                                  <p className="text-base font-black text-slate-900 leading-none tracking-tight">{line.package_code}</p>
-                                                  <p className="text-[10px] text-slate-400 font-bold uppercase mt-1">{line.package_name}</p>
-                                              </div>
-                                          </div>
-                                          <div className="flex items-center gap-6">
-                                              <div className="flex items-center gap-2 bg-slate-50 rounded-xl p-1 border border-slate-100">
-                                                  <button onClick={() => updateNewOrderPackageQuantity(index, -1)} className="w-8 h-8 flex items-center justify-center bg-white rounded-lg text-slate-400 hover:text-blue-600 border border-slate-200 transition-all active:scale-90 font-black">-</button>
-                                                  <span className="text-sm font-black w-8 text-center text-slate-700">{line.quantity}</span>
-                                                  <button onClick={() => updateNewOrderPackageQuantity(index, 1)} className="w-8 h-8 flex items-center justify-center bg-white rounded-lg text-slate-400 hover:text-blue-600 border border-slate-200 transition-all active:scale-90 font-black">+</button>
-                                              </div>
-                                              <button onClick={() => removeNewOrderPackageLine(index)} className="text-slate-300 hover:text-red-500 transition-colors p-1">
-                                                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5"><path fillRule="evenodd" d="M5.47 5.47a.75.75 0 0 1 1.06 0L12 10.94l5.47-5.47a.75.75 0 1 1 1.06 1.06L13.06 12l5.47 5.47a.75.75 0 1 1-1.06 1.06L12 13.06l-5.47 5.47a.75.75 0 0 1-1.06-1.06L10.94 12 5.47 6.53a.75.75 0 0 1 0-1.06Z" clipRule="evenodd" /></svg>
-                                              </button>
-                                          </div>
-                                      </div>
-                                  ))}
-                              </div>
+                          <div className="space-y-3">
+                              <label className="block text-[11px] font-black text-slate-500 uppercase tracking-widest ml-1">OR Select Individual SKU</label>
+                              <CustomSelect
+                                  placeholder="Search individual item..."
+                                  value={null}
+                                  onChange={handleSkuSelect}
+                                  options={(Array.isArray(scopedItems) ? scopedItems : []).map(item => ({ value: item.id, label: `${item.sku} — ${item.name}` }))}
+                              />
                           </div>
                       </div>
 
-                      {/* Section: SKUs */}
-                      <div className="space-y-4">
-                          <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-                              <h3 className="text-[11px] font-black text-slate-800 uppercase tracking-[0.2em] flex items-center gap-3"><span className="w-1.5 h-5 bg-emerald-500 rounded-full"></span>Loose SKU Selection</h3>
-                              <span className="text-[9px] font-black text-emerald-600 bg-emerald-50 px-3 py-1 rounded-full border border-emerald-100">{newOrderSkuLines.length} Items Added</span>
-                          </div>
-                          <div className="bg-slate-50/50 rounded-3xl border border-slate-100 p-4 md:p-6 space-y-4">
-                              <div className="flex flex-col md:flex-row gap-2 items-center">
-                                  <CustomSelect
-                                      className="flex-1 w-full"
-                                      placeholder="Select individual SKU..."
-                                      value={newOrderAddSkuForm.item_id}
-                                      onChange={(val) => setNewOrderAddSkuForm({ ...newOrderAddSkuForm, item_id: val })}
-                                      options={items.map(item => ({
-                                          value: item.id,
-                                          label: `${item.sku} — ${item.name}`
-                                      }))}
-                                  />
-                                  <div className="flex items-center gap-1 bg-white border border-slate-200 rounded-xl p-1 shadow-sm h-[46px] w-full md:w-auto">
-                                      <button 
-                                          onClick={() => setNewOrderAddSkuForm(prev => ({ ...prev, quantity: Math.max(0, (Number(prev.quantity) || 0) - 1) }))}
-                                          className="w-8 h-8 flex items-center justify-center bg-slate-50 rounded-lg text-slate-400 hover:text-emerald-600 border border-slate-100 transition-all active:scale-90 font-black"
-                                      >-</button>
-                                          <input 
-                                           type="number" 
-                                           value={newOrderAddSkuForm.quantity} 
-                                           onChange={(e) => setNewOrderAddSkuForm({ ...newOrderAddSkuForm, quantity: e.target.value })} 
-                                           placeholder="Qty" 
-                                           min="0.1"
-                                           step="0.1"
-                                           className="w-12 border-none text-xs font-black text-center bg-transparent focus:ring-0 p-0 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none" 
-                                       />
-                                      <button 
-                                          onClick={() => setNewOrderAddSkuForm(prev => ({ ...prev, quantity: (Number(prev.quantity) || 0) + 1 }))}
-                                          className="w-8 h-8 flex items-center justify-center bg-slate-50 rounded-lg text-slate-400 hover:text-emerald-600 border border-slate-100 transition-all active:scale-90 font-black"
-                                      >+</button>
-                                  </div>
-                                  <button onClick={addNewOrderSkuLine} className="bg-emerald-600 hover:bg-emerald-700 text-white h-[46px] px-6 rounded-xl text-[10px] font-black uppercase tracking-widest w-full md:w-48 shadow-md active:scale-95 transition-all">Add SKU</button>
-                              </div>
-                              <div className="flex flex-col gap-2">
-                                  {newOrderSkuLines.map((line, index) => (
-                                      <div key={index} className="flex items-center justify-between bg-white border border-slate-100 rounded-2xl py-3 px-5 shadow-sm group hover:border-emerald-300 transition-all">
-                                          <div className="flex items-center gap-5">
-                                              <div className="w-9 h-9 rounded-xl bg-slate-50 flex items-center justify-center text-[10px] font-black text-slate-400 group-hover:bg-emerald-50 group-hover:text-emerald-500 transition-colors border border-slate-100 shrink-0">{index + 1}</div>
-                                              <div>
-                                                  <p className="text-base font-black text-slate-900 leading-none tracking-tight">{line.sku}</p>
-                                                  <p className="text-[10px] text-slate-400 font-bold uppercase mt-1">{line.name}</p>
+                      {/* Selected Items / Quantities Display */}
+                      {newOrderPackageLines.length > 0 && (
+                        <div className="space-y-4">
+                            <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Active Selections</h3>
+                            <div className="flex flex-wrap gap-3">
+                                {newOrderPackageLines.map((line, idx) => (
+                                    <div key={idx} className="flex items-center gap-3 bg-blue-50 border border-blue-100 px-4 py-2 rounded-2xl shadow-sm">
+                                        <span className="text-xs font-black text-blue-800">{line.package_code}</span>
+                                        <div className="flex items-center gap-2 bg-white/50 rounded-lg p-0.5 border border-blue-200/50">
+                                            <button onClick={() => updateNewOrderPackageQuantity(idx, -1)} className="w-6 h-6 flex items-center justify-center font-black text-blue-600">-</button>
+                                            <span className="text-[11px] font-black min-w-[20px] text-center">{line.quantity}</span>
+                                            <button onClick={() => updateNewOrderPackageQuantity(idx, 1)} className="w-6 h-6 flex items-center justify-center font-black text-blue-600">+</button>
+                                        </div>
+                                        <button onClick={() => removeNewOrderPackageLine(idx)} className="text-blue-300 hover:text-red-500 transition-colors">
+                                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4"><path d="M6.28 5.22a.75.75 0 0 0-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 1 0 1.06 1.06L10 11.06l3.72 3.72a.75.75 0 1 0 1.06-1.06L11.06 10l3.72-3.72a.75.75 0 0 0-1.06-1.06L10 8.94 6.28 5.22Z" /></svg>
+                                        </button>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                      )}
+
+                      {/* Section: Consolidated SKU & Supplier Selection */}
+                      {consolidatedSkus.length > 0 ? (
+                        <div className="space-y-4 pt-4">
+                            <div className="flex items-center justify-between border-b-2 border-emerald-100 pb-3">
+                                <h3 className="text-11px font-black text-slate-800 uppercase tracking-[0.2em] flex items-center gap-3">
+                                    <span className="w-2 h-6 bg-emerald-500 rounded-full animate-pulse"></span>
+                                    {activeFlow.key === 'hardware' 
+                                      ? `Step 2: Assign Suppliers for ${consolidatedSkus.length} Items` 
+                                      : `Step 2: Review ${consolidatedSkus.length} Items`
+                                    }
+                                </h3>
+                                <span className="text-[9px] font-black text-emerald-600 bg-emerald-50 px-3 py-1 rounded-full border border-emerald-100">Explosion Success</span>
+                            </div>
+                            <div className="grid grid-cols-1 gap-3">
+                                {consolidatedSkus.map((skuLine) => (
+                                    <div key={skuLine.item_id} className="flex flex-col md:flex-row md:items-center justify-between bg-white border border-slate-100 rounded-[2rem] p-5 gap-6 shadow-sm hover:border-emerald-300 hover:shadow-md transition-all group">
+                                        <div className="flex items-center gap-5 flex-1">
+                                            <div className="w-12 h-12 rounded-2xl bg-slate-50 flex items-center justify-center text-xl shadow-inner group-hover:scale-110 transition-transform">🧩</div>
+                                            <div>
+                                                <p className="text-base font-black text-slate-800 leading-tight tracking-tight">{skuLine.sku}</p>
+                                                <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mt-1">{skuLine.name}</p>
+                                            </div>
+                                        </div>
+                                        <div className="flex flex-col md:flex-row items-center gap-6">
+                                            <div className="flex flex-col items-center md:items-end">
+                                                <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Total Needed</span>
+                                                <div className="flex items-center gap-2 rounded-2xl border border-slate-200 bg-slate-50 px-2 py-2 shadow-sm">
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => adjustConsolidatedSkuQuantity(skuLine, -1)}
+                                                        className="flex h-8 w-8 items-center justify-center rounded-xl border border-slate-200 bg-white text-sm font-black text-slate-600 transition hover:border-slate-300 hover:text-red-500"
+                                                    >
+                                                        -
+                                                    </button>
+                                                    <span className="min-w-[84px] text-center text-sm font-black text-slate-700">
+                                                        {skuLine.quantity} Units
+                                                    </span>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => adjustConsolidatedSkuQuantity(skuLine, 1)}
+                                                        className="flex h-8 w-8 items-center justify-center rounded-xl border border-slate-200 bg-white text-sm font-black text-slate-600 transition hover:border-slate-300 hover:text-emerald-600"
+                                                    >
+                                                        +
+                                                    </button>
+                                                </div>
+                                            </div>
+                                            <div className="w-24">
+                                                <label className="block text-[9px] font-black text-emerald-600 uppercase tracking-[0.2em] mb-1.5 ml-1">Unit</label>
+                                                <input 
+                                                    type="text"
+                                                    value={skuLine.unit || 'pcs'}
+                                                    onChange={(e) => updateNewOrderSkuUnit(skuLine.item_id, e.target.value)}
+                                                    className="w-full rounded-xl border-slate-200 text-xs font-bold bg-slate-50/50 p-2 text-center uppercase"
+                                                    placeholder="Unit"
+                                                />
+                                            </div>
+                                            {activeFlow.key === 'hardware' && (
+                                              <div className="w-full md:w-72">
+                                                  <label className="block text-[9px] font-black text-emerald-600 uppercase tracking-[0.2em] mb-1.5 ml-1">Supplier</label>
+                                                  <CustomSelect
+                                                      placeholder="Assign Supplier..."
+                                                      value={skuSuppliers[skuLine.item_id]}
+                                                      onChange={(val) => handleSkuSupplierChange(skuLine.item_id, val)}
+                                                      options={suppliers.map(s => ({ value: s.id, label: s.name }))}
+                                                  />
                                               </div>
-                                          </div>
-                                          <div className="flex items-center gap-6">
-                                              <div className="flex items-center gap-2 bg-slate-50 rounded-xl p-1 border border-slate-100">
-                                                  <button onClick={() => updateNewOrderSkuQuantity(index, -1)} className="w-8 h-8 flex items-center justify-center bg-white rounded-lg text-slate-400 hover:text-emerald-600 border border-slate-200 transition-all active:scale-90 font-black">-</button>
-                                                  <span className="text-sm font-black w-8 text-center text-slate-700">{line.quantity}</span>
-                                                  <button onClick={() => updateNewOrderSkuQuantity(index, 1)} className="w-8 h-8 flex items-center justify-center bg-white rounded-lg text-slate-400 hover:text-emerald-600 border border-slate-200 transition-all active:scale-90 font-black">+</button>
-                                              </div>
-                                              <button onClick={() => removeNewOrderSkuLine(index)} className="text-slate-300 hover:text-red-500 transition-colors p-1">
-                                                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5"><path fillRule="evenodd" d="M5.47 5.47a.75.75 0 0 1 1.06 0L12 10.94l5.47-5.47a.75.75 0 1 1 1.06 1.06L13.06 12l5.47 5.47a.75.75 0 1 1-1.06 1.06L12 13.06l-5.47 5.47a.75.75 0 0 1-1.06-1.06L10.94 12 5.47 6.53a.75.75 0 0 1 0-1.06Z" clipRule="evenodd" /></svg>
-                                              </button>
-                                          </div>
-                                      </div>
-                                  ))}
-                              </div>
-                          </div>
-                      </div>
+                                            )}
+                                            <button onClick={() => setConsolidatedSkuQuantity(skuLine, 0)} className="text-slate-300 hover:text-red-500 transition-colors p-2">
+                                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5"><path d="M6.28 5.22a.75.75 0 0 0-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 1 0 1.06 1.06L10 11.06l3.72 3.72a.75.75 0 1 0 1.06-1.06L11.06 10l3.72-3.72a.75.75 0 0 0-1.06-1.06L10 8.94 6.28 5.22Z" /></svg>
+                                            </button>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                      ) : (
+                        <div className="py-20 text-center space-y-4 bg-slate-50/50 rounded-[3rem] border border-dashed border-slate-200">
+                            <div className="text-4xl">🛒</div>
+                            <p className="text-slate-400 font-bold text-sm uppercase tracking-[0.2em]">Choose from Step 1 to start</p>
+                        </div>
+                      )}
 
                       <div className="mt-12 pt-8 border-t border-slate-100">
                           <label className="block text-[11px] font-black text-slate-900 uppercase tracking-widest mb-3 px-1">Internal Procurement Notes</label>
                           <textarea value={newOrderNotes} onChange={(e) => setNewOrderNotes(e.target.value)} rows="3" className="w-full rounded-2xl border-slate-200 text-sm font-medium focus:ring-slate-500/10 focus:border-slate-400 bg-slate-50/30 p-4 mb-8" placeholder="Enter special instructions or context for this order..."></textarea>
-                          <button onClick={createDraft} disabled={!databaseReady || !canManage || processingCreate || (newOrderPackageLines.length === 0 && newOrderSkuLines.length === 0)} className="group relative w-full overflow-hidden rounded-[2rem] bg-emerald-600 p-6 text-white shadow-xl hover:bg-emerald-700 disabled:opacity-50 active:scale-[0.98] transition-all">
+                          <button onClick={createDraft} disabled={!databaseReady || !canManage || processingCreate || consolidatedSkus.length === 0} className="group relative w-full overflow-hidden rounded-[2rem] bg-emerald-600 p-6 text-white shadow-xl hover:bg-emerald-700 disabled:opacity-50 active:scale-[0.98] transition-all">
                               <div className="relative z-10 flex items-center justify-center gap-4">
-                                  <span className="text-sm font-black uppercase tracking-[0.25em]">{processingCreate ? 'Processing...' : 'Finalize & Create Procurement Order'}</span>
+                                  <span className="text-sm font-black uppercase tracking-[0.25em]">{processingCreate ? 'Processing...' : 'Finalize & Generate POs'}</span>
                                   {!processingCreate && <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={3} stroke="currentColor" className="w-5 h-5 group-hover:translate-x-2 transition-transform"><path strokeLinecap="round" strokeLinejoin="round" d="M13.5 4.5 21 12m0 0-7.5 7.5M21 12H3" /></svg>}
                               </div>
                           </button>
@@ -588,11 +737,11 @@ export default function ProcurementIndex({
                     </div>
                 </div>
                 <div className="p-6 md:p-8 space-y-4">
-                  {list.map((order) => {
+                  {list
+                    .filter((order) => getOrderLines(order).some((line) => String(line.item?.bom_scope ?? 'hardware') === activeFlow.key))
+                    .map((order) => {
                     const orderPackageLines = getOrderPackageLines(order);
                     const orderLines = getOrderLines(order);
-                    const looseLines = computeLooseLines(order);
-
                     return (
                     <div key={order.id} className="group rounded-[2rem] border border-slate-100 bg-white hover:border-slate-300 hover:shadow-md transition-all overflow-hidden">
                       <div className="p-5 flex flex-wrap items-center justify-between gap-4 bg-slate-50/30 border-b border-slate-100/50">
@@ -600,7 +749,9 @@ export default function ProcurementIndex({
                             <div className="w-10 h-10 rounded-xl bg-white border border-slate-200 flex items-center justify-center text-slate-400 shadow-sm text-lg">📄</div>
                             <div>
                                 <p className="text-xs font-black text-slate-800 tracking-tight">{order.code}</p>
-                                <p className="text-[10px] text-slate-400 font-bold uppercase tracking-tighter">{new Date(order.created_at).toLocaleDateString()}</p>
+                                <p className="text-[10px] text-slate-400 font-bold uppercase tracking-tighter">
+                                  {new Date(order.created_at).toLocaleDateString()} • {order.supplier?.name || order.supplier_name || 'General'}
+                                </p>
                             </div>
                         </div>
                         <span className={`text-[9px] font-black uppercase tracking-widest px-3 py-1.5 rounded-full border shadow-sm bg-white ${order.status === 'received' ? 'text-emerald-700 border-emerald-100' : 'text-blue-700 border-blue-100'}`}>{order.status}</span>
@@ -609,107 +760,51 @@ export default function ProcurementIndex({
                         <div className="space-y-3">
                             <h4 className="text-[9px] font-black uppercase tracking-[0.2em] text-slate-400 mb-2">Items Ordered</h4>
                             <div className="grid grid-cols-1 gap-2">
-                                {/* 1. Display Packages First */}
-                                {orderPackageLines.map((pLine) => (
-                                  <div key={`pkg-${pLine.id}`} className="p-3 rounded-xl bg-blue-50/30 border border-blue-100 group-hover:bg-white transition-colors flex justify-between items-center">
-                                    <div className="flex items-center gap-3">
-                                        <span className="text-lg">📦</span>
-                                        <div>
-                                            <p className="text-[11px] font-black text-blue-900 leading-tight">{pLine.package?.code}</p>
-                                            <p className="text-[9px] text-blue-500 font-bold uppercase">Package Set</p>
-                                        </div>
-                                    </div>
-                                    <span className="text-[11px] font-black text-blue-800 bg-white px-2 py-0.5 rounded border border-blue-200 shadow-sm">x{pLine.quantity}</span>
-                                  </div>
-                                ))}
-
-                                {/* 2. Calculate and Display Loose SKUs (Individual Items) */}
-                                {looseLines.map((line) => (
-                                        <div key={`loose-${line.id}`} className="p-3 rounded-xl bg-emerald-50/30 border border-emerald-100 group-hover:bg-white transition-colors flex justify-between items-center">
+                                {orderPackageLines.map((line, index) => (
+                                        <div key={`package-${line.id ?? index}`} className="p-3 rounded-xl bg-emerald-50/30 border border-emerald-100 group-hover:bg-white transition-colors flex justify-between items-center">
                                             <div className="flex items-center gap-3">
                                                 <span className="text-lg">🧩</span>
                                                 <div>
-                                                    <p className="text-[11px] font-black text-emerald-900 leading-tight">{line.item?.sku}</p>
-                                                    <p className="text-[9px] text-emerald-500 font-bold uppercase">Loose SKU</p>
+                                                    <p className="text-[11px] font-black text-emerald-900 leading-tight">{line.package?.code}</p>
+                                                    <p className="text-[9px] text-emerald-500 font-bold uppercase">{line.package?.name || 'Package'}</p>
                                                 </div>
                                             </div>
-                                            <span className="text-[11px] font-black text-emerald-800 bg-white px-2 py-0.5 rounded border border-emerald-200 shadow-sm">x{line.looseQty}</span>
+                                            <span className="text-[11px] font-black text-emerald-800 bg-white px-2 py-0.5 rounded border border-emerald-200 shadow-sm">x{line.quantity}</span>
                                         </div>
                                     ))}
-
-                                {orderPackageLines.length === 0 && orderLines.length === 0 && (
-                                    <p className="text-[10px] text-slate-400 italic px-1">No items found in this order</p>
+                                {orderPackageLines.length === 0 && (
+                                    <div className="p-3 rounded-xl bg-slate-50 border border-slate-100 text-[11px] font-bold text-slate-400">
+                                        No package summary recorded for this order.
+                                    </div>
                                 )}
                             </div>
                         </div>
                         <div className="space-y-3">
                           <button onClick={() => toggleReceiveForm(order.id)} className="w-full flex items-center justify-between rounded-xl px-4 py-3 border border-slate-200 text-slate-600 bg-white hover:border-slate-400 transition-all group/btn shadow-sm">
-                            <span className="text-[10px] font-black uppercase tracking-widest">View SKU Detail List ({orderLines.length})</span>
+                            <span className="text-[10px] font-black uppercase tracking-widest">View Detailed List ({orderLines.length})</span>
                             <span className={`text-xs transition-transform duration-300 ${expandedReceiveForms?.[order.id] ? 'rotate-180' : ''}`}>▼</span>
                           </button>
                           {expandedReceiveForms?.[order.id] && (
                             <div className="space-y-2 max-h-60 overflow-y-auto pr-2 custom-scrollbar animate-in slide-in-from-top-2 duration-300">
-                                {BOM_GROUPS.map((group) => {
-                                  const groupLines = orderLines.filter((line) => String(line.item?.bom_scope ?? 'hardware') === group.key);
-                                  if (groupLines.length === 0) return null;
-
-                                  return (
-                                    <div key={`${order.id}-${group.key}`} className="space-y-2">
-                                      <div className="px-1 pt-1">
-                                        <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">{group.label}</p>
-                                      </div>
-                                      {groupLines.map((line) => (
-                                        <div key={line.id} className="flex items-center justify-between rounded-xl bg-slate-50/50 border border-slate-100 px-4 py-3">
-                                          <div><p className="text-xs font-black text-slate-800 tracking-tight">{line.item?.sku}</p></div>
-                                          <span className="text-[11px] font-black text-slate-700 bg-white px-2 py-1 rounded border border-slate-200">{line.ordered_quantity} {line.item?.unit}</span>
-                                        </div>
-                                      ))}
-                                    </div>
-                                  );
-                                })}
-                                {(() => {
-                                  const otherLines = orderLines.filter((line) => {
-                                    const scope = String(line.item?.bom_scope ?? 'hardware');
-                                    return !KNOWN_BOM_KEYS.has(scope);
-                                  });
-
-                                  if (otherLines.length === 0) {
-                                    return null;
-                                  }
-
-                                  return (
-                                    <div className="space-y-2">
-                                      <div className="px-1 pt-1">
-                                        <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Unclassified BOM</p>
-                                      </div>
-                                      {otherLines.map((line) => (
-                                        <div key={line.id} className="flex items-center justify-between rounded-xl bg-slate-50/50 border border-slate-100 px-4 py-3">
-                                          <div><p className="text-xs font-black text-slate-800 tracking-tight">{line.item?.sku}</p></div>
-                                          <span className="text-[11px] font-black text-slate-700 bg-white px-2 py-1 rounded border border-slate-200">{line.ordered_quantity} {line.item?.unit}</span>
-                                        </div>
-                                      ))}
-                                    </div>
-                                  );
-                                })()}
+                                {orderLines.map((line) => (
+                                  <div key={line.id} className="flex items-center justify-between rounded-xl bg-slate-50/50 border border-slate-100 px-4 py-3">
+                                    <div><p className="text-xs font-black text-slate-800 tracking-tight">{line.item?.sku}</p></div>
+                                    <span className="text-[11px] font-black text-slate-700 bg-white px-2 py-1 rounded border border-slate-200">{line.ordered_quantity} {line.item?.unit}</span>
+                                  </div>
+                                ))}
                             </div>
                           )}
                         </div>
                       </div>
                       <div className="px-5 py-4 border-t border-slate-100 flex gap-3 bg-slate-50/20">
-                        <a href={`/procurement/orders/${order.id}/pdf`} target="_blank" rel="noreferrer" className="flex-1 bg-white border border-slate-200 text-slate-700 py-3 rounded-xl text-[10px] font-black text-center uppercase tracking-widest hover:border-slate-400 active:scale-[0.98] transition-all flex items-center justify-center gap-2">
+                        <a href={`${orderApiBase}/${order.id}/pdf`} target="_blank" rel="noreferrer" className="flex-1 bg-white border border-slate-200 text-slate-700 py-3 rounded-xl text-[10px] font-black text-center uppercase tracking-widest hover:border-slate-400 active:scale-[0.98] transition-all flex items-center justify-center gap-2">
                             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4 text-red-500"><path d="M4.5 2A1.5 1.5 0 0 0 3 3.5v13A1.5 1.5 0 0 0 4.5 18h11a1.5 1.5 0 0 0 1.5-1.5V7.621a1.5 1.5 0 0 0-.44-1.06l-4.12-4.122A1.5 1.5 0 0 0 11.378 2H4.5Zm2.25 8.5a.75.75 0 0 0 0 1.5h6.5a.75.75 0 0 0 0-1.5h-6.5Zm0 3a.75.75 0 0 0 0 1.5h6.5a.75.75 0 0 0 0-1.5h-6.5Z" /></svg>
                             Export PDF
                         </a>
-                        {canManage && order.status === 'draft' && (
-                            <button onClick={() => deleteDraft(order)} className="flex-1 bg-white border border-red-100 text-red-600 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-red-50 transition-all">Cancel Order</button>
-                        )}
                       </div>
                     </div>
                     );
                   })}
-                  {list.length === 0 && (
-                      <div className="py-20 text-center text-slate-400 font-bold text-sm">No procurement history found</div>
-                  )}
                 </div>
               </div>
             </div>

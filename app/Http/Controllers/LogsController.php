@@ -3,10 +3,11 @@
 namespace App\Http\Controllers;
 
 use App\Models\ContainerReceivingNote;
-
 use App\Models\InventoryTransaction;
+use App\Models\MaterialReceivingNote;
 use App\Models\ProcurementOrder;
 use App\Models\SalesOrder;
+use App\Models\SiteReceivingNote;
 use App\Models\TransactionLog;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Symfony\Component\HttpFoundation\Response;
@@ -73,6 +74,17 @@ class LogsController extends Controller
             }
         }
 
+        if (isset($details['po_code']) && in_array($log->action, ['mrn_po_received', 'srn_po_received'], true)) {
+            $order = ProcurementOrder::with([
+                'packageLines.package:id,code,name',
+                'lines.item:id,sku,name,unit',
+            ])->where('code', (string) $details['po_code'])->first();
+
+            if ($order) {
+                $data['procurement_order'] = $order;
+            }
+        }
+
         if (isset($details['id']) && in_array($log->action, ['stock_in', 'stock_out'], true)) {
             $transaction = InventoryTransaction::with([
                 'lines.item:id,sku,name,unit',
@@ -97,6 +109,28 @@ class LogsController extends Controller
             }
         }
 
+        if (isset($details['id']) && in_array($log->action, ['mrn_created'], true)) {
+            $mrn = MaterialReceivingNote::with([
+                'items.itemVariant.item:id,sku,name,unit',
+                'procurementOrder:id,code,status',
+            ])->find((int) $details['id']);
+
+            if ($mrn) {
+                $data['mrn'] = $mrn;
+            }
+        }
+
+        if (isset($details['id']) && in_array($log->action, ['srn_created'], true)) {
+            $srn = SiteReceivingNote::with([
+                'items.itemVariant.item:id,sku,name,unit',
+                'procurementOrder:id,code,status',
+            ])->find((int) $details['id']);
+
+            if ($srn) {
+                $data['srn'] = $srn;
+            }
+        }
+
         if (isset($details['crn_number']) && in_array($log->action, ['crn_po_received'], true)) {
             $crn = ContainerReceivingNote::with([
                 'items.itemVariant.item:id,sku,name,unit',
@@ -105,6 +139,28 @@ class LogsController extends Controller
 
             if ($crn) {
                 $data['crn'] = $crn;
+            }
+        }
+
+        if (isset($details['mrn_number']) && in_array($log->action, ['mrn_po_received'], true)) {
+            $mrn = MaterialReceivingNote::with([
+                'items.itemVariant.item:id,sku,name,unit',
+                'procurementOrder:id,code,status',
+            ])->where('mrn_number', (string) $details['mrn_number'])->first();
+
+            if ($mrn) {
+                $data['mrn'] = $mrn;
+            }
+        }
+
+        if (isset($details['srn_number']) && in_array($log->action, ['srn_po_received'], true)) {
+            $srn = SiteReceivingNote::with([
+                'items.itemVariant.item:id,sku,name,unit',
+                'procurementOrder:id,code,status',
+            ])->where('srn_number', (string) $details['srn_number'])->first();
+
+            if ($srn) {
+                $data['srn'] = $srn;
             }
         }
 

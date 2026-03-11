@@ -1,5 +1,5 @@
 import { Head, router } from '@inertiajs/react';
-import { useState } from 'react';
+import { Fragment, useState } from 'react';
 import AuthenticatedLayout from '../../../Layouts/AuthenticatedLayout';
 import QtyInput from '../../../components/QtyInput';
 import { apiFetchJson } from '../../../lib/http';
@@ -21,7 +21,23 @@ const getDefaultLineForm = (line) => ({
   rejection_reason: '',
 });
 
-export default function CrnIndex({ pendingProcurements = [], activeCrns = [], notes = [], canManage = false }) {
+export default function CrnIndex({
+  pendingProcurements = [],
+  activeCrns = [],
+  notes = [],
+  canManage = false,
+  pageTitle = 'Container Receiving Note (CRN)',
+  headTitle = 'Container Receiving Note',
+  noteCodeKey = 'crn_number',
+  noteCodeLabel = 'CRN Number',
+  etaEndpointBase = '/warehouse/crn',
+  arrivedEndpointBase = '/warehouse/crn',
+  receiveEndpointBase = '/warehouse/crn/procurement',
+  notePdfBase = '/warehouse/crn',
+  poPdfBase = '/procurement/cabin/orders',
+  noteHistoryLabel = 'CRN',
+  showIncomingShipments = true,
+}) {
   const [notification, setNotification] = useState(null);
   const [processingId, setProcessingId] = useState(null);
   const [openOrderId, setOpenOrderId] = useState(null);
@@ -93,7 +109,7 @@ export default function CrnIndex({ pendingProcurements = [], activeCrns = [], no
     await runCrnAction({
       processingKey: `all-${order.id}`,
       successMessage: 'All SKU submitted.',
-      request: () => apiFetchJson(`/warehouse/crn/procurement/${order.id}/receive`, {
+      request: () => apiFetchJson(`${receiveEndpointBase}/${order.id}/receive`, {
         method: 'POST',
         body: JSON.stringify({ lines: linesPayload }),
       }),
@@ -106,7 +122,7 @@ export default function CrnIndex({ pendingProcurements = [], activeCrns = [], no
     await runCrnAction({
       processingKey: `eta-${crnId}`,
       successMessage: 'ETA updated. Status: Shipping.',
-      request: () => apiFetchJson(`/warehouse/crn/${crnId}/eta`, {
+      request: () => apiFetchJson(`${etaEndpointBase}/${crnId}/eta`, {
         method: 'POST',
         body: JSON.stringify({ eta }),
       }),
@@ -117,15 +133,15 @@ export default function CrnIndex({ pendingProcurements = [], activeCrns = [], no
     await runCrnAction({
       processingKey: `arrived-${crnId}`,
       successMessage: 'Arrived! Checklist available below.',
-      request: () => apiFetchJson(`/warehouse/crn/${crnId}/arrived`, { method: 'POST' }),
+      request: () => apiFetchJson(`${arrivedEndpointBase}/${crnId}/arrived`, { method: 'POST' }),
     });
   };
 
   const incomingCrns = crnList.filter(c => ['awaiting_shipping', 'shipping'].includes(c.status));
 
   return (
-    <AuthenticatedLayout title="Container Receiving Note (CRN)" backUrl="__back__">
-      <Head title="Container Receiving Note" />
+    <AuthenticatedLayout title={pageTitle} backUrl="__back__">
+      <Head title={headTitle} />
       <div className="space-y-4">
 
         {notification && (
@@ -133,6 +149,7 @@ export default function CrnIndex({ pendingProcurements = [], activeCrns = [], no
         )}
 
         {/* ── Incoming Shipments ── */}
+        {showIncomingShipments && (
         <div className="bg-white rounded-[2rem] shadow-sm border border-slate-100 pt-2 px-6 pb-2 md:pt-2.5 md:px-8 md:pb-2">
           <div className="flex items-center justify-between border-b border-slate-100 pb-2">
             <h2 className="text-lg font-bold text-slate-800">Incoming Shipments</h2>
@@ -152,7 +169,7 @@ export default function CrnIndex({ pendingProcurements = [], activeCrns = [], no
               <table className="w-full text-left border-collapse min-w-[600px]">
                 <thead>
                   <tr className="bg-slate-50 border-y border-slate-100">
-                    <th className="px-6 md:px-8 py-3.5 text-xs font-bold text-slate-500 uppercase tracking-wider">CRN Number</th>
+                    <th className="px-6 md:px-8 py-3.5 text-xs font-bold text-slate-500 uppercase tracking-wider">{noteCodeLabel}</th>
                     <th className="px-6 md:px-8 py-3.5 text-xs font-bold text-slate-500 uppercase tracking-wider">PO Code</th>
                     <th className="px-6 md:px-8 py-3.5 text-xs font-bold text-slate-500 uppercase tracking-wider text-center">Status</th>
                     <th className="px-6 md:px-8 py-3.5 text-xs font-bold text-slate-500 uppercase tracking-wider">ETA Date</th>
@@ -162,7 +179,7 @@ export default function CrnIndex({ pendingProcurements = [], activeCrns = [], no
                 <tbody className="divide-y divide-slate-50">
                   {incomingCrns.map((crn) => (
                     <tr key={crn.id} className="hover:bg-slate-50/50 transition-colors">
-                      <td className="px-6 md:px-8 py-4 text-xs font-bold text-slate-800">{crn.crn_number}</td>
+                      <td className="px-6 md:px-8 py-4 text-xs font-bold text-slate-800">{crn[noteCodeKey]}</td>
                       <td className="px-6 md:px-8 py-4 text-xs font-medium text-slate-600">
                         {crn.procurement_order?.code || <span className="text-slate-400 italic">Standalone</span>}
                       </td>
@@ -227,7 +244,7 @@ export default function CrnIndex({ pendingProcurements = [], activeCrns = [], no
                         <div className="flex justify-end items-center gap-2">
                           {crn.procurement_order_id && (
                             <a
-                              href={`/procurement/orders/${crn.procurement_order_id}/pdf`}
+                              href={`${poPdfBase}/${crn.procurement_order_id}/pdf`}
                               target="_blank"
                               rel="noopener noreferrer"
                               className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-rose-600 px-4 py-2 text-xs font-black text-white hover:bg-rose-700 transition-all shadow-md active:scale-95 uppercase tracking-wider h-[36px] min-w-[80px]"
@@ -262,6 +279,7 @@ export default function CrnIndex({ pendingProcurements = [], activeCrns = [], no
             </div>
           )}
         </div>
+        )}
 
         {/* ── Stock Arrival Checklist ── */}
         <div className="bg-white rounded-[2rem] shadow-sm border border-slate-100 pt-2 px-6 pb-2 md:pt-2.5 md:px-8 md:pb-2">
@@ -295,8 +313,8 @@ export default function CrnIndex({ pendingProcurements = [], activeCrns = [], no
                     const showConfirmSubmit = confirmSubmitOrderId === order.id;
                     const orderForm = forms?.[order.id] ?? {};
                     return (
-                      <>
-                        <tr key={order.id} className="hover:bg-slate-50/50 transition-colors">
+                      <Fragment key={order.id}>
+                        <tr className="hover:bg-slate-50/50 transition-colors">
                           <td className="px-6 md:px-8 py-4 text-xs font-bold text-slate-800">{order.code}</td>
                           <td className="px-6 md:px-8 py-4 text-xs font-medium text-slate-600">{order.created_at}</td>
                           <td className="px-6 md:px-8 py-4 text-xs font-medium text-slate-600">{order.lines.length} SKU</td>
@@ -313,7 +331,7 @@ export default function CrnIndex({ pendingProcurements = [], activeCrns = [], no
                         </tr>
 
                         {isOpen && (
-                          <tr key={`${order.id}-form`}>
+                          <tr>
                             <td colSpan={4} className="px-6 md:px-8 py-4 bg-slate-50/60">
                               <div className="space-y-3">
                                 <div className="flex justify-end">
@@ -406,7 +424,7 @@ export default function CrnIndex({ pendingProcurements = [], activeCrns = [], no
                             </td>
                           </tr>
                         )}
-                      </>
+                      </Fragment>
                     );
                   })}
                 </tbody>
@@ -419,14 +437,14 @@ export default function CrnIndex({ pendingProcurements = [], activeCrns = [], no
         {notes.length > 0 && (
           <div className="bg-white rounded-[2rem] shadow-sm border border-slate-100 pt-2 px-6 pb-2 md:pt-2.5 md:px-8 md:pb-2">
             <div className="border-b border-slate-100 pb-2">
-              <h2 className="text-lg font-bold text-slate-800">Latest CRN History</h2>
+              <h2 className="text-lg font-bold text-slate-800">Latest {noteHistoryLabel} History</h2>
             </div>
             <div className="overflow-x-auto -mx-6 md:-mx-8 mt-1">
               <table className="w-full text-left border-collapse min-w-[600px]">
                 <thead>
                   <tr className="bg-slate-50 border-y border-slate-100">
                     <th className="px-6 md:px-8 py-3.5 text-xs font-bold text-slate-500 uppercase tracking-wider">Date</th>
-                    <th className="px-6 md:px-8 py-3.5 text-xs font-bold text-slate-500 uppercase tracking-wider">CRN Number</th>
+                    <th className="px-6 md:px-8 py-3.5 text-xs font-bold text-slate-500 uppercase tracking-wider">{noteCodeLabel}</th>
                     <th className="px-6 md:px-8 py-3.5 text-xs font-bold text-slate-500 uppercase tracking-wider">PO Code</th>
                     <th className="px-6 md:px-8 py-3.5 text-xs font-bold text-slate-500 uppercase tracking-wider">Items Received</th>
                     <th className="px-6 md:px-8 py-3.5 text-xs font-bold text-slate-500 uppercase tracking-wider">By</th>
@@ -439,7 +457,7 @@ export default function CrnIndex({ pendingProcurements = [], activeCrns = [], no
                       <td className="px-6 md:px-8 py-4 text-xs font-medium text-slate-600">
                         {note.received_at ? new Date(note.received_at).toLocaleDateString('en-GB') : new Date(note.updated_at).toLocaleDateString('en-GB')}
                       </td>
-                      <td className="px-6 md:px-8 py-4 text-xs font-bold text-slate-800">{note.crn_number}</td>
+                      <td className="px-6 md:px-8 py-4 text-xs font-bold text-slate-800">{note[noteCodeKey]}</td>
                       <td className="px-6 md:px-8 py-4 text-xs font-medium text-slate-600">
                         {note.procurement_order?.code || <span className="text-slate-400 italic">Standalone</span>}
                       </td>
@@ -461,7 +479,7 @@ export default function CrnIndex({ pendingProcurements = [], activeCrns = [], no
                             View Details
                           </button>
                           <a
-                            href={`/warehouse/crn/${note.id}/pdf`}
+                            href={`${notePdfBase}/${note.id}/pdf`}
                             target="_blank"
                             rel="noopener noreferrer"
                             className="inline-flex items-center justify-center rounded-xl bg-rose-600 px-4 py-2 text-xs font-black uppercase tracking-wider text-white transition-all shadow-md hover:bg-rose-700 active:scale-95 h-[36px] min-w-[60px]"
@@ -484,7 +502,7 @@ export default function CrnIndex({ pendingProcurements = [], activeCrns = [], no
             <div className="bg-white rounded-[2rem] w-full max-w-2xl max-h-[80vh] overflow-hidden flex flex-col shadow-2xl">
               <div className="p-6 md:p-8 border-b border-slate-100 flex items-center justify-between">
                 <div>
-                  <h3 className="text-xl font-bold text-slate-800">{selectedNote.crn_number}</h3>
+                  <h3 className="text-xl font-bold text-slate-800">{selectedNote[noteCodeKey]}</h3>
                   <p className="text-xs text-slate-500">Processed on {new Date(selectedNote.updated_at).toLocaleString('en-GB')}</p>
                 </div>
                 <button onClick={() => setSelectedNote(null)} className="p-2 hover:bg-slate-100 rounded-full transition-colors">
@@ -581,7 +599,7 @@ export default function CrnIndex({ pendingProcurements = [], activeCrns = [], no
               </div>
               <div className="p-6 border-t border-slate-100 bg-slate-50 flex justify-end gap-3">
                 <a
-                  href={`/warehouse/crn/${selectedNote.id}/pdf`}
+                  href={`${notePdfBase}/${selectedNote.id}/pdf`}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="bg-rose-600 text-white text-xs font-bold px-6 py-2 rounded-xl hover:bg-rose-700 flex items-center gap-2 transition-colors"

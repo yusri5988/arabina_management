@@ -7,6 +7,8 @@ return [
         'stock_in' => 'Stock In (+)',
         'delivery_order' => 'Delivery Order',
         'crn' => 'CRN (Container)',
+        'mrn' => 'MRN (Material)',
+        'srn' => 'SRN (Site)',
         'rejected_list' => 'Rejected List',
         'create_package' => 'Create Package',
         'procurement' => 'Procurement',

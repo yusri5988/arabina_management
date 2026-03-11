@@ -15,6 +15,7 @@ class ProcurementOrderLine extends Model
         'ordered_quantity',
         'received_quantity',
         'rejected_quantity',
+        'item_unit',
         'notes',
     ];
 

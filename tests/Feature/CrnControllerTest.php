@@ -26,6 +26,7 @@ class CrnControllerTest extends TestCase
             'sku' => 'ITEM-100',
             'name' => 'Warehouse Item',
             'unit' => 'pcs',
+            'bom_scope' => 'cabin',
             'created_by' => $user->id,
         ]);
 
@@ -169,6 +170,7 @@ class CrnControllerTest extends TestCase
             'sku' => 'NO-REMAINING-ITEM',
             'name' => 'No Remaining Test Item',
             'unit' => 'pcs',
+            'bom_scope' => 'cabin',
             'created_by' => $user->id,
         ]);
 
@@ -186,22 +188,26 @@ class CrnControllerTest extends TestCase
             'rejected_quantity' => 0,
         ]);
 
-        $response = $this->actingAs($user)
-            ->withHeaders(['X-Requested-With' => 'XMLHttpRequest'])
-            ->postJson("/warehouse/crn/procurement/{$order->id}/receive", [
-                'lines' => [
-                    [
-                        'line_id' => $line->id,
-                        'received_qty' => 0,
-                        'rejected_qty' => 0,
-                        'rejection_reason' => null,
-                    ],
-                ],
-            ]);
+        Auth::login($user);
 
-        $response->assertStatus(422);
-        $response->assertJson([
-            'message' => 'No valid lines to process. All lines are already fully received or rejected.',
+        $request = Request::create("/warehouse/crn/procurement/{$order->id}/receive", 'POST', [
+            'lines' => [
+                [
+                    'line_id' => $line->id,
+                    'received_qty' => 0,
+                    'rejected_qty' => 0,
+                    'rejection_reason' => null,
+                ],
+            ],
         ]);
+        $request->setUserResolver(fn() => $user);
+
+        $response = app(CrnController::class)->receiveProcurement($request, $order);
+
+        $this->assertSame(422, $response->getStatusCode());
+        $this->assertSame(
+            '{"message":"No valid lines to process. All lines are already fully received or rejected."}',
+            $response->getContent()
+        );
     }
 }

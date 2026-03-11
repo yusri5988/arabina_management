@@ -114,6 +114,22 @@ class User extends Authenticatable
                 'warehouse_crn_procurement_safe_line',
                 'warehouse_crn_transfer',
             ],
+            'mrn' => [
+                'warehouse_mrn',
+                'warehouse_mrn_index',
+                'warehouse_mrn_pdf',
+                'warehouse_mrn_eta',
+                'warehouse_mrn_arrived',
+                'warehouse_mrn_procurement_receive',
+            ],
+            'srn' => [
+                'warehouse_srn',
+                'warehouse_srn_index',
+                'warehouse_srn_pdf',
+                'warehouse_srn_eta',
+                'warehouse_srn_arrived',
+                'warehouse_srn_procurement_receive',
+            ],
             'rejected_list' => ['warehouse_rejections'],
         ];
 

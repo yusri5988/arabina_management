@@ -26,7 +26,7 @@ class ItemController extends Controller
     {
         return Inertia::render('Inventory/Index', [
             'items' => Item::query()
-                ->select(['id', 'sku', 'name', 'length_m', 'unit', 'bom_scope'])
+                ->select(['id', 'sku', 'name', 'length_m', 'unit', 'bom_scope', 'supplier'])
                 ->latest()
                 ->get(),
         ]);
@@ -38,39 +38,30 @@ class ItemController extends Controller
 
         $stockByItem = [];
         foreach ($items as $item) {
-            $stockByItem[$item->id] = $item->variants->sum('stock_current');
+            $stockByItem[$item->id] = (float) $item->variants->sum('stock_current');
         }
 
         $packagesData = [];
         if (Schema::hasTable('packages')) {
-            $packages = Package::with('packageItems.item')->where('is_active', true)->orderBy('name')->get();
+            $packages = Package::with(['packageItems.item:id,sku,name,bom_scope'])
+                ->where('is_active', true)
+                ->orderBy('name')
+                ->get();
 
             $packagesData = $packages->map(function ($package) use ($stockByItem) {
-                $maxPossible = null;
-                $missingItems = [];
-
-                foreach ($package->packageItems as $pItem) {
-                    $requiredQty = $pItem->quantity;
-                    $currentStock = $stockByItem[$pItem->item_id] ?? 0;
-
-                    $possibleWithThisItem = floor($currentStock / $requiredQty);
-
-                    if ($maxPossible === null || $possibleWithThisItem < $maxPossible) {
-                        $maxPossible = $possibleWithThisItem;
-                    }
-
-                    if ($currentStock < $requiredQty) {
-                        $missingItems[] = $pItem->item ? $pItem->item->sku : 'Unknown SKU';
-                    }
-                }
-
                 return [
                     'id' => $package->id,
                     'code' => $package->code,
                     'name' => $package->name,
-                    'available_qty' => $maxPossible ?? 0,
-                    'missing_items' => $missingItems,
-                    'lines_count' => $package->packageItems->count(),
+                    'items' => $package->packageItems->map(function ($pItem) use ($stockByItem) {
+                        return [
+                            'item_id' => $pItem->item_id,
+                            'sku' => $pItem->item?->sku ?? 'Unknown',
+                            'bom_scope' => $pItem->item?->bom_scope ?? 'hardware',
+                            'required_qty' => (float) $pItem->quantity,
+                            'current_stock' => (float) ($stockByItem[$pItem->item_id] ?? 0),
+                        ];
+                    }),
                 ];
             });
         }
@@ -332,6 +323,7 @@ class ItemController extends Controller
             'length_m' => 'nullable|numeric',
             'unit' => 'required|in:pcs,unit,set,roll,bag,btg,pek,tong,helai,can,pellet,cut,scope',
             'bom_scope' => 'required|in:cabin,hardware,hardware_site',
+            'supplier' => 'nullable|string|max:255',
         ]);
 
         $item = Item::create([
@@ -340,6 +332,7 @@ class ItemController extends Controller
             'length_m' => $validated['length_m'],
             'unit' => $validated['unit'],
             'bom_scope' => $validated['bom_scope'],
+            'supplier' => $validated['supplier'] ?? null,
             'created_by' => $request->user()->id,
         ]);
 
@@ -423,6 +416,7 @@ class ItemController extends Controller
             'length_m' => ['nullable', 'numeric'],
             'unit' => 'required|in:pcs,unit,set,roll,bag,btg,pek,tong,helai,can,pellet,cut,scope',
             'bom_scope' => 'required|in:cabin,hardware,hardware_site',
+            'supplier' => ['nullable', 'string', 'max:255'],
         ]);
 
         $item->update($validated);

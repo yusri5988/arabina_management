@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Bom;
 use App\Models\ContainerReceivingNote;
 use App\Models\CrnItem;
 use App\Models\InventoryTransaction;
@@ -117,6 +118,8 @@ class CrnController extends Controller
 
     public function receiveProcurement(Request $request, ProcurementOrder $order): JsonResponse
     {
+        $this->ensureCabinOrder($order);
+
         if ($response = $this->ensureProcurementOrderOpen($order)) {
             return $response;
         }
@@ -197,6 +200,8 @@ class CrnController extends Controller
 
     public function safeProcurementLine(Request $request, ProcurementOrder $order, ProcurementOrderLine $line): JsonResponse
     {
+        $this->ensureCabinOrder($order);
+
         if ((int) $line->procurement_order_id !== (int) $order->id) {
             return response()->json([
                 'message' => 'Line does not belong to this procurement order.',
@@ -258,11 +263,12 @@ class CrnController extends Controller
             ->with([
                 'lines' => function ($query) {
                     $query->with([
-                        'item:id,sku,name,unit',
+                        'item:id,sku,name,unit,bom_scope',
                     ])->orderBy('id');
                 },
             ])
             ->get(['id', 'code'])
+            ->filter(fn(ProcurementOrder $order) => $order->matchesBomScope(Bom::TYPE_CABIN))
             ->map(function ($order) use ($defaultVariantByItemId) {
                 $lines = $this->mapPendingProcurementLines($order->lines, $defaultVariantByItemId);
 
@@ -426,10 +432,11 @@ class CrnController extends Controller
                 $q->where('status', 'arrived');
             })
             ->with([
-                'lines.item:id,sku,name,unit',
+                'lines.item:id,sku,name,unit,bom_scope',
             ])
             ->latest('id')
             ->get(['id', 'code', 'status', 'created_at'])
+            ->filter(fn(ProcurementOrder $order) => $order->matchesBomScope(Bom::TYPE_CABIN))
             ->map(function ($order) {
                 $lines = $this->mapPendingProcurementLines($order->lines);
 
@@ -443,6 +450,11 @@ class CrnController extends Controller
             })
             ->filter(fn(array $order) => $order['lines']->isNotEmpty())
             ->values();
+    }
+
+    private function ensureCabinOrder(ProcurementOrder $order): void
+    {
+        abort_unless($order->matchesBomScope(Bom::TYPE_CABIN), 404);
     }
 
     private function authorizeManage(Request $request): void

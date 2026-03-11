@@ -11,6 +11,38 @@ const BOM_SECTIONS = [
 export default function StockList({ items = [], packages = [] }) {
   const [search, setSearch] = useState('');
   const [sortConfig, setSortConfig] = useState({ key: 'name', direction: 'asc' });
+  const [selectedScopes, setSelectedScopes] = useState(['cabin', 'hardware', 'hardware_site']);
+
+  const toggleScope = (scope) => {
+    setSelectedScopes((prev) =>
+      prev.includes(scope) ? prev.filter((s) => s !== scope) : [...prev, scope]
+    );
+  };
+
+  const packageAvailability = useMemo(() => {
+    return packages.map((pkg) => {
+      // Only filter items that match selected scopes
+      const relevantItems = pkg.items.filter((item) => selectedScopes.includes(item.bom_scope));
+
+      if (relevantItems.length === 0) {
+        return { ...pkg, available_qty: 0, is_filtered: true };
+      }
+
+      let maxPossible = null;
+      relevantItems.forEach((item) => {
+        const possible = Math.floor(item.current_stock / item.required_qty);
+        if (maxPossible === null || possible < maxPossible) {
+          maxPossible = possible;
+        }
+      });
+
+      return {
+        ...pkg,
+        available_qty: maxPossible ?? 0,
+        is_filtered: false,
+      };
+    });
+  }, [packages, selectedScopes]);
 
   const requestSort = (key) => {
     let direction = 'asc';
@@ -113,9 +145,37 @@ export default function StockList({ items = [], packages = [] }) {
         {/* Package Availability Section */}
         {packages && packages.length > 0 && (
           <div className="space-y-4">
-            <div className="px-2">
-              <h3 className="text-sm font-bold text-slate-800">Package Availability</h3>
-              <p className="text-xs text-slate-500">Calculated based on current SKU stock levels.</p>
+            <div className="px-2 flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div>
+                <h3 className="text-sm font-bold text-slate-800">Package Availability</h3>
+                <p className="text-xs text-slate-500">Recalculate "Available Sets" by selecting BOM categories below.</p>
+              </div>
+
+              {/* BOM Filters */}
+              <div className="flex flex-wrap items-center gap-3">
+                {BOM_SECTIONS.map((section) => (
+                  <label key={section.key} className="flex items-center gap-2 cursor-pointer group">
+                    <div
+                      onClick={() => toggleScope(section.key)}
+                      className={`
+                        w-5 h-5 rounded border transition-all flex items-center justify-center
+                        ${selectedScopes.includes(section.key)
+                          ? 'bg-amber-600 border-amber-600 shadow-sm shadow-amber-200'
+                          : 'bg-white border-slate-300 group-hover:border-amber-400'}
+                      `}
+                    >
+                      {selectedScopes.includes(section.key) && (
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5 text-white">
+                          <path fillRule="evenodd" d="M16.704 4.153a.75.75 0 01.143 1.052l-8 10.5a.75.75 0 01-1.127.075l-4.5-4.5a.75.75 0 011.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 011.05-.143z" clipRule="evenodd" />
+                        </svg>
+                      )}
+                    </div>
+                    <span className={`text-xs font-bold transition-colors ${selectedScopes.includes(section.key) ? 'text-slate-900' : 'text-slate-500'}`}>
+                      {section.label.replace('BOM ', '')}
+                    </span>
+                  </label>
+                ))}
+              </div>
             </div>
 
             <div className="bg-white rounded-[2rem] shadow-sm border border-slate-100 overflow-hidden">
@@ -130,13 +190,13 @@ export default function StockList({ items = [], packages = [] }) {
                     </tr>
                   </thead>
                   <tbody className="bg-white divide-y divide-slate-50">
-                    {packages.length === 0 ? (
+                    {packageAvailability.length === 0 ? (
                       <tr>
                         <td colSpan="3" className="px-4 py-10 text-center text-sm text-slate-500">
                           No packages defined yet.
                         </td>
                       </tr>
-                    ) : packages.map((pkg) => (
+                    ) : packageAvailability.map((pkg) => (
                       <tr key={pkg.id} className="hover:bg-slate-50 transition-colors">
                         <td className="px-4 py-3 text-xs font-bold text-slate-700">{pkg.code}</td>
                         <td className="px-4 py-3 text-sm text-slate-800 font-medium">

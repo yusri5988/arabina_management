@@ -188,6 +188,74 @@
     </div>
     @endif
 
+    @if(!empty($payload['data']['mrn']))
+    @php($mrn = $payload['data']['mrn'])
+    <div class="card">
+        <h2>MRN Form</h2>
+        <div><strong>MRN Number:</strong> {{ $mrn->mrn_number }}</div>
+        <div><strong>Status:</strong> {{ $mrn->status }}</div>
+        <div><strong>PO Code:</strong> {{ $mrn->procurementOrder?->code ?? '-' }}</div>
+        <table>
+            <thead>
+                <tr>
+                    <th>#</th>
+                    <th>SKU</th>
+                    <th>Item</th>
+                    <th>Expected</th>
+                    <th>Received</th>
+                    <th>Rejected</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach($mrn->items as $i => $item)
+                    <tr>
+                        <td>{{ $i + 1 }}</td>
+                        <td>{{ $item->itemVariant?->item?->sku }}</td>
+                        <td>{{ $item->itemVariant?->item?->name }}</td>
+                        <td>{{ $item->expected_qty }}</td>
+                        <td>{{ $item->received_qty }}</td>
+                        <td>{{ $item->rejected_qty }}</td>
+                    </tr>
+                @endforeach
+            </tbody>
+        </table>
+    </div>
+    @endif
+
+    @if(!empty($payload['data']['srn']))
+    @php($srn = $payload['data']['srn'])
+    <div class="card">
+        <h2>SRN Form</h2>
+        <div><strong>SRN Number:</strong> {{ $srn->srn_number }}</div>
+        <div><strong>Status:</strong> {{ $srn->status }}</div>
+        <div><strong>PO Code:</strong> {{ $srn->procurementOrder?->code ?? '-' }}</div>
+        <table>
+            <thead>
+                <tr>
+                    <th>#</th>
+                    <th>SKU</th>
+                    <th>Item</th>
+                    <th>Expected</th>
+                    <th>Received</th>
+                    <th>Rejected</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach($srn->items as $i => $item)
+                    <tr>
+                        <td>{{ $i + 1 }}</td>
+                        <td>{{ $item->itemVariant?->item?->sku }}</td>
+                        <td>{{ $item->itemVariant?->item?->name }}</td>
+                        <td>{{ $item->expected_qty }}</td>
+                        <td>{{ $item->received_qty }}</td>
+                        <td>{{ $item->rejected_qty }}</td>
+                    </tr>
+                @endforeach
+            </tbody>
+        </table>
+    </div>
+    @endif
+
     @if(empty($payload['data']))
         <div class="card muted">
             No linked transaction form found for this log action.

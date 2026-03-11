@@ -298,7 +298,7 @@
                         <tr>
                             <td class="item-code">{{ $line->item->sku ?? '-' }}</td>
                             <td class="item-name">{{ $line->item->name ?? '-' }}</td>
-                            <td style="font-size: 10px; color: #64748b;">{{ $line->item->unit ?? 'PCS' }}</td>
+                            <td style="font-size: 10px; color: #64748b;">{{ $line->item_unit ?? ($line->item->unit ?? 'PCS') }}</td>
                             <td class="qty-badge">{{ $formatQuantity($line->ordered_quantity) }}</td>
                         </tr>
                     @empty
@@ -335,7 +335,7 @@
                         <tr>
                             <td class="item-code">{{ $line->item->sku ?? '-' }}</td>
                             <td class="item-name">{{ $line->item->name ?? '-' }}</td>
-                            <td style="font-size: 10px; color: #64748b;">{{ $line->item->unit ?? 'PCS' }}</td>
+                            <td style="font-size: 10px; color: #64748b;">{{ $line->item_unit ?? ($line->item->unit ?? 'PCS') }}</td>
                             <td class="qty-badge">{{ $formatQuantity($line->ordered_quantity) }}</td>
                         </tr>
                     @endforeach
