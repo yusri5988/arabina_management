@@ -8,7 +8,7 @@ import {
   ClockIcon
 } from '@heroicons/react/24/outline/index.js';
 
-export default function Dashboard({ stats, canViewLogs }) {
+export default function Dashboard() {
   const { auth } = usePage().props;
   const permissions = auth?.user?.module_permissions ?? [];
   const hasModuleAccess = (moduleKey) => permissions.includes(moduleKey);
@@ -140,7 +140,7 @@ export default function Dashboard({ stats, canViewLogs }) {
           )}
 
           {/* Action 5: Activity Logs (Admin Only) */}
-          {canViewLogs && (
+          {hasModuleAccess('admin_logs') && (
             <Link
               href="/admin/logs"
               className="group relative bg-white p-6 rounded-2xl shadow-sm border border-slate-100 hover:border-slate-300 hover:shadow-lg hover:shadow-slate-100/50 transition-all duration-300 active:scale-[0.98] overflow-hidden"
