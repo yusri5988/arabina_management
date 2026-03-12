@@ -96,9 +96,7 @@ class ProcurementController extends Controller
 
             $suggestion = $this->service->getShortageSuggestions($scope);
             
-            $packageAvailability = $scope === Bom::TYPE_CABIN 
-                ? $this->service->calculatePackageAvailability($scope) 
-                : [];
+            $packageAvailability = $this->service->calculatePackageAvailability($scope);
             
             $items = Item::query()
                 ->where('bom_scope', $scope)

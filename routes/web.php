@@ -43,7 +43,7 @@ Route::middleware('auth')->group(function () use ($procurementScopes) {
     Route::get('/warehouse', function () {
         $user = request()->user();
         $warehouseModules = ['crn', 'mrn', 'srn', 'item_catalog', 'stock_list', 'delivery_order', 'rejected_list', 'create_package'];
-        $canAccessWarehouse = $user && collect($warehouseModules)->contains(fn ($module) => $user->hasModuleAccess($module));
+        $canAccessWarehouse = $user && collect($warehouseModules)->contains(fn($module) => $user->hasModuleAccess($module));
 
         abort_unless($canAccessWarehouse, 403, 'Unauthorized module.');
 
@@ -91,6 +91,7 @@ Route::middleware('auth')->group(function () use ($procurementScopes) {
     Route::middleware('module:sales_orders')->group(function () {
         Route::get('/orders', [SalesOrderController::class, 'index'])->name('sales.orders.index');
         Route::get('/orders/history', [SalesOrderController::class, 'history'])->name('sales.orders.history');
+        Route::get('/orders/{order}/pdf', [SalesOrderController::class, 'pdf'])->name('sales.orders.pdf');
         Route::get('/orders/search-item', [SalesOrderController::class, 'searchItem'])->name('sales.orders.search.item');
         Route::post('/orders', [SalesOrderController::class, 'store'])->name('sales.orders.store');
     });

@@ -81,9 +81,8 @@ const SearchableSelect = ({ value, onChange, options, placeholder, className = '
                     onChange(option.value);
                     setIsOpen(false);
                   }}
-                  className={`w-full px-4 py-2.5 text-xs text-left transition-colors hover:bg-slate-50 flex items-center justify-between ${
-                    value === option.value ? 'bg-emerald-50 text-emerald-700 font-bold' : 'text-slate-600'
-                  }`}
+                  className={`w-full px-4 py-2.5 text-xs text-left transition-colors hover:bg-slate-50 flex items-center justify-between ${value === option.value ? 'bg-emerald-50 text-emerald-700 font-bold' : 'text-slate-600'
+                    }`}
                 >
                   {option.label}
                   {value === option.value && (
@@ -333,51 +332,51 @@ export default function Orders({ packages = [], items = [], orders = [], availab
 
                   return (
                     <div key={index} className="bg-slate-50 rounded-xl p-3 border border-slate-100 transition-all hover:border-slate-200">
-                    <div className="flex items-center justify-between mb-2">
-                      <span className={`text-[9px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-md ${line.type === 'package' ? 'bg-emerald-100 text-emerald-700' : 'bg-blue-100 text-blue-700'}`}>
-                        {line.type === 'package' ? 'Package' : 'Loose SKU'}
-                      </span>
-                      <button type="button" onClick={() => removeLine(index)} className="text-slate-400 hover:text-red-500 transition-colors">
-                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-4 h-4">
-                          <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                        </svg>
-                      </button>
-                    </div>
+                      <div className="flex items-center justify-between mb-2">
+                        <span className={`text-[9px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-md ${line.type === 'package' ? 'bg-emerald-100 text-emerald-700' : 'bg-blue-100 text-blue-700'}`}>
+                          {line.type === 'package' ? 'Package' : 'Loose SKU'}
+                        </span>
+                        <button type="button" onClick={() => removeLine(index)} className="text-slate-400 hover:text-red-500 transition-colors">
+                          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-4 h-4">
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                          </svg>
+                        </button>
+                      </div>
 
-                    <div className="grid grid-cols-12 gap-2">
-                      <div className="col-span-8">
-                        {line.type === 'package' ? (
-                          <SearchableSelect
-                            value={line.package_id}
-                            onChange={(value) => updateLine(index, 'package_id', value)}
-                            options={packageOptions}
-                            placeholder="Select Package..."
+                      <div className="grid grid-cols-12 gap-2">
+                        <div className="col-span-8">
+                          {line.type === 'package' ? (
+                            <SearchableSelect
+                              value={line.package_id}
+                              onChange={(value) => updateLine(index, 'package_id', value)}
+                              options={packageOptions}
+                              placeholder="Select Package..."
+                            />
+                          ) : (
+                            <SearchableSelect
+                              value={line.item_sku}
+                              onChange={(value) => updateLine(index, 'item_sku', value)}
+                              options={itemOptions}
+                              placeholder="Select SKU..."
+                            />
+                          )}
+                        </div>
+                        <div className="col-span-4">
+                          <input
+                            type="number"
+                            min="1"
+                            value={line.type === 'package' ? line.package_quantity : line.item_quantity}
+                            onChange={(e) => updateLine(index, line.type === 'package' ? 'package_quantity' : 'item_quantity', e.target.value)}
+                            className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm font-bold text-right bg-white focus:ring-2 focus:ring-arabina-accent focus:outline-none"
+                            placeholder="Qty"
+                            required
                           />
-                        ) : (
-                          <SearchableSelect
-                            value={line.item_sku}
-                            onChange={(value) => updateLine(index, 'item_sku', value)}
-                            options={itemOptions}
-                            placeholder="Select SKU..."
-                          />
-                        )}
+                        </div>
                       </div>
-                      <div className="col-span-4">
-                        <input
-                          type="number"
-                          min="1"
-                          value={line.type === 'package' ? line.package_quantity : line.item_quantity}
-                          onChange={(e) => updateLine(index, line.type === 'package' ? 'package_quantity' : 'item_quantity', e.target.value)}
-                          className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm font-bold text-right bg-white focus:ring-2 focus:ring-arabina-accent focus:outline-none"
-                          placeholder="Qty"
-                          required
-                        />
-                      </div>
-                    </div>
-                    {errors[`lines.${index}.package_id`] && <p className="text-[10px] text-red-500 mt-1">{errors[`lines.${index}.package_id`][0]}</p>}
-                    {errors[`lines.${index}.item_sku`] && <p className="text-[10px] text-red-500 mt-1">{errors[`lines.${index}.item_sku`][0]}</p>}
-                    {errors[`lines.${index}.package_quantity`] && <p className="text-[10px] text-red-500 mt-1">{errors[`lines.${index}.package_quantity`][0]}</p>}
-                    {errors[`lines.${index}.item_quantity`] && <p className="text-[10px] text-red-500 mt-1">{errors[`lines.${index}.item_quantity`][0]}</p>}
+                      {errors[`lines.${index}.package_id`] && <p className="text-[10px] text-red-500 mt-1">{errors[`lines.${index}.package_id`][0]}</p>}
+                      {errors[`lines.${index}.item_sku`] && <p className="text-[10px] text-red-500 mt-1">{errors[`lines.${index}.item_sku`][0]}</p>}
+                      {errors[`lines.${index}.package_quantity`] && <p className="text-[10px] text-red-500 mt-1">{errors[`lines.${index}.package_quantity`][0]}</p>}
+                      {errors[`lines.${index}.item_quantity`] && <p className="text-[10px] text-red-500 mt-1">{errors[`lines.${index}.item_quantity`][0]}</p>}
                     </div>
                   );
                 })}
@@ -411,46 +410,87 @@ export default function Orders({ packages = [], items = [], orders = [], availab
             <div className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
             Recent Orders ({list.length})
           </h3>
-          <div className="space-y-3">
-            {list.map((order) => (
-              <div key={order.id} className="rounded-xl border border-slate-200 bg-slate-50 p-3 transition-all hover:bg-white hover:shadow-md hover:border-slate-100">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <p className="text-sm font-bold text-slate-800">{order.code}</p>
-                  <span className={`text-[9px] font-bold uppercase tracking-wider px-2.5 py-1 rounded-full ${order.status === 'fulfilled'
-                    ? 'bg-emerald-100 text-emerald-700'
-                    : order.status === 'partial'
-                      ? 'bg-amber-100 text-amber-700'
-                      : 'bg-blue-100 text-blue-700'
-                    }`}>
-                    {order.status === 'fulfilled' ? 'Shipped' : order.status}
-                  </span>
-                </div>
-                <p className="text-sm text-slate-700 mt-0.5 font-medium">{order.customer_name}</p>
-                <div className="flex flex-wrap gap-x-4 gap-y-1 mt-1">
-                  {order.site_id && (
-                    <p className="text-[9px] text-slate-500 font-bold uppercase tracking-tighter">Site ID: {order.site_id}</p>
-                  )}
-                  <p className="text-[9px] text-slate-400 font-bold uppercase tracking-tighter">Date: {order.order_date}</p>
-                </div>
-                <ul className="mt-2 space-y-1 border-t border-slate-100 pt-2">
-                  {order.lines?.map((line) => (
-                    <li key={line.id} className="text-[11px] text-slate-600 flex items-center justify-between">
-                      <span className="flex items-center gap-2">
-                        <span className={`w-1 h-1 rounded-full ${line.package_id ? 'bg-emerald-400' : 'bg-blue-400'}`} />
-                        {line.package_id
-                          ? <><span className="font-bold text-slate-700">{line.package?.code}</span> - {line.package?.name}</>
-                          : <><span className="font-bold text-slate-700">{line.item_sku}</span> (Loose)</>
-                        }
+          <div className="overflow-x-auto -mx-6 md:mx-0">
+            <table className="w-full text-left border-separate border-spacing-0">
+              <thead>
+                <tr>
+                  <th className="px-6 py-4 bg-slate-50 border-y border-slate-100 text-[10px] font-black text-slate-500 uppercase tracking-widest rounded-tl-2xl">Order Code</th>
+                  <th className="px-6 py-4 bg-slate-50 border-y border-slate-100 text-[10px] font-black text-slate-500 uppercase tracking-widest">Customer & Site</th>
+                  <th className="px-6 py-4 bg-slate-50 border-y border-slate-100 text-[10px] font-black text-slate-500 uppercase tracking-widest">Registered By</th>
+                  <th className="px-6 py-4 bg-slate-50 border-y border-slate-100 text-[10px] font-black text-slate-500 uppercase tracking-widest">Order Details</th>
+                  <th className="px-6 py-4 bg-slate-50 border-y border-slate-100 text-[10px] font-black text-slate-500 uppercase tracking-widest">Status</th>
+                  <th className="px-6 py-4 bg-slate-50 border-y border-slate-100 text-[10px] font-black text-slate-500 uppercase tracking-widest rounded-tr-2xl text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-50">
+                {list.map((order) => (
+                  <tr key={order.id} className="group hover:bg-emerald-50/30 transition-colors">
+                    <td className="px-6 py-5 align-top">
+                      <p className="text-sm font-black text-slate-900 tracking-tight">{order.code}</p>
+                      <p className="text-[10px] text-slate-400 font-bold mt-1 uppercase">{order.order_date}</p>
+                    </td>
+                    <td className="px-6 py-5 align-top">
+                      <p className="text-sm font-black text-emerald-800">{order.customer_name}</p>
+                      {order.site_id && (
+                        <div className="flex items-center gap-1 mt-1">
+                          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3 h-3 text-slate-400">
+                            <path fillRule="evenodd" d="m9.69 18.933.003.001C9.89 19.02 10 19 10 19s.11.02.308-.066l.002-.001.006-.003.018-.008a17.405 17.405 0 0 0 1.457-.735 25.03 25.03 0 0 0 3.492-2.317c2.307-1.792 4.717-4.122 4.717-8.123 0-4.418-3.582-8-8-8s-8 3.582-8 8c0 4.001 2.41 6.331 4.717 8.123a25.03 25.03 0 0 0 3.492 2.317c.457.26.909.502 1.334.711.043.022.083.041.12.059l.03.014.007.003ZM10 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z" clipRule="evenodd" />
+                          </svg>
+                          <span className="text-[10px] text-slate-500 font-black uppercase">{order.site_id}</span>
+                        </div>
+                      )}
+                    </td>
+                    <td className="px-6 py-5 align-top">
+                      <div className="flex items-center gap-2">
+                        <div className="w-6 h-6 rounded-full bg-slate-100 flex items-center justify-center text-[10px] font-black text-slate-400 border border-slate-200 uppercase">
+                          {order.creator?.name?.charAt(0) || '?'}
+                        </div>
+                        <p className="text-xs font-bold text-slate-600">{order.creator?.name || 'Unknown'}</p>
+                      </div>
+                    </td>
+                    <td className="px-6 py-5 align-top">
+                      <div className="space-y-1.5">
+                        {order.lines?.map((line) => (
+                          <div key={line.id} className="flex items-center gap-2 text-[11px]">
+                            <span className={`w-1 h-1 rounded-full shrink-0 ${line.package_id ? 'bg-emerald-500' : 'bg-blue-500'}`} />
+                            <span className="font-black text-slate-700 tracking-tight">
+                              {line.package_id ? line.package?.code : line.item_sku}
+                            </span>
+                            <span className="text-slate-400 font-medium">
+                              x{line.package_id ? line.package_quantity : line.item_quantity}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </td>
+                    <td className="px-6 py-5 align-top">
+                      <span className={`inline-flex text-[9px] font-black uppercase tracking-widest px-2.5 py-1 rounded-lg border ${order.status === 'fulfilled'
+                        ? 'bg-emerald-50 text-emerald-600 border-emerald-100'
+                        : order.status === 'partial'
+                          ? 'bg-amber-50 text-amber-600 border-amber-100'
+                          : 'bg-blue-50 text-blue-600 border-blue-100'
+                        }`}>
+                        {order.status === 'fulfilled' ? 'Shipped' : order.status}
                       </span>
-                      <span className="font-bold text-slate-500">
-                        x{line.package_id ? line.package_quantity : line.item_quantity}
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            ))}
-            {list.length === 0 && <p className="text-sm text-slate-500 italic px-2">No sales order recorded yet.</p>}
+                    </td>
+                    <td className="px-6 py-5 align-top text-right">
+                      <a
+                        href={`/orders/${order.id}/pdf`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex items-center gap-2 rounded-xl border border-rose-100 bg-white px-3 py-2 text-[10px] font-black uppercase tracking-widest text-rose-600 transition-all hover:border-rose-200 hover:bg-rose-50 active:scale-95"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-3.5 w-3.5">
+                          <path d="M4.5 2A1.5 1.5 0 0 0 3 3.5v13A1.5 1.5 0 0 0 4.5 18h11a1.5 1.5 0 0 0 1.5-1.5V7.621a1.5 1.5 0 0 0-.44-1.06l-4.12-4.122A1.5 1.5 0 0 0 11.378 2H4.5Zm2.25 8.5a.75.75 0 0 0 0 1.5h6.5a.75.75 0 0 0 0-1.5h-6.5Zm0 3a.75.75 0 0 0 0 1.5h6.5a.75.75 0 0 0 0-1.5h-6.5Z" />
+                        </svg>
+                        PDF
+                      </a>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {list.length === 0 && <p className="text-sm text-slate-500 italic p-8 text-center bg-slate-50 rounded-2xl mt-4">No sales order recorded yet.</p>}
           </div>
         </div>
       </div>

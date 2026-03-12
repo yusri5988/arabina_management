@@ -134,6 +134,7 @@ class SalesOrderProgressTest extends TestCase
         $response->assertOk();
 
         $this->assertDatabaseHas('sales_orders', [
+            'code' => 'SITE-001',
             'customer_name' => 'Loose Customer',
             'site_id' => 'SITE-001',
         ]);
@@ -166,6 +167,52 @@ class SalesOrderProgressTest extends TestCase
 
         $response->assertStatus(422)
             ->assertJsonValidationErrors(['site_id']);
+    }
+
+    public function test_create_sales_order_fails_when_site_id_already_exists(): void
+    {
+        $user = User::factory()->create([
+            'role' => User::ROLE_SUPER_ADMIN,
+        ]);
+
+        $item = Item::query()->create([
+            'sku' => 'DUP-SITE-SKU-001',
+            'name' => 'Duplicate Site Item',
+            'unit' => 'pcs',
+            'created_by' => $user->id,
+        ]);
+
+        SalesOrder::query()->create([
+            'code' => 'SITE-EXIST-001',
+            'customer_name' => 'Existing Customer',
+            'site_id' => 'SITE-EXIST-001',
+            'order_date' => now()->toDateString(),
+            'status' => 'open',
+            'created_by' => $user->id,
+        ]);
+
+        $response = $this->actingAs($user)
+            ->postJson('/orders', [
+                'customer_name' => 'Duplicate Site Customer',
+                'site_id' => 'SITE-EXIST-001',
+                'order_date' => now()->toDateString(),
+                'notes' => 'Duplicate site id',
+                'lines' => [
+                    [
+                        'type' => 'loose',
+                        'item_sku' => $item->sku,
+                        'item_quantity' => 1,
+                    ],
+                ],
+            ]);
+
+        $response->assertStatus(422)
+            ->assertJsonValidationErrors(['site_id']);
+
+        $this->assertContains(
+            'Site ID already registered in another Sales Order.',
+            $response->json('errors.site_id', [])
+        );
     }
 
     public function test_mixed_sales_order_is_fulfilled_after_alacarte_stock_out(): void
@@ -340,5 +387,41 @@ class SalesOrderProgressTest extends TestCase
             'id' => $line->id,
             'shipped_quantity' => 0,
         ]);
+    }
+
+    public function test_can_download_sales_order_pdf(): void
+    {
+        $user = User::factory()->create([
+            'role' => User::ROLE_SUPER_ADMIN,
+        ]);
+
+        $item = Item::query()->create([
+            'sku' => 'PDF-SKU-001',
+            'name' => 'PDF Item',
+            'unit' => 'pcs',
+            'created_by' => $user->id,
+        ]);
+
+        $order = SalesOrder::query()->create([
+            'code' => 'SO-PDF-0001',
+            'customer_name' => 'PDF Customer',
+            'site_id' => 'SITE-PDF-01',
+            'order_date' => now()->toDateString(),
+            'status' => 'open',
+            'created_by' => $user->id,
+            'notes' => 'PDF notes',
+        ]);
+
+        $order->lines()->create([
+            'item_sku' => $item->sku,
+            'item_quantity' => 3,
+            'shipped_quantity' => 0,
+        ]);
+
+        $response = $this->actingAs($user)->get('/orders/' . $order->id . '/pdf');
+
+        $response->assertOk();
+        $response->assertHeader('content-type', 'application/pdf');
+        $this->assertStringContainsString('.pdf', (string) $response->headers->get('content-disposition'));
     }
 }
