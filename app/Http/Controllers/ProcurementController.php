@@ -86,7 +86,7 @@ class ProcurementController extends Controller
 
         if ($databaseReady) {
             $suppliers = Supplier::all(['id', 'name']);
-            
+
             $orders = ProcurementOrder::query()
                 ->with(self::ORDER_RELATIONS)
                 ->where('status', '!=', 'received')
@@ -95,18 +95,20 @@ class ProcurementController extends Controller
                 ->get(['id', 'code', 'status', 'supplier_id', 'supplier_name', 'notes', 'created_at']);
 
             $suggestion = $this->service->getShortageSuggestions($scope);
-            
+
             $packageAvailability = $this->service->calculatePackageAvailability($scope);
-            
+
             $items = Item::query()
                 ->where('bom_scope', $scope)
                 ->orderBy('sku')
                 ->get(['id', 'sku', 'name', 'unit', 'bom_scope']);
 
             $packages = Package::query()
-                ->with(['boms' => function ($query) use ($scope) {
-                    $query->where('type', $scope)->with('bomItems.item');
-                }])
+                ->with([
+                    'boms' => function ($query) use ($scope) {
+                        $query->where('type', $scope)->with('bomItems.item');
+                    }
+                ])
                 ->whereHas('boms', function ($query) use ($scope) {
                     $query->where('type', $scope)->whereHas('bomItems');
                 })
@@ -195,13 +197,14 @@ class ProcurementController extends Controller
                 'required',
                 'numeric',
                 function (string $attribute, mixed $value, \Closure $fail): void {
-                    if (! preg_match('/^-?\d+(?:\.\d)?$/', trim((string) $value))) {
+                    if (!preg_match('/^-?\d+(?:\.\d)?$/', trim((string) $value))) {
                         $fail('The ' . str_replace('_', ' ', $attribute) . ' field must have at most 1 decimal place.');
                     }
                 },
             ],
             'sku_lines.*.unit' => 'nullable|string|max:50',
             'sku_suppliers' => 'nullable|array', // { item_id => supplier_id }
+            'po_number' => 'nullable|string|max:255|unique:procurement_orders,code',
             'notes' => 'nullable|string|max:500',
         ]);
 
@@ -221,7 +224,7 @@ class ProcurementController extends Controller
 
         // Grouping logic: [supplier_id => [item_id => qty]]
         // Using 0 as a placeholder for "General/No Supplier Selected"
-        $supplierGroups = []; 
+        $supplierGroups = [];
         $skuSuppliersMap = ($scope === Bom::TYPE_HARDWARE) ? ($validated['sku_suppliers'] ?? []) : [];
 
         // Process Packages -> Aggregate their SKUs
@@ -251,7 +254,7 @@ class ProcurementController extends Controller
             $supplierId = (int) ($skuSuppliersMap[$itemId] ?? 0);
             $qty = $this->normalizeQuantity($sLine['quantity']);
             $unit = $sLine['unit'] ?? null;
-            
+
             if (!isset($supplierGroups[$supplierId][$itemId])) {
                 $supplierGroups[$supplierId][$itemId] = ['qty' => 0, 'unit' => $unit];
             } else if ($unit) {
@@ -279,14 +282,22 @@ class ProcurementController extends Controller
             ], 422);
         }
 
-        $createdOrders = DB::transaction(function () use ($request, $validated, $scope, $supplierGroups) {
+        $manualPoNumber = isset($validated['po_number']) ? trim((string) $validated['po_number']) : '';
+
+        if ($manualPoNumber !== '' && count($supplierGroups) > 1) {
+            return response()->json([
+                'message' => 'Manual PO number can only be used when the request generates a single procurement order.',
+            ], 422);
+        }
+
+        $createdOrders = DB::transaction(function () use ($request, $validated, $scope, $supplierGroups, $manualPoNumber) {
             $orders = [];
             foreach ($supplierGroups as $supplierId => $items) {
                 $supplier = $supplierId > 0 ? Supplier::find($supplierId) : null;
                 $supplierName = $supplier?->name ?? 'General';
 
                 $order = ProcurementOrder::create([
-                    'code' => $this->generateCode(),
+                    'code' => $manualPoNumber !== '' ? Str::upper($manualPoNumber) : $this->generateCode(),
                     'status' => 'submitted',
                     'supplier_id' => $supplierId > 0 ? $supplierId : null,
                     'supplier_name' => $supplierName,
@@ -316,7 +327,7 @@ class ProcurementController extends Controller
                 }
 
                 $this->createReceivingNoteForScope($order, $scope, $request->user()->id);
-                
+
                 TransactionLog::record('procurement_order_created', [
                     'id' => $order->id,
                     'code' => $order->code,
@@ -347,13 +358,13 @@ class ProcurementController extends Controller
             'lines.*.received_quantity' => $this->decimalQuantityRules(true),
         ]);
 
-        $inputByLineId = collect($validated['lines'])->keyBy(fn ($line) => (int) $line['line_id']);
+        $inputByLineId = collect($validated['lines'])->keyBy(fn($line) => (int) $line['line_id']);
 
         $order->load('lines');
 
         DB::transaction(function () use ($order, $inputByLineId, $validated) {
             foreach ($order->lines as $line) {
-                if (! $inputByLineId->has($line->id)) {
+                if (!$inputByLineId->has($line->id)) {
                     continue;
                 }
 
@@ -476,7 +487,7 @@ class ProcurementController extends Controller
             ]);
 
             $scopeBom = $this->packageBomForScope($scopedPackages->get($packageId), $scope);
-            if (! $scopeBom) {
+            if (!$scopeBom) {
                 return;
             }
 
@@ -583,7 +594,7 @@ class ProcurementController extends Controller
     {
         $canView = $request->user()?->hasModuleAccess('rejected_list') ?? false;
 
-        if (! $canView) {
+        if (!$canView) {
             return Inertia::render('Rejections/Index', [
                 'linesByOrder' => [],
                 'canView' => false,
@@ -715,7 +726,7 @@ class ProcurementController extends Controller
     {
         $ids = $itemIds
             ->filter()
-            ->map(fn ($id) => (int) $id)
+            ->map(fn($id) => (int) $id)
             ->unique()
             ->values();
 
@@ -742,7 +753,7 @@ class ProcurementController extends Controller
     {
         $ids = $packageIds
             ->filter()
-            ->map(fn ($id) => (int) $id)
+            ->map(fn($id) => (int) $id)
             ->unique()
             ->values();
 
@@ -763,7 +774,7 @@ class ProcurementController extends Controller
         foreach ($ids as $packageId) {
             $scopeBom = $packages->get($packageId)?->boms->firstWhere('type', $scope);
 
-            if (! $scopeBom || $scopeBom->bomItems->isEmpty()) {
+            if (!$scopeBom || $scopeBom->bomItems->isEmpty()) {
                 throw ValidationException::withMessages([
                     'package_lines' => ['Selected package does not have lines for this procurement flow.'],
                 ]);
@@ -775,7 +786,7 @@ class ProcurementController extends Controller
 
     private function packageBomForScope(?Package $package, string $scope): ?Bom
     {
-        if (! $package) {
+        if (!$package) {
             return null;
         }
 
@@ -793,7 +804,7 @@ class ProcurementController extends Controller
         $datePrefix = now()->format('Ymd');
 
         do {
-            $code = 'PO-'.$datePrefix.'-'.Str::upper(Str::random(4));
+            $code = 'PO-' . $datePrefix . '-' . Str::upper(Str::random(4));
         } while (ProcurementOrder::query()->where('code', $code)->exists());
 
         return $code;
@@ -924,14 +935,14 @@ class ProcurementController extends Controller
     {
         return match ($scope) {
             Bom::TYPE_CABIN => $created
-                ? 'Procurement order created and submitted to CRN.'
-                : 'Procurement order submitted and CRN generated.',
+            ? 'Procurement order created and submitted to CRN.'
+            : 'Procurement order submitted and CRN generated.',
             Bom::TYPE_HARDWARE => $created
-                ? 'Procurement order created and submitted to MRN.'
-                : 'Procurement order submitted and MRN generated.',
+            ? 'Procurement order created and submitted to MRN.'
+            : 'Procurement order submitted and MRN generated.',
             Bom::TYPE_HARDWARE_SITE => $created
-                ? 'Procurement order created and submitted to SRN.'
-                : 'Procurement order submitted and SRN generated.',
+            ? 'Procurement order created and submitted to SRN.'
+            : 'Procurement order submitted and SRN generated.',
             default => 'Procurement order submitted successfully.',
         };
     }
