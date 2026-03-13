@@ -60,7 +60,7 @@ class PackageController extends Controller
 
         $package = DB::transaction(function () use ($request, $validated, $normalizedBoms) {
             $package = Package::create([
-                'code' => $validated['code'],
+                'code' => strtoupper($validated['code']),
                 'name' => $validated['name'],
                 'is_active' => $validated['is_active'] ?? true,
                 'created_by' => $request->user()->id,
@@ -96,6 +96,7 @@ class PackageController extends Controller
         $existingCodes = Package::query()
             ->whereIn('code', $grouped->keys())
             ->pluck('code')
+            ->map(fn ($code) => strtoupper($code))
             ->all();
 
         $itemsBySku = Item::query()
@@ -108,7 +109,7 @@ class PackageController extends Controller
 
         DB::transaction(function () use ($grouped, $existingCodes, $itemsBySku, $request, &$createdIds, &$skipped) {
             foreach ($grouped as $code => $packageRows) {
-                if (in_array($code, $existingCodes, true)) {
+                if (in_array(strtoupper($code), $existingCodes, true)) {
                     $skipped[] = $code;
                     continue;
                 }
@@ -188,7 +189,7 @@ class PackageController extends Controller
 
         DB::transaction(function () use ($package, $validated, $normalizedBoms) {
             $package->update([
-                'code' => $validated['code'],
+                'code' => strtoupper($validated['code']),
                 'name' => $validated['name'],
                 'is_active' => $validated['is_active'] ?? true,
             ]);
@@ -375,10 +376,10 @@ class PackageController extends Controller
                 return [
                     '_index' => $index,
                     '_row' => $index + 2,
-                    'package_code' => trim((string) ($row['package_code'] ?? '')),
+                    'package_code' => strtoupper(trim((string) ($row['package_code'] ?? ''))),
                     'package_name' => trim((string) ($row['package_name'] ?? '')),
                     'is_active' => true,
-                    'sku' => trim((string) ($row['sku'] ?? '')),
+                    'sku' => strtoupper(trim((string) ($row['sku'] ?? ''))),
                     'quantity' => $this->normalizeQuantity($row['quantity'] ?? 0),
                 ];
             });
@@ -555,6 +556,9 @@ class PackageController extends Controller
                     foreach (['package_code', 'package_name', 'sku'] as $field) {
                         if (array_key_exists($field, $row) && $row[$field] !== null) {
                             $row[$field] = trim((string) $row[$field]);
+                            if (in_array($field, ['package_code', 'sku'], true)) {
+                                $row[$field] = strtoupper($row[$field]);
+                            }
                         }
                     }
 
