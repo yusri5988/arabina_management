@@ -3,13 +3,25 @@ import { useState } from 'react';
 import AuthenticatedLayout from '../../Layouts/AuthenticatedLayout';
 import { apiFetchJson } from '../../lib/http';
 
-export default function Suppliers({ suppliers: initialSuppliers = [] }) {
+export default function Suppliers({ suppliers: initialSuppliers = [], items = [] }) {
   const [list, setList] = useState(initialSuppliers);
   const [processing, setProcessing] = useState(false);
   const [notification, setNotification] = useState(null);
   const [editingId, setEditingId] = useState(null);
   const [editData, setEditData] = useState({});
-  const [data, setData] = useState({ name: '', contact_person: '', phone: '', address: '' });
+  const [data, setData] = useState({ name: '', contact_person: '', phone: '', address: '', item_ids: [] });
+
+  const toggleItem = (itemId, isEdit = false) => {
+    if (isEdit) {
+      const current = editData.item_ids || [];
+      const next = current.includes(itemId) ? current.filter(id => id !== itemId) : [...current, itemId];
+      setEditData({ ...editData, item_ids: next });
+    } else {
+      const current = data.item_ids || [];
+      const next = current.includes(itemId) ? current.filter(id => id !== itemId) : [...current, itemId];
+      setData({ ...data, item_ids: next });
+    }
+  };
 
   const showNotification = (type, message) => {
     setNotification({ type, message });
@@ -26,7 +38,7 @@ export default function Suppliers({ suppliers: initialSuppliers = [] }) {
       });
       if (response.ok) {
         setList([payload.data, ...list]);
-        setData({ name: '', contact_person: '', phone: '', address: '' });
+        setData({ name: '', contact_person: '', phone: '', address: '', item_ids: [] });
         showNotification('success', 'Supplier registered successfully.');
       } else {
         showNotification('error', payload.message || 'Failed to register supplier.');
@@ -57,6 +69,14 @@ export default function Suppliers({ suppliers: initialSuppliers = [] }) {
     } finally {
       setProcessing(false);
     }
+  };
+
+  const startEdit = (s) => {
+    setEditingId(s.id);
+    setEditData({
+      ...s,
+      item_ids: (s.items || []).map(i => i.id)
+    });
   };
 
   const deleteSupplier = async (id) => {
@@ -150,6 +170,27 @@ export default function Suppliers({ suppliers: initialSuppliers = [] }) {
               </div>
             </div>
 
+            <div className="space-y-4 pt-4 border-t border-slate-100">
+              <label className="block text-[11px] font-black text-slate-500 uppercase tracking-[0.2em] ml-1">Supplied SKUs (Hardware)</label>
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 max-h-64 overflow-y-auto p-4 bg-slate-50/50 rounded-2xl border border-slate-100 custom-scrollbar">
+                {items.map(item => (
+                  <label key={item.id} className="flex items-center gap-3 p-3 rounded-xl bg-white border border-slate-100 hover:border-emerald-200 hover:bg-emerald-50/30 transition-all cursor-pointer group">
+                    <input 
+                      type="checkbox" 
+                      checked={data.item_ids.includes(item.id)} 
+                      onChange={() => toggleItem(item.id)}
+                      className="w-5 h-5 rounded-lg border-slate-300 text-emerald-600 focus:ring-emerald-500/20 transition-all"
+                    />
+                    <div className="flex flex-col">
+                      <span className="text-xs font-black text-slate-700 group-hover:text-emerald-700 transition-colors">{item.sku}</span>
+                      <span className="text-[10px] text-slate-400 font-bold truncate max-w-[150px]">{item.name}</span>
+                    </div>
+                  </label>
+                ))}
+                {items.length === 0 && <p className="col-span-full text-center py-8 text-slate-400 font-bold text-xs uppercase tracking-widest">No hardware items found</p>}
+              </div>
+            </div>
+
             <button 
               type="submit" 
               disabled={processing} 
@@ -204,7 +245,7 @@ export default function Suppliers({ suppliers: initialSuppliers = [] }) {
                         </div>
                       ) : (
                         <div className="flex justify-end gap-2">
-                          <button onClick={() => { setEditingId(s.id); setEditData(s); }} className="px-3 py-1 bg-amber-500 text-white rounded-lg text-[10px] font-black uppercase tracking-widest">Edit</button>
+                          <button onClick={() => startEdit(s)} className="px-3 py-1 bg-amber-500 text-white rounded-lg text-[10px] font-black uppercase tracking-widest">Edit</button>
                           <button onClick={() => deleteSupplier(s.id)} className="px-3 py-1 bg-red-500 text-white rounded-lg text-[10px] font-black uppercase tracking-widest">Delete</button>
                         </div>
                       )}
@@ -215,6 +256,44 @@ export default function Suppliers({ suppliers: initialSuppliers = [] }) {
             </table>
           </div>
         </div>
+
+        {editingId && (
+          <div className="bg-white rounded-3xl shadow-lg border-2 border-emerald-500 overflow-hidden animate-in slide-in-from-bottom-4 duration-300">
+            <div className="bg-emerald-500 py-4 px-6 flex items-center justify-between">
+              <h3 className="text-sm font-black text-white uppercase tracking-widest flex items-center gap-2">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4"><path d="m5.433 13.917 1.262-3.155A4 4 0 0 1 7.58 9.42l6.92-6.918a2.121 2.121 0 0 1 3 3l-6.92 6.918c-.383.383-.84.685-1.343.886l-3.154 1.262a.5.5 0 0 1-.65-.65Z" /><path d="M3.5 5.75c0-.69.56-1.25 1.25-1.25H10A.75.75 0 0 0 10 3H4.75A2.75 2.75 0 0 0 2 5.75v9.5A2.75 2.75 0 0 0 4.75 18h9.5A2.75 2.75 0 0 0 17 15.25V10a.75.75 0 0 0-1.5 0v5.25c0 .69-.56 1.25-1.25 1.25h-9.5c-.69 0-1.25-.56-1.25-1.25v-9.5Z" /></svg>
+                Editing SKUs for: {editData.name}
+              </h3>
+              <button onClick={() => setEditingId(null)} className="text-white/80 hover:text-white transition-colors">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5"><path d="M6.28 5.22a.75.75 0 0 0-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 1 0 1.06 1.06L10 11.06l3.72 3.72a.75.75 0 1 0 1.06-1.06L11.06 10l3.72-3.72a.75.75 0 0 0-1.06-1.06L10 8.94 6.28 5.22Z" /></svg>
+              </button>
+            </div>
+            <div className="p-6 space-y-6">
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 max-h-80 overflow-y-auto p-4 bg-slate-50 rounded-2xl border border-slate-100 custom-scrollbar">
+                {items.map(item => (
+                  <label key={item.id} className="flex items-center gap-3 p-3 rounded-xl bg-white border border-slate-100 hover:border-emerald-200 hover:bg-emerald-50/30 transition-all cursor-pointer group">
+                    <input 
+                      type="checkbox" 
+                      checked={(editData.item_ids || []).includes(item.id)} 
+                      onChange={() => toggleItem(item.id, true)}
+                      className="w-5 h-5 rounded-lg border-slate-300 text-emerald-600 focus:ring-emerald-500/20 transition-all"
+                    />
+                    <div className="flex flex-col">
+                      <span className="text-xs font-black text-slate-700 group-hover:text-emerald-700 transition-colors">{item.sku}</span>
+                      <span className="text-[10px] text-slate-400 font-bold truncate max-w-[150px]">{item.name}</span>
+                    </div>
+                  </label>
+                ))}
+              </div>
+              <div className="flex justify-end gap-3 pt-4 border-t border-slate-100">
+                <button onClick={() => setEditingId(null)} className="px-6 py-2.5 bg-slate-100 text-slate-600 rounded-xl text-xs font-black uppercase tracking-widest hover:bg-slate-200 transition-all">Cancel</button>
+                <button onClick={() => saveEdit(editingId)} disabled={processing} className="px-8 py-2.5 bg-emerald-600 text-white rounded-xl text-xs font-black uppercase tracking-widest shadow-lg shadow-emerald-500/20 hover:bg-emerald-700 active:scale-95 transition-all">
+                  {processing ? 'Saving...' : 'Save Changes'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </AuthenticatedLayout>
   );

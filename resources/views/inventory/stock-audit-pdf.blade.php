@@ -76,7 +76,7 @@
         <h1>ARABINA INVENTORY</h1>
         <p>Stock Audit Report</p>
         <p>Audit Date: {{ optional($audit->audited_at)->format('d/m/Y H:i:s') }}</p>
-        <p>Auditor: {{ $audit->auditor?->name ?? 'Unknown' }}</p>
+        <p>Auditor: {{ optional($audit->auditor)->name ?? 'Unknown' }}</p>
         <p>Generated: {{ $generatedAt }}</p>
     </div>
 
@@ -94,8 +94,8 @@
         <tbody>
             @foreach($audit->lines as $line)
                 <tr>
-                    <td>{{ $line->item?->sku }}</td>
-                    <td>{{ $line->item?->name }}</td>
+                    <td>{{ optional($line->item)->sku }}</td>
+                    <td>{{ optional($line->item)->name }}</td>
                     <td class="text-right">{{ $line->stock_before }}</td>
                     <td class="text-right">{{ $line->audited_stock }}</td>
                     <td class="text-right">{{ $line->diff_quantity }}</td>

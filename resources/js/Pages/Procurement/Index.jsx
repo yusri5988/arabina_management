@@ -352,6 +352,29 @@ export default function ProcurementIndex({
       .sort((a, b) => String(a.sku ?? '').localeCompare(String(b.sku ?? '')));
   }, [packageDerivedSkus, newOrderSkuLines]);
 
+  // Autofill default suppliers for consolidated items
+  useEffect(() => {
+    if (activeFlow.key !== 'hardware' || consolidatedSkus.length === 0) return;
+
+    setSkuSuppliers(prev => {
+      const next = { ...prev };
+      let changed = false;
+
+      consolidatedSkus.forEach(line => {
+        // Only autofill if not already assigned
+        if (!next[line.item_id]) {
+          const item = (items || []).find(i => Number(i.id) === Number(line.item_id));
+          if (item?.supplier_id) {
+            next[line.item_id] = item.supplier_id;
+            changed = true;
+          }
+        }
+      });
+
+      return changed ? next : prev;
+    });
+  }, [consolidatedSkus, items, activeFlow.key]);
+
   const setConsolidatedSkuQuantity = (skuLine, nextQuantity) => {
     const safeQuantity = normalizeSkuQuantity(nextQuantity);
     const baseQuantity = normalizeSkuQuantity(packageDerivedSkus.get(skuLine.item_id)?.quantity ?? 0);
@@ -398,6 +421,7 @@ export default function ProcurementIndex({
       name: s.name,
       unit: s.unit || 'pcs'
     })));
+
     setNewOrderNotes(`Based on ${activeFlow.label} shortage suggestion for ${(scopedSuggestion?.source_orders ?? []).length} unfulfilled orders.`);
   };
 

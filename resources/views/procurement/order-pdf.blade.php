@@ -168,7 +168,7 @@
 </head>
 <body>
     @php
-        $formatQuantity = static function ($quantity) {
+        $formatQuantity = function ($quantity) {
             $normalized = round((float) $quantity, 1);
 
             if (abs($normalized - round($normalized)) < 0.00001) {
@@ -197,7 +197,9 @@
                 'name' => $line->item->name ?? '-',
                 'qty' => $looseQty
             ];
-        })->filter(fn($l) => $l->qty > 0);
+        })->filter(function ($line) {
+            return $line->qty > 0;
+        });
 
         $bomGroups = [
             'cabin' => 'BOM Cabin',
@@ -312,7 +314,7 @@
 
         @php
             $unclassifiedLines = $order->lines->filter(function ($line) use ($knownScopes) {
-                $scope = $line->item->bom_scope ?? 'hardware';
+                $scope = optional($line->item)->bom_scope ?? 'hardware';
                 return ! in_array($scope, $knownScopes, true);
             });
         @endphp

@@ -101,7 +101,7 @@ class ProcurementController extends Controller
             $items = Item::query()
                 ->where('bom_scope', $scope)
                 ->orderBy('sku')
-                ->get(['id', 'sku', 'name', 'unit', 'bom_scope']);
+                ->get(['id', 'sku', 'name', 'unit', 'bom_scope', 'supplier_id']);
 
             $packages = Package::query()
                 ->with([
@@ -135,7 +135,8 @@ class ProcurementController extends Controller
     public function suppliersIndex(): Response
     {
         return Inertia::render('Procurement/Suppliers', [
-            'suppliers' => Supplier::latest()->get(),
+            'suppliers' => Supplier::with('items:id,sku,name,supplier_id')->latest()->get(),
+            'items' => Item::where('bom_scope', Bom::TYPE_HARDWARE)->orderBy('sku')->get(['id', 'sku', 'name', 'supplier_id']),
         ]);
     }
 
@@ -146,13 +147,23 @@ class ProcurementController extends Controller
             'contact_person' => 'nullable|string|max:255',
             'phone' => 'nullable|string|max:20',
             'address' => 'nullable|string|max:500',
+            'item_ids' => 'nullable|array',
+            'item_ids.*' => 'integer|exists:items,id',
         ]);
 
-        $supplier = Supplier::create($validated);
+        $supplier = DB::transaction(function () use ($validated) {
+            $supplier = Supplier::create($validated);
+
+            if (!empty($validated['item_ids'])) {
+                Item::whereIn('id', $validated['item_ids'])->update(['supplier_id' => $supplier->id]);
+            }
+
+            return $supplier;
+        });
 
         return response()->json([
             'message' => 'Supplier registered successfully.',
-            'data' => $supplier,
+            'data' => $supplier->load('items:id,sku,name,supplier_id'),
         ], 201);
     }
 
@@ -163,13 +174,25 @@ class ProcurementController extends Controller
             'contact_person' => 'nullable|string|max:255',
             'phone' => 'nullable|string|max:20',
             'address' => 'nullable|string|max:500',
+            'item_ids' => 'nullable|array',
+            'item_ids.*' => 'integer|exists:items,id',
         ]);
 
-        $supplier->update($validated);
+        DB::transaction(function () use ($supplier, $validated) {
+            $supplier->update($validated);
+
+            // Clear old items
+            Item::where('supplier_id', $supplier->id)->update(['supplier_id' => null]);
+
+            // Assign new items
+            if (!empty($validated['item_ids'])) {
+                Item::whereIn('id', $validated['item_ids'])->update(['supplier_id' => $supplier->id]);
+            }
+        });
 
         return response()->json([
             'message' => 'Supplier updated successfully.',
-            'data' => $supplier,
+            'data' => $supplier->load('items:id,sku,name,supplier_id'),
         ]);
     }
 

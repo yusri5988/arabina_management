@@ -110,7 +110,7 @@
             <td>
                 <div><span class="label">Order Date:</span> {{ optional($order->order_date)->format('d/m/Y') }}</div>
                 <div><span class="label">Status:</span> {{ strtoupper((string) $order->status) }}</div>
-                <div><span class="label">Created By:</span> {{ $order->creator?->name ?? 'System' }}</div>
+                <div><span class="label">Created By:</span> {{ optional($order->creator)->name ?? 'System' }}</div>
             </td>
         </tr>
     </table>
@@ -131,8 +131,8 @@
                 <tr>
                     <td>{{ $index + 1 }}</td>
                     <td>{{ $line->package_id ? 'Package' : 'Loose SKU' }}</td>
-                    <td>{{ $line->package_id ? ($line->package?->code ?? '-') : ($line->item_sku ?? '-') }}</td>
-                    <td>{{ $line->package_id ? ($line->package?->name ?? '-') : ($line->item?->name ?? 'Loose item') }}</td>
+                    <td>{{ $line->package_id ? (optional($line->package)->code ?? '-') : ($line->item_sku ?? '-') }}</td>
+                    <td>{{ $line->package_id ? (optional($line->package)->name ?? '-') : (optional($line->item)->name ?? 'Loose item') }}</td>
                     <td class="text-right">
                         {{ $line->package_id ? (int) $line->package_quantity : (int) $line->item_quantity }}</td>
                 </tr>

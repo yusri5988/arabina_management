@@ -132,6 +132,18 @@ export default function Orders({ packages = [], items = [], orders = [], availab
   const updateLine = (index, field, value) => {
     setLines(prev => prev.map((line, i) => (i === index ? { ...line, [field]: value } : line)));
   };
+  const adjustLineQuantity = (index, field, delta) => {
+    setLines((prev) => prev.map((line, i) => {
+      if (i !== index) {
+        return line;
+      }
+
+      const currentValue = Number(line[field] || 0);
+      const nextValue = Math.max(1, currentValue + delta);
+
+      return { ...line, [field]: String(nextValue) };
+    }));
+  };
 
   const submit = async (e) => {
     e.preventDefault();
@@ -322,7 +334,7 @@ export default function Orders({ packages = [], items = [], orders = [], availab
                 {lines.map((line, index) => {
                   const packageOptions = packages.map((pkg) => ({
                     value: pkg.id.toString(),
-                    label: `${pkg.code} - ${pkg.name}`,
+                    label: pkg.name,
                   }));
 
                   const itemOptions = items.map((item) => ({
@@ -362,15 +374,33 @@ export default function Orders({ packages = [], items = [], orders = [], availab
                           )}
                         </div>
                         <div className="col-span-4">
-                          <input
-                            type="number"
-                            min="1"
-                            value={line.type === 'package' ? line.package_quantity : line.item_quantity}
-                            onChange={(e) => updateLine(index, line.type === 'package' ? 'package_quantity' : 'item_quantity', e.target.value)}
-                            className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm font-bold text-right bg-white focus:ring-2 focus:ring-arabina-accent focus:outline-none"
-                            placeholder="Qty"
-                            required
-                          />
+                          <div className="flex items-center overflow-hidden rounded-xl border border-slate-200 bg-white focus-within:ring-2 focus-within:ring-arabina-accent">
+                            <button
+                              type="button"
+                              onClick={() => adjustLineQuantity(index, line.type === 'package' ? 'package_quantity' : 'item_quantity', -1)}
+                              className="px-3 py-2 text-sm font-black text-slate-500 transition-colors hover:bg-slate-50 hover:text-slate-700"
+                              aria-label="Decrease quantity"
+                            >
+                              -
+                            </button>
+                            <input
+                              type="number"
+                              min="1"
+                              value={line.type === 'package' ? line.package_quantity : line.item_quantity}
+                              onChange={(e) => updateLine(index, line.type === 'package' ? 'package_quantity' : 'item_quantity', e.target.value)}
+                              className="w-full border-x border-slate-200 px-3 py-2 text-sm font-bold text-center bg-white focus:outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                              placeholder="Qty"
+                              required
+                            />
+                            <button
+                              type="button"
+                              onClick={() => adjustLineQuantity(index, line.type === 'package' ? 'package_quantity' : 'item_quantity', 1)}
+                              className="px-3 py-2 text-sm font-black text-slate-500 transition-colors hover:bg-slate-50 hover:text-slate-700"
+                              aria-label="Increase quantity"
+                            >
+                              +
+                            </button>
+                          </div>
                         </div>
                       </div>
                       {errors[`lines.${index}.package_id`] && <p className="text-[10px] text-red-500 mt-1">{errors[`lines.${index}.package_id`][0]}</p>}

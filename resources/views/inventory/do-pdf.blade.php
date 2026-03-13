@@ -20,7 +20,7 @@
 </head>
 <body>
     @php
-        $formatQuantity = static function ($quantity) {
+        $formatQuantity = function ($quantity) {
             $normalized = round((float) $quantity, 1);
 
             if (abs($normalized - round($normalized)) < 0.00001) {
@@ -40,14 +40,14 @@
         <tr>
             <td style="width: 50%;">
                 <strong>Delivery To:</strong><br>
-                {{ $transaction->salesOrder?->customer_name ?? 'N/A' }}<br>
-                {{ $transaction->salesOrder?->customer_address ?? '' }}
+                {{ optional($transaction->salesOrder)->customer_name ?? 'N/A' }}<br>
+                {{ optional($transaction->salesOrder)->customer_address ?? '' }}
             </td>
             <td style="width: 50%; text-align: right;">
                 <strong>DO Number:</strong> {{ $doCode }}<br>
-                <strong>SO Number:</strong> {{ $transaction->salesOrder?->code ?? 'N/A' }}<br>
+                <strong>SO Number:</strong> {{ optional($transaction->salesOrder)->code ?? 'N/A' }}<br>
                 <strong>DO Date(s):</strong> {{ isset($doDates) ? $doDates->implode(' | ') : $transaction->created_at->format('d/m/Y H:i') }}<br>
-                <strong>Created By:</strong> {{ $transaction->creator?->name ?? 'System' }}
+                <strong>Created By:</strong> {{ optional($transaction->creator)->name ?? 'System' }}
             </td>
         </tr>
     </table>

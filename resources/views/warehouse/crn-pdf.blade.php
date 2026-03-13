@@ -34,9 +34,9 @@
         </tr>
         <tr>
             <td class="label">PO Reference:</td>
-            <td>{{ $crn->procurementOrder?->code ?? 'Standalone' }}</td>
+            <td>{{ optional($crn->procurementOrder)->code ?? 'Standalone' }}</td>
             <td class="label">Received By:</td>
-            <td>{{ $crn->creator?->name ?? 'System' }}</td>
+            <td>{{ optional($crn->creator)->name ?? 'System' }}</td>
         </tr>
         <tr>
             <td class="label">Status:</td>
@@ -65,7 +65,7 @@
     @foreach($bomGroups as $scope => $label)
         @php
             $groupedItems = $crn->items->filter(function ($item) use ($scope) {
-                return ($item->itemVariant?->item?->bom_scope ?? 'hardware') === $scope;
+                return (optional(optional($item->itemVariant)->item)->bom_scope ?? 'hardware') === $scope;
             });
         @endphp
 
@@ -86,8 +86,8 @@
             <tbody>
                 @forelse($groupedItems as $item)
                 <tr>
-                    <td><strong>{{ $item->itemVariant?->item?->sku }}</strong></td>
-                    <td>{{ $item->itemVariant?->item?->name }}</td>
+                    <td><strong>{{ optional(optional($item->itemVariant)->item)->sku }}</strong></td>
+                    <td>{{ optional(optional($item->itemVariant)->item)->name }}</td>
                     <td class="text-center">{{ $item->expected_qty }}</td>
                     <td class="text-center" style="background-color: #f0fdf4; font-weight: bold; color: #166534;">{{ $item->received_qty }}</td>
                     <td class="text-center" style="color: #991b1b;">{{ $item->rejected_qty }}</td>
@@ -113,7 +113,7 @@
 
     @php
         $unclassifiedItems = $crn->items->filter(function ($item) use ($knownScopes) {
-            $scope = $item->itemVariant?->item?->bom_scope ?? 'hardware';
+            $scope = optional(optional($item->itemVariant)->item)->bom_scope ?? 'hardware';
             return ! in_array($scope, $knownScopes, true);
         });
     @endphp
@@ -136,8 +136,8 @@
             <tbody>
                 @foreach($unclassifiedItems as $item)
                 <tr>
-                    <td><strong>{{ $item->itemVariant?->item?->sku }}</strong></td>
-                    <td>{{ $item->itemVariant?->item?->name }}</td>
+                    <td><strong>{{ optional(optional($item->itemVariant)->item)->sku }}</strong></td>
+                    <td>{{ optional(optional($item->itemVariant)->item)->name }}</td>
                     <td class="text-center">{{ $item->expected_qty }}</td>
                     <td class="text-center" style="background-color: #f0fdf4; font-weight: bold; color: #166534;">{{ $item->received_qty }}</td>
                     <td class="text-center" style="color: #991b1b;">{{ $item->rejected_qty }}</td>
