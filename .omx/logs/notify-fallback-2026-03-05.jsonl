@@ -1,2 +1,0 @@
-{"timestamp":"2026-03-05T22:51:35.219Z","type":"watcher_start","cwd":"/mnt/c/laragon/www/Arabina-Inventory","notify_script":"/root/.nvm/versions/node/v24.14.0/lib/node_modules/oh-my-codex/scripts/notify-hook.js","poll_ms":700,"once":true}
-{"timestamp":"2026-03-05T22:51:35.233Z","type":"watcher_once_complete","seen_turns":0}
