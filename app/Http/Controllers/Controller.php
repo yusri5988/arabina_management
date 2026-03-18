@@ -6,15 +6,31 @@ use Closure;
 
 abstract class Controller
 {
-    protected function decimalQuantityRules(bool $allowZero = false): array
+    protected function decimalQuantityRules(bool $allowZero = false, bool $allowNegative = false): array
     {
         return [
             'required',
             'numeric',
-            $allowZero ? 'gte:0' : 'gt:0',
-            function (string $attribute, mixed $value, Closure $fail): void {
+            function (string $attribute, mixed $value, Closure $fail) use ($allowZero, $allowNegative): void {
+                $numeric = (float) $value;
+
+                if ($allowNegative) {
+                    if (abs($numeric) < 0.00001) {
+                        $fail(':attribute mesti bukan 0.');
+                        return;
+                    }
+                } elseif ($allowZero) {
+                    if ($numeric < 0) {
+                        $fail(':attribute mesti sekurang-kurangnya 0.');
+                        return;
+                    }
+                } elseif ($numeric <= 0) {
+                    $fail(':attribute mesti lebih besar daripada 0.');
+                    return;
+                }
+
                 if (! $this->hasSingleDecimalPrecision($value)) {
-                    $fail('The ' . str_replace('_', ' ', $attribute) . ' field must have at most 1 decimal place.');
+                    $fail('The :attribute field must have at most 1 decimal place.');
                 }
             },
         ];
@@ -38,6 +54,6 @@ abstract class Controller
 
     protected function hasSingleDecimalPrecision(mixed $quantity): bool
     {
-        return preg_match('/^\d+(?:\.\d)?$/', trim((string) $quantity)) === 1;
+        return preg_match('/^-?\d+(?:\.\d)?$/', trim((string) $quantity)) === 1;
     }
 }

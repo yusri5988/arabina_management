@@ -131,7 +131,7 @@ class SalesOrderController extends Controller
 
     public function searchItem(Request $request): JsonResponse
     {
-        $query = $request->get('q');
+        $query = $request->input('q');
         if (!$query) {
             return response()->json([]);
         }

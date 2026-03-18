@@ -89,8 +89,111 @@ class PackageBulkUploadTest extends TestCase
         $errors = $response->json('errors');
 
         $this->assertContains(
-            'Row 2 quantity mesti lebih besar daripada 0.',
+            'Row 2 quantity mesti bukan 0.',
             $errors['packages.0.quantity'] ?? []
+        );
+    }
+
+    public function test_bulk_upload_allows_negative_quantity(): void
+    {
+        $user = User::factory()->create([
+            'role' => User::ROLE_SUPER_ADMIN,
+        ]);
+
+        Item::create([
+            'sku' => 'SKU-VALID-NEG-001',
+            'name' => 'Negative Quantity Item',
+            'unit' => 'pcs',
+            'bom_scope' => Bom::TYPE_HARDWARE,
+            'created_by' => $user->id,
+        ]);
+
+        $response = $this->actingAs($user)->postJson('/packages/bulk', [
+            'packages' => [
+                [
+                    'package_code' => 'PKG-NEG-001',
+                    'package_name' => 'Package Negative',
+                    'sku' => 'SKU-VALID-NEG-001',
+                    'quantity' => -2,
+                ],
+            ],
+        ]);
+
+        $response->assertCreated();
+
+        $package = Package::query()
+            ->with(['packageItems'])
+            ->where('code', 'PKG-NEG-001')
+            ->firstOrFail();
+
+        $this->assertSame(-2.0, (float) $package->packageItems->first()?->quantity);
+    }
+
+    public function test_package_create_allows_negative_quantity_lines(): void
+    {
+        $user = User::factory()->create([
+            'role' => User::ROLE_SUPER_ADMIN,
+        ]);
+
+        $cabin = Item::create([
+            'sku' => 'SKU-CABIN-NEG-001',
+            'name' => 'Cabin Item',
+            'unit' => 'pcs',
+            'bom_scope' => Bom::TYPE_CABIN,
+            'created_by' => $user->id,
+        ]);
+
+        $hardware = Item::create([
+            'sku' => 'SKU-HARDWARE-NEG-001',
+            'name' => 'Hardware Negative Item',
+            'unit' => 'pcs',
+            'bom_scope' => Bom::TYPE_HARDWARE,
+            'created_by' => $user->id,
+        ]);
+
+        $hardwareSite = Item::create([
+            'sku' => 'SKU-SITE-NEG-001',
+            'name' => 'Hardware Site Item',
+            'unit' => 'pcs',
+            'bom_scope' => Bom::TYPE_HARDWARE_SITE,
+            'created_by' => $user->id,
+        ]);
+
+        $response = $this->actingAs($user)->postJson('/packages', [
+            'code' => 'PKG-MANUAL-NEG-001',
+            'name' => 'Manual Negative Package',
+            'boms' => [
+                'cabin' => [
+                    [
+                        'item_id' => $cabin->id,
+                        'quantity' => 1,
+                    ],
+                ],
+                'hardware' => [
+                    [
+                        'item_id' => $hardware->id,
+                        'quantity' => -1.5,
+                    ],
+                ],
+                'hardware_site' => [
+                    [
+                        'item_id' => $hardwareSite->id,
+                        'quantity' => 2,
+                    ],
+                ],
+            ],
+        ]);
+
+        $response->assertCreated();
+
+        $package = Package::query()
+            ->with(['packageItems'])
+            ->where('code', 'PKG-MANUAL-NEG-001')
+            ->firstOrFail();
+
+        $this->assertSame(
+            -1.5,
+            (float) $package->packageItems->firstWhere('item_id', $hardware->id)?->quantity
         );
     }
 

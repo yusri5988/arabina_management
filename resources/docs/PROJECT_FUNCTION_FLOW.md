@@ -255,7 +255,7 @@ Table: `package_items`
 1. Authorized user opens `/packages`.
 2. `PackageController@index` loads all SKU from `items` and existing package definitions.
 3. User fills package code, package name, active flag, and one or more package lines.
-4. Each package line must select a registered SKU and quantity (`min:1`).
+4. Each package line must select a registered SKU and quantity; signed values are allowed for correction or offset flows.
 5. `PackageController@store` validates payload and creates package with child `package_items` in DB transaction.
 6. Frontend prepends newly created package to list without page reload.
 7. User can delete package from list; backend removes parent + children via cascade.

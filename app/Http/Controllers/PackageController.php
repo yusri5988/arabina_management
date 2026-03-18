@@ -248,17 +248,17 @@ class PackageController extends Controller
                 'boms.hardware' => ['required', 'array'],
                 'boms.hardware_site' => ['required', 'array'],
                 'boms.cabin.*.item_id' => ['required', 'integer', 'exists:items,id'],
-                'boms.cabin.*.quantity' => $this->decimalQuantityRules(),
+                'boms.cabin.*.quantity' => $this->decimalQuantityRules(false, true),
                 'boms.hardware.*.item_id' => ['required', 'integer', 'exists:items,id'],
-                'boms.hardware.*.quantity' => $this->decimalQuantityRules(),
+                'boms.hardware.*.quantity' => $this->decimalQuantityRules(false, true),
                 'boms.hardware_site.*.item_id' => ['required', 'integer', 'exists:items,id'],
-                'boms.hardware_site.*.quantity' => $this->decimalQuantityRules(),
+                'boms.hardware_site.*.quantity' => $this->decimalQuantityRules(false, true),
             ]);
         } else {
             $rules = array_merge($rules, [
                 'lines' => ['required', 'array', 'min:1'],
                 'lines.*.item_id' => ['required', 'integer', 'distinct', 'exists:items,id'],
-                'lines.*.quantity' => $this->decimalQuantityRules(),
+                'lines.*.quantity' => $this->decimalQuantityRules(false, true),
             ]);
         }
 
@@ -287,7 +287,7 @@ class PackageController extends Controller
             'packages.*.package_code' => ['required', 'string', 'max:50'],
             'packages.*.package_name' => ['required', 'string', 'max:255'],
             'packages.*.sku' => ['required', 'string', 'max:100'],
-            'packages.*.quantity' => $this->decimalQuantityRules(),
+            'packages.*.quantity' => $this->decimalQuantityRules(false, true),
         ], [
             'packages.required' => 'Upload package mesti mengandungi sekurang-kurangnya 1 row.',
             'packages.array' => 'Format upload package tidak sah.',
@@ -298,7 +298,6 @@ class PackageController extends Controller
             'packages.*.sku.required' => ':attribute wajib diisi.',
             'packages.*.quantity.required' => ':attribute wajib diisi.',
             'packages.*.quantity.numeric' => ':attribute mesti nombor.',
-            'packages.*.quantity.gt' => ':attribute mesti lebih besar daripada 0.',
         ], $attributes);
 
         $validator->after(function (ValidatorContract $validator) use ($rows): void {
@@ -419,7 +418,7 @@ class PackageController extends Controller
                     'quantity' => $this->normalizeQuantity($line['quantity'] ?? 0),
                 ];
             })
-            ->filter(fn ($line) => $line['item_id'] > 0 && $line['quantity'] > 0)
+            ->filter(fn ($line) => $line['item_id'] > 0 && abs($line['quantity']) > 0)
             ->values()
             ->all();
     }

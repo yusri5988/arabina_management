@@ -394,7 +394,7 @@ export default function Index({ items, packages, schemaReady = true }) {
                       </select>
                     </div>
                     <div className="col-span-3">
-                      <QtyInput value={line.quantity === '' ? '' : Number(line.quantity)} onChange={(value) => updateLine(bomType.key, index, 'quantity', value === '' ? '' : String(value))} min={0.5} step={0.5} />
+                      <QtyInput value={line.quantity === '' ? '' : Number(line.quantity)} onChange={(value) => updateLine(bomType.key, index, 'quantity', value === '' ? '' : String(value))} min={-999999} step={0.5} />
                     </div>
                     <div className="col-span-1 flex items-center justify-end">
                       {(data.boms[bomType.key] ?? []).length > 1 && (
