@@ -11,6 +11,7 @@ use App\Models\Package;
 use App\Models\SalesOrder;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Validation\Rule;
@@ -24,7 +25,10 @@ class ItemController extends Controller
     public function index(): Response
     {
         return Inertia::render('Inventory/Index', [
-            'items' => Item::latest()->get(['id', 'sku', 'name', 'length_m', 'unit']),
+            'items' => Item::query()
+                ->select(['id', 'sku', 'name', 'length_m', 'unit', 'bom_scope', 'supplier'])
+                ->latest()
+                ->get(),
         ]);
     }
 
@@ -34,39 +38,30 @@ class ItemController extends Controller
 
         $stockByItem = [];
         foreach ($items as $item) {
-            $stockByItem[$item->id] = $item->variants->sum('stock_current');
+            $stockByItem[$item->id] = (float) $item->variants->sum('stock_current');
         }
 
         $packagesData = [];
         if (Schema::hasTable('packages')) {
-            $packages = Package::with('packageItems.item')->where('is_active', true)->orderBy('name')->get();
+            $packages = Package::with(['packageItems.item:id,sku,name,bom_scope'])
+                ->where('is_active', true)
+                ->orderBy('name')
+                ->get();
 
             $packagesData = $packages->map(function ($package) use ($stockByItem) {
-                $maxPossible = null;
-                $missingItems = [];
-
-                foreach ($package->packageItems as $pItem) {
-                    $requiredQty = $pItem->quantity;
-                    $currentStock = $stockByItem[$pItem->item_id] ?? 0;
-
-                    $possibleWithThisItem = floor($currentStock / $requiredQty);
-
-                    if ($maxPossible === null || $possibleWithThisItem < $maxPossible) {
-                        $maxPossible = $possibleWithThisItem;
-                    }
-
-                    if ($currentStock < $requiredQty) {
-                        $missingItems[] = $pItem->item ? $pItem->item->sku : 'Unknown SKU';
-                    }
-                }
-
                 return [
                     'id' => $package->id,
                     'code' => $package->code,
                     'name' => $package->name,
-                    'available_qty' => $maxPossible ?? 0,
-                    'missing_items' => $missingItems,
-                    'lines_count' => $package->packageItems->count(),
+                    'items' => $package->packageItems->map(function ($pItem) use ($stockByItem) {
+                        return [
+                            'item_id' => $pItem->item_id,
+                            'sku' => $pItem->item?->sku ?? 'Unknown',
+                            'bom_scope' => $pItem->item?->bom_scope ?? 'hardware',
+                            'required_qty' => (float) $pItem->quantity,
+                            'current_stock' => (float) ($stockByItem[$pItem->item_id] ?? 0),
+                        ];
+                    }),
                 ];
             });
         }
@@ -325,8 +320,10 @@ class ItemController extends Controller
         $validated = $request->validate([
             'sku' => 'required|string|unique:items,sku',
             'name' => 'required|string|max:255',
-            'length_m' => 'nullable|numeric|unique:items,length_m',
-            'unit' => 'required|in:pcs,set,roll',
+            'length_m' => 'nullable|numeric',
+            'unit' => 'required|in:pcs,unit,set,roll,bag,btg,pek,tong,helai,can,pellet,cut,scope',
+            'bom_scope' => 'required|in:cabin,hardware,hardware_site',
+            'supplier' => 'nullable|string|max:255',
         ]);
 
         $item = Item::create([
@@ -334,6 +331,8 @@ class ItemController extends Controller
             'name' => $validated['name'],
             'length_m' => $validated['length_m'],
             'unit' => $validated['unit'],
+            'bom_scope' => $validated['bom_scope'],
+            'supplier' => $validated['supplier'] ?? null,
             'created_by' => $request->user()->id,
         ]);
 
@@ -349,14 +348,21 @@ class ItemController extends Controller
         ], 201);
     }
 
-    public function bulkStore(Request $request): JsonResponse
+    public function bulkStore(Request $request)
     {
+        $items = $request->input('items', []);
+        
+        if (isset($items[182])) {
+            Log::info('Bulk Upload Item at index 182:', $items[182]);
+        }
+
         $validated = $request->validate([
             'items' => 'required|array|min:1|max:500',
             'items.*.sku' => 'required|string|max:100',
             'items.*.item_name' => 'required|string|max:255',
             'items.*.length_m' => 'nullable|numeric',
-            'items.*.unit' => 'required|in:pcs,set,roll',
+            'items.*.unit' => 'required|in:pcs,unit,set,roll,bag,btg,pek,tong,helai,can,pellet,cut,scope',
+            'items.*.bom_scope' => 'required|in:cabin,hardware,hardware_site',
         ]);
 
         $created = [];
@@ -375,6 +381,7 @@ class ItemController extends Controller
                     'name' => $row['item_name'],
                     'length_m' => $row['length_m'] ?? null,
                     'unit' => $row['unit'],
+                    'bom_scope' => $row['bom_scope'],
                     'created_by' => $request->user()->id,
                 ]);
 
@@ -384,7 +391,7 @@ class ItemController extends Controller
                     'stock_current' => 0,
                 ]);
 
-                $created[] = $item->only(['id', 'sku', 'name', 'length_m', 'unit']);
+                $created[] = $item->only(['id', 'sku', 'name', 'length_m', 'unit', 'bom_scope']);
             }
         });
 
@@ -394,20 +401,22 @@ class ItemController extends Controller
             'skipped_skus' => $skipped,
         ]);
 
-        return response()->json([
-            'message' => count($created) . ' item(s) created. ' . count($skipped) . ' skipped (duplicate SKU).',
-            'data' => $created,
-            'skipped' => $skipped,
-        ], 201);
+        return redirect()->back()->with('success', count($created) . ' item(s) created.');
     }
 
     public function update(Request $request, Item $item): JsonResponse
     {
+        if ($request->input('length_m') === '') {
+            $request->merge(['length_m' => null]);
+        }
+
         $validated = $request->validate([
             'sku' => ['required', 'string', Rule::unique('items', 'sku')->ignore($item->id)],
             'name' => 'required|string|max:255',
-            'length_m' => ['nullable', 'numeric', Rule::unique('items', 'length_m')->ignore($item->id)],
-            'unit' => 'required|in:pcs,set,roll',
+            'length_m' => ['nullable', 'numeric'],
+            'unit' => 'required|in:pcs,unit,set,roll,bag,btg,pek,tong,helai,can,pellet,cut,scope',
+            'bom_scope' => 'required|in:cabin,hardware,hardware_site',
+            'supplier' => ['nullable', 'string', 'max:255'],
         ]);
 
         $item->update($validated);
@@ -426,24 +435,27 @@ class ItemController extends Controller
 
     public function destroy(Item $item): JsonResponse
     {
-        $hasStock = $item->variants()->where('stock_current', '>', 0)->exists();
-
-        if ($hasStock) {
-            return response()->json([
-                'message' => 'Cannot delete item with existing stock.',
-            ], 409);
-        }
-
+        // For soft deletion, we don't need to check for DB constraints 
+        // because the record stays in the table (just marked as deleted).
+        
         $logData = ['id' => $item->id, 'sku' => $item->sku, 'name' => $item->name];
 
-        $item->variants()->delete();
-        $item->delete();
+        try {
+            // Soft delete the item. This will set 'deleted_at' column.
+            // Note: We don't delete variants because soft deleting the parent is enough 
+            // to hide it from UI, and keeping variants preserves stock history accurately.
+            $item->delete();
 
-        TransactionLog::record('item_deleted', $logData);
+            TransactionLog::record('item_deleted', $logData);
 
-        return response()->json([
-            'message' => 'Item deleted successfully.',
-        ]);
+            return response()->json([
+                'message' => 'Item archived (deleted) successfully.',
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'message' => 'Failed to delete item due to system error.',
+            ], 500);
+        }
     }
 
     public function stockInForm(): Response
@@ -476,7 +488,7 @@ class ItemController extends Controller
                     'notes' => $t->notes,
                     'lines_count' => $t->lines->count(),
                     'items_summary' => $t->lines->take(3)->map(function ($l) {
-                        return $l->item?->sku . ' (x' . $l->quantity . ')';
+                        return $l->item?->sku . ' (x' . $this->formatQuantity($l->quantity) . ')';
                     })->implode(', ') . ($t->lines->count() > 3 ? '...' : ''),
                 ];
             }),
@@ -485,29 +497,333 @@ class ItemController extends Controller
 
     public function stockOutHistory(): JsonResponse
     {
-        $transactions = InventoryTransaction::query()
-            ->with(['lines.item', 'salesOrder', 'creator'])
-            ->where('type', 'out')
-            ->latest()
-            ->limit(20)
-            ->get();
+        return response()->json([
+            'data' => $this->buildGroupedDeliveryOrders(200),
+        ]);
+    }
+
+    public function deliveryOrdersIndex(): Response
+    {
+        return Inertia::render('Inventory/DeliveryOrders', [
+            'orders' => $this->buildGroupedDeliveryOrders(500),
+        ]);
+    }
+
+    public function returnDeliveryOrderForm(int $id): Response
+    {
+        [$anchorTransaction, $doCode, $skuLines] = $this->buildDeliveryOrderReturnPayload($id);
+
+        return Inertia::render('Inventory/ReturnDeliveryOrder', [
+            'order' => [
+                'id' => $anchorTransaction->id,
+                'code' => $doCode,
+                'sales_order_code' => $anchorTransaction->salesOrder?->code ?? 'N/A',
+                'customer_name' => $anchorTransaction->salesOrder?->customer_name ?? 'N/A',
+            ],
+            'skuLines' => $skuLines,
+        ]);
+    }
+
+    public function returnDeliveryOrderItems(Request $request, int $id): JsonResponse
+    {
+        [$anchorTransaction, $doCode, $skuLines] = $this->buildDeliveryOrderReturnPayload($id);
+        $returnMarker = $this->buildDeliveryOrderReturnMarker($doCode);
+
+        $validated = $request->validate([
+            'lines' => 'required|array|min:1',
+            'lines.*.item_id' => 'required|integer|distinct|exists:items,id',
+            'lines.*.quantity' => $this->decimalQuantityRules(),
+        ]);
+
+        $remainingByItemId = collect($skuLines)
+            ->keyBy('item_id')
+            ->map(fn ($line) => $this->normalizeQuantity($line['remaining_quantity']))
+            ->all();
+
+        $lineMap = [];
+        foreach ($validated['lines'] as $line) {
+            $itemId = (int) $line['item_id'];
+            $quantity = $this->normalizeQuantity($line['quantity']);
+            $remaining = $this->normalizeQuantity($remainingByItemId[$itemId] ?? 0);
+
+            if ($remaining <= 0) {
+                throw ValidationException::withMessages([
+                    'lines' => ['Selected SKU is not available to return for this delivery order.'],
+                ]);
+            }
+
+            if ($quantity > $remaining) {
+                throw ValidationException::withMessages([
+                    'lines' => ['Return quantity exceeds remaining quantity for one or more SKU.'],
+                ]);
+            }
+
+            $lineMap[] = [
+                'item_id' => $itemId,
+                'quantity' => $quantity,
+            ];
+        }
+
+        $sourceTransactions = $this->resolveDeliveryOrderTransactions($anchorTransaction);
+
+        $returnedTransaction = DB::transaction(function () use ($request, $anchorTransaction, $lineMap, $returnMarker, $doCode, $sourceTransactions) {
+            $salesOrder = $anchorTransaction->sales_order_id
+                ? SalesOrder::query()->find($anchorTransaction->sales_order_id)
+                : null;
+
+            $notes = $returnMarker;
+            if ($salesOrder) {
+                $notes .= ' Customer: ' . $salesOrder->customer_name . ' | SO: ' . $salesOrder->code;
+            }
+            $notes .= ' | Returned selected SKU from delivery order';
+
+            $transaction = InventoryTransaction::create([
+                'type' => 'in',
+                'mode' => 'alacarte',
+                'package_id' => null,
+                'package_quantity' => null,
+                'sales_user_id' => null,
+                'sales_order_id' => $anchorTransaction->sales_order_id,
+                'created_by' => $request->user()->id,
+                'notes' => $notes,
+            ]);
+
+            foreach ($lineMap as $line) {
+                $variant = $this->findOrCreateDefaultVariant((int) $line['item_id'], true);
+                $qty = $this->normalizeQuantity($line['quantity']);
+                $variant->increment('stock_current', $qty);
+
+                $transaction->lines()->create([
+                    'item_id' => (int) $line['item_id'],
+                    'item_variant_id' => $variant->id,
+                    'quantity' => $qty,
+                ]);
+            }
+
+            if ($salesOrder) {
+                $this->syncSalesOrderProgress($salesOrder);
+                $this->refreshSalesOrderStatus($salesOrder);
+            }
+
+            TransactionLog::record('stock_out_return', [
+                'id' => $transaction->id,
+                'do_code' => $doCode,
+                'source_transaction_ids' => $sourceTransactions->pluck('id')->values()->all(),
+                'lines_count' => count($lineMap),
+            ]);
+
+            return $transaction;
+        });
 
         return response()->json([
-            'data' => $transactions->map(function ($t) {
-                return [
-                    'id' => $t->id,
-                    'code' => $this->buildDeliveryOrderCode($t),
-                    'sales_order_code' => $t->salesOrder?->code ?? 'N/A',
-                    'customer_name' => $t->salesOrder?->customer_name ?? 'N/A',
-                    'created_at' => $t->created_at->format('Y-m-d H:i:s'),
-                    'creator' => $t->creator?->name ?? 'System',
-                    'notes' => $t->notes,
-                    'lines_count' => $t->lines->count(),
-                    'items_summary' => $t->lines->take(3)->map(function ($l) {
-                        return $l->item?->sku . ' (x' . $l->quantity . ')';
-                    })->implode(', ') . ($t->lines->count() > 3 ? '...' : ''),
-                ];
-            }),
+            'message' => 'Selected SKU returned and stock updated successfully.',
+            'data' => $returnedTransaction->load('lines'),
+        ]);
+    }
+
+    public function returnDeliveryOrder(Request $request, int $id): JsonResponse
+    {
+        $anchorTransaction = InventoryTransaction::query()
+            ->with(['lines.item'])
+            ->findOrFail($id);
+
+        if ($anchorTransaction->type !== 'out') {
+            abort(404, 'Transaction is not a delivery order.');
+        }
+
+        $sourceTransactions = $this->resolveDeliveryOrderTransactions($anchorTransaction);
+        $doCode = $this->buildDeliveryOrderCode($anchorTransaction);
+        $returnMarker = $this->buildDeliveryOrderReturnMarker($doCode);
+
+        $alreadyReturned = InventoryTransaction::query()
+            ->where('type', 'in')
+            ->where('notes', 'like', '%' . $returnMarker . '%')
+            ->exists();
+
+        if ($alreadyReturned) {
+            throw ValidationException::withMessages([
+                'delivery_order' => ['Delivery order already returned.'],
+            ]);
+        }
+
+        $lineMap = [];
+        foreach ($sourceTransactions as $transaction) {
+            foreach ($transaction->lines as $line) {
+                $itemId = (int) $line->item_id;
+                if (!isset($lineMap[$itemId])) {
+                    $lineMap[$itemId] = [
+                        'item_id' => $itemId,
+                        'quantity' => 0.0,
+                    ];
+                }
+                $lineMap[$itemId]['quantity'] = $this->normalizeQuantity($lineMap[$itemId]['quantity'] + $line->quantity);
+            }
+        }
+
+        if (empty($lineMap)) {
+            throw ValidationException::withMessages([
+                'delivery_order' => ['Delivery order has no lines to return.'],
+            ]);
+        }
+
+        $returnedTransaction = DB::transaction(function () use ($request, $anchorTransaction, $lineMap, $returnMarker, $doCode, $sourceTransactions) {
+            $salesOrder = $anchorTransaction->sales_order_id
+                ? SalesOrder::query()->find($anchorTransaction->sales_order_id)
+                : null;
+
+            $notes = $returnMarker;
+            if ($salesOrder) {
+                $notes .= ' Customer: ' . $salesOrder->customer_name . ' | SO: ' . $salesOrder->code;
+            }
+            $notes .= ' | Returned from submitted delivery order';
+
+            $transaction = InventoryTransaction::create([
+                'type' => 'in',
+                'mode' => 'alacarte',
+                'package_id' => null,
+                'package_quantity' => null,
+                'sales_user_id' => null,
+                'sales_order_id' => $anchorTransaction->sales_order_id,
+                'created_by' => $request->user()->id,
+                'notes' => $notes,
+            ]);
+
+            foreach ($lineMap as $line) {
+                $variant = $this->findOrCreateDefaultVariant((int) $line['item_id'], true);
+                $qty = $this->normalizeQuantity($line['quantity']);
+
+                $variant->increment('stock_current', $qty);
+
+                $transaction->lines()->create([
+                    'item_id' => (int) $line['item_id'],
+                    'item_variant_id' => $variant->id,
+                    'quantity' => $qty,
+                ]);
+            }
+
+            if ($salesOrder) {
+                $this->syncSalesOrderProgress($salesOrder);
+                $this->refreshSalesOrderStatus($salesOrder);
+            }
+
+            TransactionLog::record('stock_out_return', [
+                'id' => $transaction->id,
+                'do_code' => $doCode,
+                'source_transaction_ids' => $sourceTransactions->pluck('id')->values()->all(),
+                'lines_count' => count($lineMap),
+            ]);
+
+            return $transaction;
+        });
+
+        return response()->json([
+            'message' => 'Delivery order returned and stock updated successfully.',
+            'data' => $returnedTransaction->load('lines'),
+        ]);
+    }
+
+    public function returnDeliveryOrderSku(Request $request, int $id): JsonResponse
+    {
+        $validated = $request->validate([
+            'item_id' => 'required|integer|exists:items,id',
+            'quantity' => $this->decimalQuantityRules(),
+        ]);
+
+        $anchorTransaction = InventoryTransaction::query()
+            ->with(['lines.item'])
+            ->findOrFail($id);
+
+        if ($anchorTransaction->type !== 'out') {
+            abort(404, 'Transaction is not a delivery order.');
+        }
+
+        $sourceTransactions = $this->resolveDeliveryOrderTransactions($anchorTransaction);
+        $doCode = $this->buildDeliveryOrderCode($anchorTransaction);
+        $returnMarker = $this->buildDeliveryOrderReturnMarker($doCode);
+
+        $itemId = (int) $validated['item_id'];
+        $requestedQty = $this->normalizeQuantity($validated['quantity']);
+
+        $shippedQty = 0.0;
+        foreach ($sourceTransactions as $transaction) {
+            foreach ($transaction->lines as $line) {
+                if ((int) $line->item_id === $itemId) {
+                    $shippedQty = $this->normalizeQuantity($shippedQty + $line->quantity);
+                }
+            }
+        }
+
+        if ($shippedQty <= 0) {
+            throw ValidationException::withMessages([
+                'item_id' => ['Selected SKU is not part of this delivery order.'],
+            ]);
+        }
+
+        $returnedQty = $this->normalizeQuantity(DB::table('inventory_transaction_lines as transaction_lines')
+            ->join('inventory_transactions as transactions', 'transactions.id', '=', 'transaction_lines.inventory_transaction_id')
+            ->where('transactions.type', 'in')
+            ->where('transactions.notes', 'like', '%' . $returnMarker . '%')
+            ->where('transaction_lines.item_id', $itemId)
+            ->sum('transaction_lines.quantity'));
+
+        $availableToReturn = max($this->normalizeQuantity($shippedQty - $returnedQty), 0);
+        if ($requestedQty > $availableToReturn) {
+            throw ValidationException::withMessages([
+                'quantity' => ['Return quantity exceeds remaining quantity for this SKU.'],
+            ]);
+        }
+
+        $returnedTransaction = DB::transaction(function () use ($request, $anchorTransaction, $sourceTransactions, $itemId, $requestedQty, $doCode, $returnMarker) {
+            $salesOrder = $anchorTransaction->sales_order_id
+                ? SalesOrder::query()->find($anchorTransaction->sales_order_id)
+                : null;
+
+            $notes = $returnMarker;
+            if ($salesOrder) {
+                $notes .= ' Customer: ' . $salesOrder->customer_name . ' | SO: ' . $salesOrder->code;
+            }
+            $notes .= ' | Returned SKU from submitted delivery order';
+
+            $transaction = InventoryTransaction::create([
+                'type' => 'in',
+                'mode' => 'alacarte',
+                'package_id' => null,
+                'package_quantity' => null,
+                'sales_user_id' => null,
+                'sales_order_id' => $anchorTransaction->sales_order_id,
+                'created_by' => $request->user()->id,
+                'notes' => $notes,
+            ]);
+
+            $variant = $this->findOrCreateDefaultVariant($itemId, true);
+            $variant->increment('stock_current', $requestedQty);
+
+            $transaction->lines()->create([
+                'item_id' => $itemId,
+                'item_variant_id' => $variant->id,
+                'quantity' => $requestedQty,
+            ]);
+
+            if ($salesOrder) {
+                $this->syncSalesOrderProgress($salesOrder);
+                $this->refreshSalesOrderStatus($salesOrder);
+            }
+
+            TransactionLog::record('stock_out_return', [
+                'id' => $transaction->id,
+                'do_code' => $doCode,
+                'source_transaction_ids' => $sourceTransactions->pluck('id')->values()->all(),
+                'item_id' => $itemId,
+                'quantity' => $requestedQty,
+                'lines_count' => 1,
+            ]);
+
+            return $transaction;
+        });
+
+        return response()->json([
+            'message' => 'Delivery order SKU returned and stock updated successfully.',
+            'data' => $returnedTransaction->load('lines'),
         ]);
     }
 
@@ -521,9 +837,86 @@ class ItemController extends Controller
             abort(404, 'Transaction is not a delivery order.');
         }
 
+        $doCode = $this->buildDeliveryOrderCode($transaction);
+
+        $relatedTransactions = InventoryTransaction::query()
+            ->with(['lines.item', 'salesOrder', 'creator'])
+            ->where('type', 'out')
+            ->when(
+                !empty($transaction->sales_order_id),
+                fn ($query) => $query->where('sales_order_id', $transaction->sales_order_id),
+                fn ($query) => $query->where('id', $transaction->id)
+            )
+            ->orderBy('created_at')
+            ->orderBy('id')
+            ->get();
+
+        $shipmentGroups = $relatedTransactions->map(function ($tx) {
+            $lines = $tx->lines
+                ->map(function ($line) {
+                    return [
+                        'sku' => $line->item?->sku ?? 'N/A',
+                        'name' => $line->item?->name ?? 'Unknown Item',
+                        'unit' => $line->item?->unit ?? '',
+                        'quantity' => $this->normalizeQuantity($line->quantity),
+                    ];
+                })
+                ->sortBy('sku')
+                ->values();
+
+            return [
+                'transaction_id' => $tx->id,
+                'date' => optional($tx->created_at)->format('d/m/Y H:i'),
+                'creator' => $tx->creator?->name ?? 'System',
+                'lines' => $lines,
+            ];
+        })->values();
+
+        $doDates = $relatedTransactions
+            ->pluck('created_at')
+            ->map(fn ($dt) => optional($dt)->format('d/m/Y H:i'))
+            ->filter()
+            ->unique()
+            ->values();
+
+        // Fetch return transactions
+        $returnMarker = $this->buildDeliveryOrderReturnMarker($doCode);
+        $returnTransactions = InventoryTransaction::query()
+            ->with(['lines.item', 'creator'])
+            ->where('type', 'in')
+            ->where('notes', 'like', '%' . $returnMarker . '%')
+            ->orderBy('created_at')
+            ->get();
+
+        $returnGroups = $returnTransactions->map(function ($tx) {
+            $lines = $tx->lines
+                ->map(function ($line) {
+                    return [
+                        'sku' => $line->item?->sku ?? 'N/A',
+                        'name' => $line->item?->name ?? 'Unknown Item',
+                        'unit' => $line->item?->unit ?? '',
+                        'quantity' => $this->normalizeQuantity($line->quantity),
+                    ];
+                })
+                ->sortBy('sku')
+                ->values();
+
+            return [
+                'transaction_id' => $tx->id,
+                'date' => optional($tx->created_at)->format('d/m/Y H:i'),
+                'creator' => $tx->creator?->name ?? 'System',
+                'lines' => $lines,
+                'notes' => $tx->notes,
+            ];
+        })->values();
+
         $pdf = Pdf::loadView('inventory.do-pdf', [
             'transaction' => $transaction,
-            'doCode' => $this->buildDeliveryOrderCode($transaction),
+            'doCode' => $doCode,
+            'transactions' => $relatedTransactions,
+            'shipmentGroups' => $shipmentGroups,
+            'returnGroups' => $returnGroups,
+            'doDates' => $doDates,
             'generatedAt' => now()->format('d/m/Y H:i:s'),
         ]);
 
@@ -539,12 +932,186 @@ class ItemController extends Controller
         return 'DO-' . str_pad((int) $transaction->id, 6, '0', STR_PAD_LEFT);
     }
 
+    private function buildGroupedDeliveryOrders(int $limit = 200)
+    {
+        $transactions = InventoryTransaction::query()
+            ->with(['lines.item', 'salesOrder', 'creator'])
+            ->where('type', 'out')
+            ->latest()
+            ->limit($limit)
+            ->get();
+
+        $returnedCodes = InventoryTransaction::query()
+            ->where('type', 'in')
+            ->where('notes', 'like', '%[DO-RETURN:%')
+            ->pluck('notes')
+            ->map(function ($notes) {
+                if (!is_string($notes)) {
+                    return null;
+                }
+
+                if (preg_match('/\[DO-RETURN:([^\]]+)\]/', $notes, $matches) === 1) {
+                    return trim((string) ($matches[1] ?? ''));
+                }
+
+                return null;
+            })
+            ->filter()
+            ->values()
+            ->all();
+
+        return $transactions
+            ->groupBy(function ($transaction) {
+                return $this->buildDeliveryOrderCode($transaction);
+            })
+            ->map(function ($group, $doCode) use ($returnedCodes) {
+                $latest = $group->sortByDesc('created_at')->first();
+                $first = $group->first();
+
+                $linesBySku = [];
+                foreach ($group as $transaction) {
+                    foreach ($transaction->lines as $line) {
+                        $sku = $line->item?->sku ?? 'N/A';
+                        if (!isset($linesBySku[$sku])) {
+                            $linesBySku[$sku] = [
+                                'sku' => $sku,
+                                'quantity' => 0.0,
+                            ];
+                        }
+                        $linesBySku[$sku]['quantity'] = $this->normalizeQuantity($linesBySku[$sku]['quantity'] + $line->quantity);
+                    }
+                }
+
+                $lineSummary = collect($linesBySku)
+                    ->values()
+                    ->take(5)
+                    ->map(function ($line) {
+                        return $line['sku'] . ' (x' . $this->formatQuantity($line['quantity']) . ')';
+                    })
+                    ->implode(', ');
+
+                $hasMoreLines = count($linesBySku) > 5;
+
+                $dates = $group
+                    ->pluck('created_at')
+                    ->map(function ($dt) {
+                        return optional($dt)->format('Y-m-d H:i:s');
+                    })
+                    ->filter()
+                    ->unique()
+                    ->values();
+
+                $isReturned = in_array((string) $doCode, $returnedCodes, true);
+
+                return [
+                    'id' => $latest->id,
+                    'code' => $doCode,
+                    'sales_order_code' => $first->salesOrder?->code ?? 'N/A',
+                    'customer_name' => $first->salesOrder?->customer_name ?? 'N/A',
+                    'created_at' => $latest->created_at->format('Y-m-d H:i:s'),
+                    'creator' => $latest->creator?->name ?? 'System',
+                    'items_summary' => $lineSummary . ($hasMoreLines ? '...' : ''),
+                    'do_dates' => $dates,
+                    'do_dates_text' => $dates->implode(' | '),
+                    'is_returned' => $isReturned,
+                ];
+            })
+            ->sortByDesc('created_at')
+            ->values();
+    }
+
+    private function buildDeliveryOrderReturnMarker(string $doCode): string
+    {
+        return '[DO-RETURN:' . $doCode . ']';
+    }
+
+    private function buildDeliveryOrderReturnPayload(int $id): array
+    {
+        $anchorTransaction = InventoryTransaction::query()
+            ->with(['salesOrder'])
+            ->findOrFail($id);
+
+        if ($anchorTransaction->type !== 'out') {
+            abort(404, 'Transaction is not a delivery order.');
+        }
+
+        $sourceTransactions = $this->resolveDeliveryOrderTransactions($anchorTransaction);
+        $doCode = $this->buildDeliveryOrderCode($anchorTransaction);
+        $returnMarker = $this->buildDeliveryOrderReturnMarker($doCode);
+
+        $shippedByItem = [];
+        foreach ($sourceTransactions as $transaction) {
+            foreach ($transaction->lines as $line) {
+                $itemId = (int) $line->item_id;
+                if (!isset($shippedByItem[$itemId])) {
+                    $shippedByItem[$itemId] = 0.0;
+                }
+                $shippedByItem[$itemId] = $this->normalizeQuantity($shippedByItem[$itemId] + $line->quantity);
+            }
+        }
+
+        $returnedRows = DB::table('inventory_transaction_lines as transaction_lines')
+            ->join('inventory_transactions as transactions', 'transactions.id', '=', 'transaction_lines.inventory_transaction_id')
+            ->where('transactions.type', 'in')
+            ->where('transactions.notes', 'like', '%' . $returnMarker . '%')
+            ->select('transaction_lines.item_id', DB::raw('SUM(transaction_lines.quantity) as returned_quantity'))
+            ->groupBy('transaction_lines.item_id')
+            ->pluck('returned_quantity', 'item_id')
+            ->map(fn ($qty) => $this->normalizeQuantity($qty))
+            ->all();
+
+        $items = empty($shippedByItem)
+            ? collect()
+            : Item::query()
+                ->whereIn('id', array_keys($shippedByItem))
+                ->orderBy('sku')
+                ->get(['id', 'sku', 'name', 'unit', 'bom_scope'])
+                ->keyBy('id');
+
+        $skuLines = [];
+        foreach ($shippedByItem as $itemId => $shippedQuantity) {
+            $returnedQuantity = $this->normalizeQuantity($returnedRows[$itemId] ?? 0);
+            $remainingQuantity = max($this->normalizeQuantity($shippedQuantity - $returnedQuantity), 0);
+            $item = $items->get($itemId);
+
+            $skuLines[] = [
+                'item_id' => (int) $itemId,
+                'sku' => $item?->sku ?? 'N/A',
+                'name' => $item?->name ?? 'Unknown Item',
+                'unit' => $item?->unit ?? '',
+                'bom_scope' => $item?->bom_scope,
+                'shipped_quantity' => $this->normalizeQuantity($shippedQuantity),
+                'returned_quantity' => $returnedQuantity,
+                'remaining_quantity' => $remainingQuantity,
+            ];
+        }
+
+        $skuLines = collect($skuLines)->sortBy('sku')->values()->all();
+
+        return [$anchorTransaction, $doCode, $skuLines];
+    }
+
+    private function resolveDeliveryOrderTransactions(InventoryTransaction $transaction)
+    {
+        return InventoryTransaction::query()
+            ->with(['lines.item', 'salesOrder', 'creator'])
+            ->where('type', 'out')
+            ->when(
+                !empty($transaction->sales_order_id),
+                fn ($query) => $query->where('sales_order_id', $transaction->sales_order_id),
+                fn ($query) => $query->where('id', $transaction->id)
+            )
+            ->orderBy('created_at')
+            ->orderBy('id')
+            ->get();
+    }
+
     private function stockForm(string $type): Response
     {
         $type = $type === 'out' ? 'out' : 'in';
 
         $items = Item::query()
-            ->select(['id', 'sku', 'name', 'unit'])
+            ->select(['id', 'sku', 'name', 'unit', 'bom_scope'])
             ->withSum('variants as stock_current_total', 'stock_current')
             ->orderBy('sku')
             ->get();
@@ -566,9 +1133,9 @@ class ItemController extends Controller
                 ->with([
                     'lines' => function ($query) {
                         $query->with([
-                            'item:id,sku,name,unit',
+                            'item:id,sku,name,unit,bom_scope',
                             'package:id,code,name',
-                            'package.packageItems.item:id,sku,name,unit',
+                            'package.packageItems.item:id,sku,name,unit,bom_scope',
                         ])->orderBy('id');
                     },
                 ])
@@ -595,15 +1162,48 @@ class ItemController extends Controller
                     ->groupBy('transactions.sales_order_id', 'items.sku')
                     ->get();
 
-            $shippedByOrderSku = $shippedRows
+            $returnedRows = empty($orderIds)
+                ? collect()
+                : DB::table('inventory_transaction_lines as transaction_lines')
+                    ->join('inventory_transactions as transactions', 'transactions.id', '=', 'transaction_lines.inventory_transaction_id')
+                    ->join('items', 'items.id', '=', 'transaction_lines.item_id')
+                    ->where('transactions.type', 'in')
+                    ->where('transactions.notes', 'like', '%[DO-RETURN:%')
+                    ->whereIn('transactions.sales_order_id', $orderIds)
+                    ->select(
+                        'transactions.sales_order_id',
+                        'items.sku',
+                        DB::raw('SUM(transaction_lines.quantity) as returned_quantity')
+                    )
+                    ->groupBy('transactions.sales_order_id', 'items.sku')
+                    ->get();
+
+            $shippedByOrderSkuRaw = $shippedRows
                 ->groupBy('sales_order_id')
                 ->map(function ($rows) {
                     return collect($rows)
                         ->pluck('shipped_quantity', 'sku')
-                        ->map(fn($qty) => (int) $qty)
+                        ->map(fn($qty) => $this->normalizeQuantity($qty))
                         ->toArray();
                 })
                 ->toArray();
+
+            $returnedByOrderSku = $returnedRows
+                ->groupBy('sales_order_id')
+                ->map(function ($rows) {
+                    return collect($rows)
+                        ->pluck('returned_quantity', 'sku')
+                        ->map(fn($qty) => $this->normalizeQuantity($qty))
+                        ->toArray();
+                })
+                ->toArray();
+
+            foreach ($shippedByOrderSkuRaw as $orderId => $skuMap) {
+                foreach ($skuMap as $sku => $qty) {
+                    $returnedQty = $this->normalizeQuantity($returnedByOrderSku[$orderId][$sku] ?? 0);
+                    $shippedByOrderSku[$orderId][$sku] = max($this->normalizeQuantity($qty - $returnedQty), 0);
+                }
+            }
 
             $orderedSkus = $salesOrders
                 ->flatMap(function ($order) {
@@ -619,7 +1219,7 @@ class ItemController extends Controller
                 ? collect()
                 : Item::query()
                     ->whereIn('sku', $orderedSkus->all())
-                    ->get(['sku', 'name'])
+                    ->get(['sku', 'name', 'bom_scope'])
                     ->keyBy('sku');
 
             $salesOrders = $salesOrders->map(function ($order) use ($shippedByOrderSku, $itemsBySku) {
@@ -636,21 +1236,22 @@ class ItemController extends Controller
                             }
 
                             $orderedBySku[$sku] = ($orderedBySku[$sku] ?? 0)
-                                + ((int) $line->package_quantity * (int) $packageItem->quantity);
+                                + $this->normalizeQuantity($line->package_quantity * $packageItem->quantity);
                         }
                         continue;
                     }
 
                     if (!empty($line->item_sku)) {
                         $orderedBySku[$line->item_sku] = ($orderedBySku[$line->item_sku] ?? 0)
-                            + (int) $line->item_quantity;
+                            + $this->normalizeQuantity($line->item_quantity);
                     }
                 }
 
                 $pendingSkuLines = [];
                 foreach ($orderedBySku as $sku => $ordered) {
-                    $shipped = (int) ($shippedBySku[$sku] ?? 0);
-                    $remaining = max($ordered - $shipped, 0);
+                    $ordered = $this->normalizeQuantity($ordered);
+                    $shipped = $this->normalizeQuantity($shippedBySku[$sku] ?? 0);
+                    $remaining = max($this->normalizeQuantity($ordered - $shipped), 0);
 
                     if ($remaining <= 0) {
                         continue;
@@ -660,6 +1261,7 @@ class ItemController extends Controller
                     $pendingSkuLines[] = [
                         'sku' => $sku,
                         'name' => $item?->name,
+                        'bom_scope' => $item?->bom_scope,
                         'ordered_quantity' => $ordered,
                         'shipped_quantity' => min($shipped, $ordered),
                         'pending_quantity' => $remaining,
@@ -669,7 +1271,11 @@ class ItemController extends Controller
                 $order->setAttribute('pending_sku_lines', $pendingSkuLines);
 
                 return $order;
-            })->values();
+            })
+                ->filter(function ($order) {
+                    return !empty($order->pending_sku_lines);
+                })
+                ->values();
         }
 
         $historyData = collect();
@@ -690,7 +1296,7 @@ class ItemController extends Controller
                         'notes' => $t->notes,
                         'lines_count' => $t->lines->count(),
                         'items_summary' => $t->lines->take(3)->map(function ($l) {
-                            return $l->item?->sku . ' (x' . $l->quantity . ')';
+                            return $l->item?->sku . ' (x' . $this->formatQuantity($l->quantity) . ')';
                         })->implode(', ') . ($t->lines->count() > 3 ? '...' : ''),
                     ];
                 });
@@ -713,7 +1319,7 @@ class ItemController extends Controller
             'package_quantity' => 'required_if:mode,package|integer|min:1',
             'lines' => 'required_if:mode,alacarte|array|min:1',
             'lines.*.item_id' => 'required_if:mode,alacarte|integer|distinct|exists:items,id',
-            'lines.*.quantity' => 'required_if:mode,alacarte|integer|min:1',
+            'lines.*.quantity' => $this->decimalQuantityRules(),
             'notes' => 'nullable|string|max:500',
         ]);
 
@@ -727,7 +1333,7 @@ class ItemController extends Controller
                 ->map(function ($line) {
                     return [
                         'item_id' => (int) $line['item_id'],
-                        'quantity' => (int) $line['quantity'],
+                        'quantity' => $this->normalizeQuantity($line['quantity']),
                     ];
                 })
                 ->values()
@@ -790,7 +1396,7 @@ class ItemController extends Controller
             'package_quantity' => 'required_if:mode,package|integer|min:1',
             'lines' => 'required_if:mode,alacarte|array|min:1',
             'lines.*.item_id' => 'required_if:mode,alacarte|integer|distinct|exists:items,id',
-            'lines.*.quantity' => 'required_if:mode,alacarte|integer|min:1',
+            'lines.*.quantity' => $this->decimalQuantityRules(),
             'sales_order_id' => [
                 'required',
                 'integer',
@@ -818,7 +1424,7 @@ class ItemController extends Controller
                 ->map(function ($line) {
                     return [
                         'item_id' => (int) $line['item_id'],
-                        'quantity' => (int) $line['quantity'],
+                        'quantity' => $this->normalizeQuantity($line['quantity']),
                     ];
                 })
                 ->values()
@@ -874,7 +1480,7 @@ class ItemController extends Controller
                     ]);
                 }
 
-                if ((int) $variant->stock_current < (int) $line['quantity']) {
+                if ($variant->stock_current < $line['quantity']) {
                     $item = Item::query()->find($line['item_id']);
                     throw ValidationException::withMessages([
                         'package_quantity' => [
@@ -922,7 +1528,7 @@ class ItemController extends Controller
     {
         $order->load('lines');
 
-        $remainingBySku = DB::table('inventory_transaction_lines as transaction_lines')
+        $shippedBySku = DB::table('inventory_transaction_lines as transaction_lines')
             ->join('inventory_transactions as transactions', 'transactions.id', '=', 'transaction_lines.inventory_transaction_id')
             ->join('items', 'items.id', '=', 'transaction_lines.item_id')
             ->where('transactions.type', 'out')
@@ -930,14 +1536,31 @@ class ItemController extends Controller
             ->select('items.sku', DB::raw('SUM(transaction_lines.quantity) as shipped_quantity'))
             ->groupBy('items.sku')
             ->pluck('shipped_quantity', 'sku')
-            ->map(fn($quantity) => (int) $quantity)
+            ->map(fn($quantity) => $this->normalizeQuantity($quantity))
             ->all();
+
+        $returnedBySku = DB::table('inventory_transaction_lines as transaction_lines')
+            ->join('inventory_transactions as transactions', 'transactions.id', '=', 'transaction_lines.inventory_transaction_id')
+            ->join('items', 'items.id', '=', 'transaction_lines.item_id')
+            ->where('transactions.type', 'in')
+            ->where('transactions.sales_order_id', $order->id)
+            ->where('transactions.notes', 'like', '%[DO-RETURN:%')
+            ->select('items.sku', DB::raw('SUM(transaction_lines.quantity) as returned_quantity'))
+            ->groupBy('items.sku')
+            ->pluck('returned_quantity', 'sku')
+            ->map(fn($quantity) => $this->normalizeQuantity($quantity))
+            ->all();
+
+        $remainingBySku = [];
+        foreach ($shippedBySku as $sku => $qty) {
+            $remainingBySku[$sku] = max($this->normalizeQuantity($qty - ($returnedBySku[$sku] ?? 0)), 0);
+        }
 
         foreach ($order->lines as $line) {
             if ($line->item_sku) {
-                $availableQuantity = (int) ($remainingBySku[$line->item_sku] ?? 0);
-                $shippedQuantity = min((int) $line->item_quantity, max($availableQuantity, 0));
-                $remainingBySku[$line->item_sku] = max(0, $availableQuantity - $shippedQuantity);
+                $availableQuantity = $this->normalizeQuantity($remainingBySku[$line->item_sku] ?? 0);
+                $shippedQuantity = min($this->normalizeQuantity($line->item_quantity), max($availableQuantity, 0));
+                $remainingBySku[$line->item_sku] = max(0, $this->normalizeQuantity($availableQuantity - $shippedQuantity));
 
                 $line->update([
                     'shipped_quantity' => $shippedQuantity,
@@ -985,7 +1608,7 @@ class ItemController extends Controller
             ->map(function ($line) use ($packageQuantity) {
                 return [
                     'item_id' => (int) $line->item_id,
-                    'quantity' => (int) $line->quantity * $packageQuantity,
+                    'quantity' => $this->normalizeQuantity($line->quantity * $packageQuantity),
                 ];
             })
             ->values()

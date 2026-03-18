@@ -10,8 +10,16 @@ use App\Http\Controllers\SalesOrderController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\CrnController;
 use App\Http\Controllers\LogsController;
+use App\Http\Controllers\MaterialReceivingNoteController;
+use App\Http\Controllers\SiteReceivingNoteController;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
+
+$procurementScopes = [
+    'cabin' => 'cabin',
+    'hardware' => 'hardware',
+    'hardware_site' => 'hardware-site',
+];
 
 Route::get('/', function () {
     return auth()->check()
@@ -21,10 +29,10 @@ Route::get('/', function () {
 
 Route::middleware('guest')->group(function () {
     Route::get('/login', [AuthController::class, 'showLogin'])->name('login');
-    Route::post('/login', [AuthController::class, 'login'])->name('login.store');
+    Route::post('/login', [AuthController::class, 'login'])->middleware('throttle:5,1')->name('login.store');
 });
 
-Route::middleware('auth')->group(function () {
+Route::middleware('auth')->group(function () use ($procurementScopes) {
     Route::get('/csrf-token', function () {
         return response()->json([
             'token' => csrf_token(),
@@ -33,6 +41,12 @@ Route::middleware('auth')->group(function () {
 
     Route::get('/dashboard', [DashboardController::class, 'index'])->name('dashboard');
     Route::get('/warehouse', function () {
+        $user = request()->user();
+        $warehouseModules = ['crn', 'mrn', 'srn', 'item_catalog', 'stock_list', 'delivery_order', 'rejected_list', 'create_package'];
+        $canAccessWarehouse = $user && collect($warehouseModules)->contains(fn($module) => $user->hasModuleAccess($module));
+
+        abort_unless($canAccessWarehouse, 403, 'Unauthorized module.');
+
         return Inertia::render('Warehouse/Index');
     })->name('warehouse.index');
 
@@ -40,55 +54,110 @@ Route::middleware('auth')->group(function () {
     Route::patch('/profile', [ProfileController::class, 'update'])->name('profile.update');
     Route::put('/profile/password', [ProfileController::class, 'updatePassword'])->name('profile.password');
 
-    Route::get('/items', [ItemController::class, 'index'])->name('items.index');
-    Route::get('/items/stocks', [ItemController::class, 'stockList'])->name('items.stocks.index');
-    Route::get('/items/stocks/audit', [ItemController::class, 'stockAuditForm'])->name('items.stocks.audit.form');
-    Route::post('/items/stocks/audit', [ItemController::class, 'stockAuditStore'])->name('items.stocks.audit.store');
-    Route::get('/items/stocks/audit/pdf', [ItemController::class, 'downloadStockAuditPdf'])->name('items.stocks.audit.pdf');
-    Route::get('/items/stocks/pdf', [ItemController::class, 'downloadStockPdf'])->name('items.stocks.pdf');
-    Route::post('/items', [ItemController::class, 'store'])->name('items.store');
-    Route::post('/items/bulk', [ItemController::class, 'bulkStore'])->name('items.bulk.store');
-    Route::put('/items/{item}', [ItemController::class, 'update'])->name('items.update');
-    Route::delete('/items/{item}', [ItemController::class, 'destroy'])->name('items.destroy');
-    Route::get('/items/stock/in', [ItemController::class, 'stockInForm'])->name('items.stock.in.form');
-    Route::get('/items/stock/out', [ItemController::class, 'stockOutForm'])->name('items.stock.out.form');
-    Route::post('/items/stock/in', [ItemController::class, 'stockInStore'])->name('items.stock.in');
-    Route::get('/items/stock/in/history', [ItemController::class, 'stockInHistory'])->name('items.stock.in.history');
-    Route::get('/items/stock/out/history', [ItemController::class, 'stockOutHistory'])->name('items.stock.out.history');
-    Route::post('/items/stock/out', [ItemController::class, 'stockOutStore'])->name('items.stock.out');
-    Route::get('/items/stock/out/do/{id}', [ItemController::class, 'downloadDoPdf'])->name('items.stock.out.do');
-    Route::get('/orders', [SalesOrderController::class, 'index'])->name('sales.orders.index');
-    Route::get('/orders/history', [SalesOrderController::class, 'history'])->name('sales.orders.history');
-    Route::get('/orders/search-item', [SalesOrderController::class, 'searchItem'])->name('sales.orders.search.item');
-    Route::post('/orders', [SalesOrderController::class, 'store'])->name('sales.orders.store');
-    Route::get('/procurement', [ProcurementController::class, 'index'])->name('procurement.index');
-    Route::post('/procurement/orders', [ProcurementController::class, 'store'])->name('procurement.orders.store');
-    Route::get('/procurement/orders/{order}/pdf', [ProcurementController::class, 'pdf'])->name('procurement.orders.pdf');
-    Route::post('/procurement/orders/{order}/lines', [ProcurementController::class, 'addLine'])->name('procurement.orders.lines.store');
-    Route::post('/procurement/orders/{order}/packages', [ProcurementController::class, 'addPackageLine'])->name('procurement.orders.packages.store');
-    Route::put('/procurement/orders/{order}/submit', [ProcurementController::class, 'submit'])->name('procurement.orders.submit');
-    Route::put('/procurement/orders/{order}/receive', [ProcurementController::class, 'receive'])->name('procurement.orders.receive');
-    Route::delete('/procurement/orders/{order}', [ProcurementController::class, 'destroy'])->name('procurement.orders.destroy');
+    Route::middleware('module:item_catalog')->group(function () {
+        Route::get('/items', [ItemController::class, 'index'])->name('items.index');
+        Route::post('/items', [ItemController::class, 'store'])->name('items.store');
+        Route::post('/items/bulk', [ItemController::class, 'bulkStore'])->name('items.bulk.store');
+        Route::put('/items/{item}', [ItemController::class, 'update'])->name('items.update');
+        Route::delete('/items/{item}', [ItemController::class, 'destroy'])->name('items.destroy');
+    });
+
+    Route::middleware('module:stock_list')->group(function () {
+        Route::get('/items/stocks', [ItemController::class, 'stockList'])->name('items.stocks.index');
+        Route::get('/items/stocks/audit', [ItemController::class, 'stockAuditForm'])->name('items.stocks.audit.form');
+        Route::post('/items/stocks/audit', [ItemController::class, 'stockAuditStore'])->name('items.stocks.audit.store');
+        Route::get('/items/stocks/audit/pdf', [ItemController::class, 'downloadStockAuditPdf'])->name('items.stocks.audit.pdf');
+        Route::get('/items/stocks/pdf', [ItemController::class, 'downloadStockPdf'])->name('items.stocks.pdf');
+    });
+
+    Route::middleware('module:stock_in')->group(function () {
+        Route::get('/items/stock/in', [ItemController::class, 'stockInForm'])->name('items.stock.in.form');
+        Route::post('/items/stock/in', [ItemController::class, 'stockInStore'])->name('items.stock.in');
+        Route::get('/items/stock/in/history', [ItemController::class, 'stockInHistory'])->name('items.stock.in.history');
+    });
+
+    Route::middleware('module:delivery_order')->group(function () {
+        Route::get('/items/stock/out', [ItemController::class, 'stockOutForm'])->name('items.stock.out.form');
+        Route::get('/items/stock/out/history', [ItemController::class, 'stockOutHistory'])->name('items.stock.out.history');
+        Route::post('/items/stock/out', [ItemController::class, 'stockOutStore'])->name('items.stock.out');
+        Route::get('/items/stock/out/delivery-orders', [ItemController::class, 'deliveryOrdersIndex'])->name('items.stock.out.delivery-orders');
+        Route::get('/items/stock/out/do/{id}', [ItemController::class, 'downloadDoPdf'])->name('items.stock.out.do');
+        Route::get('/items/stock/out/do/{id}/return', [ItemController::class, 'returnDeliveryOrderForm'])->name('items.stock.out.do.return.form');
+        Route::post('/items/stock/out/do/{id}/return-items', [ItemController::class, 'returnDeliveryOrderItems'])->name('items.stock.out.do.return.items');
+        Route::post('/items/stock/out/do/{id}/return-sku', [ItemController::class, 'returnDeliveryOrderSku'])->name('items.stock.out.do.return-sku');
+        Route::post('/items/stock/out/do/{id}/return', [ItemController::class, 'returnDeliveryOrder'])->name('items.stock.out.do.return');
+    });
+
+    Route::middleware('module:sales_orders')->group(function () {
+        Route::get('/orders', [SalesOrderController::class, 'index'])->name('sales.orders.index');
+        Route::get('/orders/history', [SalesOrderController::class, 'history'])->name('sales.orders.history');
+        Route::get('/orders/{order}/pdf', [SalesOrderController::class, 'pdf'])->name('sales.orders.pdf');
+        Route::get('/orders/search-item', [SalesOrderController::class, 'searchItem'])->name('sales.orders.search.item');
+        Route::post('/orders', [SalesOrderController::class, 'store'])->name('sales.orders.store');
+    });
+
+    Route::middleware('module:procurement')->group(function () use ($procurementScopes) {
+        Route::redirect('/procurement', '/procurement/cabin')->name('procurement.index');
+
+        Route::get('/procurement/suppliers', [ProcurementController::class, 'suppliersIndex'])->name('procurement.suppliers.index');
+        Route::post('/procurement/suppliers', [ProcurementController::class, 'suppliersStore'])->name('procurement.suppliers.store');
+        Route::put('/procurement/suppliers/{supplier}', [ProcurementController::class, 'suppliersUpdate'])->name('procurement.suppliers.update');
+        Route::delete('/procurement/suppliers/{supplier}', [ProcurementController::class, 'suppliersDestroy'])->name('procurement.suppliers.destroy');
+
+        foreach ($procurementScopes as $scope => $path) {
+            Route::prefix('/procurement/' . $path)
+                ->name('procurement.' . $scope . '.')
+                ->group(function () use ($scope) {
+                    Route::get('/', [ProcurementController::class, 'index'])->defaults('procurement_scope', $scope)->name('index');
+                    Route::post('/orders', [ProcurementController::class, 'store'])->defaults('procurement_scope', $scope)->name('orders.store');
+                    Route::get('/orders/{order}/pdf', [ProcurementController::class, 'pdf'])->defaults('procurement_scope', $scope)->name('orders.pdf');
+                    Route::post('/orders/{order}/lines', [ProcurementController::class, 'addLine'])->defaults('procurement_scope', $scope)->name('orders.lines.store');
+                    Route::post('/orders/{order}/packages', [ProcurementController::class, 'addPackageLine'])->defaults('procurement_scope', $scope)->name('orders.packages.store');
+                    Route::put('/orders/{order}/submit', [ProcurementController::class, 'submit'])->defaults('procurement_scope', $scope)->name('orders.submit');
+                    Route::put('/orders/{order}/receive', [ProcurementController::class, 'receive'])->defaults('procurement_scope', $scope)->name('orders.receive');
+                    Route::delete('/orders/{order}', [ProcurementController::class, 'destroy'])->defaults('procurement_scope', $scope)->name('orders.destroy');
+                });
+        }
+    });
 
     Route::prefix('warehouse')->group(function () {
-        Route::get('/crn', [CrnController::class, 'index'])->name('warehouse.crn.index');
-        Route::get('/crn/{crn}/pdf', [CrnController::class, 'downloadPdf'])->name('warehouse.crn.pdf');
-        Route::post('/crn/{crn}/eta', [CrnController::class, 'updateEta'])->name('warehouse.crn.eta');
-        Route::post('/crn/{crn}/arrived', [CrnController::class, 'markAsArrived'])->name('warehouse.crn.arrived');
-        Route::get('/crn/create', [CrnController::class, 'create'])->name('warehouse.crn.create');
-        Route::get('/rejections', [ProcurementController::class, 'rejectedList'])->name('warehouse.rejections.index');
-
-        Route::middleware('role:store_keeper,super_admin')->group(function () {
+        Route::middleware('module:crn')->group(function () {
+            Route::get('/crn', [CrnController::class, 'index'])->name('warehouse.crn.index');
+            Route::get('/crn/{crn}/pdf', [CrnController::class, 'downloadPdf'])->name('warehouse.crn.pdf');
+            Route::post('/crn/{crn}/eta', [CrnController::class, 'updateEta'])->name('warehouse.crn.eta');
+            Route::post('/crn/{crn}/arrived', [CrnController::class, 'markAsArrived'])->name('warehouse.crn.arrived');
+            Route::get('/crn/create', [CrnController::class, 'create'])->name('warehouse.crn.create');
             Route::post('/crn', [CrnController::class, 'store'])->name('warehouse.crn.store');
             Route::post('/crn/procurement/{order}/receive', [CrnController::class, 'receiveProcurement'])->name('warehouse.crn.procurement.receive');
             Route::post('/crn/procurement/{order}/lines/{line}/safe', [CrnController::class, 'safeProcurementLine'])->name('warehouse.crn.procurement.lines.safe');
             Route::post('/crn/{crn}/transfer', [CrnController::class, 'transfer'])->name('warehouse.crn.transfer');
         });
+        Route::middleware('module:mrn')->group(function () {
+            Route::get('/mrn', [MaterialReceivingNoteController::class, 'index'])->name('warehouse.mrn.index');
+            Route::get('/mrn/{mrn}/pdf', [MaterialReceivingNoteController::class, 'downloadPdf'])->name('warehouse.mrn.pdf');
+            Route::post('/mrn/{mrn}/eta', [MaterialReceivingNoteController::class, 'updateEta'])->name('warehouse.mrn.eta');
+            Route::post('/mrn/{mrn}/arrived', [MaterialReceivingNoteController::class, 'markAsArrived'])->name('warehouse.mrn.arrived');
+            Route::post('/mrn/procurement/{order}/receive', [MaterialReceivingNoteController::class, 'receiveProcurement'])->name('warehouse.mrn.procurement.receive');
+        });
+        Route::middleware('module:srn')->group(function () {
+            Route::get('/srn', [SiteReceivingNoteController::class, 'index'])->name('warehouse.srn.index');
+            Route::get('/srn/{srn}/pdf', [SiteReceivingNoteController::class, 'downloadPdf'])->name('warehouse.srn.pdf');
+            Route::post('/srn/{srn}/eta', [SiteReceivingNoteController::class, 'updateEta'])->name('warehouse.srn.eta');
+            Route::post('/srn/{srn}/arrived', [SiteReceivingNoteController::class, 'markAsArrived'])->name('warehouse.srn.arrived');
+            Route::post('/srn/procurement/{order}/receive', [SiteReceivingNoteController::class, 'receiveProcurement'])->name('warehouse.srn.procurement.receive');
+        });
+        Route::get('/rejections', [ProcurementController::class, 'rejectedList'])->middleware('module:rejected_list')->name('warehouse.rejections.index');
     });
 
-    Route::middleware('role:super_admin')->group(function () {
+    Route::get('/rejections', [ProcurementController::class, 'rejectedList'])
+        ->middleware('module:rejected_list')
+        ->name('rejections.index');
+
+    Route::middleware('module:create_package')->group(function () {
         Route::get('/packages', [PackageController::class, 'index'])->name('packages.index');
+        Route::get('/packages/bulk/template', [PackageController::class, 'downloadBulkTemplate'])->name('packages.bulk.template');
         Route::post('/packages', [PackageController::class, 'store'])->name('packages.store');
+        Route::post('/packages/bulk', [PackageController::class, 'bulkStore'])->name('packages.bulk.store');
         Route::put('/packages/{package}', [PackageController::class, 'update'])->name('packages.update');
         Route::delete('/packages/{package}', [PackageController::class, 'destroy'])->name('packages.destroy');
     });
@@ -96,12 +165,16 @@ Route::middleware('auth')->group(function () {
     Route::post('/logout', [AuthController::class, 'logout'])->name('logout');
 });
 
-Route::middleware(['auth', 'role:super_admin'])->prefix('admin')->group(function () {
-    Route::get('/users', [UserManagementController::class, 'index'])->name('admin.users.index');
-    Route::post('/users', [UserManagementController::class, 'store'])->name('admin.users.store');
-    Route::put('/users/{user}', [UserManagementController::class, 'update'])->name('admin.users.update');
-    Route::delete('/users/{user}', [UserManagementController::class, 'destroy'])->name('admin.users.destroy');
+Route::middleware(['auth'])->prefix('admin')->group(function () {
+    Route::middleware('module:admin_users')->group(function () {
+        Route::get('/users', [UserManagementController::class, 'index'])->name('admin.users.index');
+        Route::post('/users', [UserManagementController::class, 'store'])->name('admin.users.store');
+        Route::put('/users/{user}', [UserManagementController::class, 'update'])->name('admin.users.update');
+        Route::delete('/users/{user}', [UserManagementController::class, 'destroy'])->name('admin.users.destroy');
+    });
 
-    Route::get('/logs', [LogsController::class, 'index'])->name('admin.logs.index');
-    Route::get('/logs/{log}/pdf', [LogsController::class, 'pdf'])->name('admin.logs.pdf');
+    Route::middleware('module:admin_logs')->group(function () {
+        Route::get('/logs', [LogsController::class, 'index'])->name('admin.logs.index');
+        Route::get('/logs/{log}/pdf', [LogsController::class, 'pdf'])->name('admin.logs.pdf');
+    });
 });

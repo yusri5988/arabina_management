@@ -14,13 +14,13 @@
         .header {
             text-align: center;
             margin-bottom: 20px;
-            border-bottom: 2px solid #1E3D1A;
+            border-bottom: 2px solid #1b580e;
             padding-bottom: 10px;
         }
 
         .header h1 {
             margin: 0;
-            color: #1E3D1A;
+            color: #1b580e;
             font-size: 22px;
         }
 
@@ -36,7 +36,7 @@
         }
 
         th {
-            background: #1E3D1A;
+            background: #1b580e;
             color: #fff;
             text-align: left;
             padding: 8px;
@@ -76,7 +76,7 @@
         <h1>ARABINA INVENTORY</h1>
         <p>Stock Audit Report</p>
         <p>Audit Date: {{ optional($audit->audited_at)->format('d/m/Y H:i:s') }}</p>
-        <p>Auditor: {{ $audit->auditor?->name ?? 'Unknown' }}</p>
+        <p>Auditor: {{ optional($audit->auditor)->name ?? 'Unknown' }}</p>
         <p>Generated: {{ $generatedAt }}</p>
     </div>
 
@@ -94,8 +94,8 @@
         <tbody>
             @foreach($audit->lines as $line)
                 <tr>
-                    <td>{{ $line->item?->sku }}</td>
-                    <td>{{ $line->item?->name }}</td>
+                    <td>{{ optional($line->item)->sku }}</td>
+                    <td>{{ optional($line->item)->name }}</td>
                     <td class="text-right">{{ $line->stock_before }}</td>
                     <td class="text-right">{{ $line->audited_stock }}</td>
                     <td class="text-right">{{ $line->diff_quantity }}</td>

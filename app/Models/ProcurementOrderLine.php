@@ -15,7 +15,15 @@ class ProcurementOrderLine extends Model
         'ordered_quantity',
         'received_quantity',
         'rejected_quantity',
+        'item_unit',
         'notes',
+    ];
+
+    protected $casts = [
+        'suggested_quantity' => 'float',
+        'ordered_quantity' => 'float',
+        'received_quantity' => 'float',
+        'rejected_quantity' => 'float',
     ];
 
     public function procurementOrder(): BelongsTo

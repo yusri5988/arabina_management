@@ -8,8 +8,12 @@ import {
   ClockIcon
 } from '@heroicons/react/24/outline/index.js';
 
-export default function Dashboard({ stats, canViewLogs }) {
+export default function Dashboard() {
   const { auth } = usePage().props;
+  const permissions = auth?.user?.module_permissions ?? [];
+  const hasModuleAccess = (moduleKey) => permissions.includes(moduleKey);
+  const canAccessWarehouse = ['crn', 'mrn', 'srn', 'item_catalog', 'stock_list', 'delivery_order', 'rejected_list', 'create_package']
+    .some((moduleKey) => hasModuleAccess(moduleKey));
 
   return (
     <AuthenticatedLayout title="Dashboard" showWelcome={true}>
@@ -22,7 +26,7 @@ export default function Dashboard({ stats, canViewLogs }) {
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
 
           {/* Action 1: Sales Form */}
-          {auth?.user?.role !== 'store_keeper' && auth?.user?.role !== 'procurement' && (
+          {hasModuleAccess('sales_orders') && (
             <Link
               href="/orders"
               className="group relative bg-white p-6 rounded-2xl shadow-sm border border-cyan-100 hover:border-cyan-300 hover:shadow-lg hover:shadow-cyan-100/50 transition-all duration-300 active:scale-[0.98] overflow-hidden"
@@ -40,10 +44,10 @@ export default function Dashboard({ stats, canViewLogs }) {
             </Link>
           )}
 
-          {/* Action 2: Procurement */}
-          {(auth?.user?.role === 'procurement' || auth?.user?.role === 'super_admin') && (
+          {/* Action 2: Procurement Cabin */}
+          {hasModuleAccess('procurement') && (
             <Link
-              href="/procurement"
+              href="/procurement/cabin"
               className="group relative bg-white p-6 rounded-2xl shadow-sm border border-amber-100 hover:border-amber-300 hover:shadow-lg hover:shadow-amber-100/50 transition-all duration-300 active:scale-[0.98] overflow-hidden"
             >
               <div className="absolute top-0 right-0 p-4 opacity-5 group-hover:opacity-10 transition-opacity transform group-hover:scale-110 duration-500">
@@ -53,14 +57,52 @@ export default function Dashboard({ stats, canViewLogs }) {
                 <div className="w-12 h-12 bg-amber-50 rounded-xl flex items-center justify-center mb-4 text-amber-600 shadow-inner group-hover:bg-amber-600 group-hover:text-white transition-colors duration-300">
                   <TruckIcon className="w-6 h-6" strokeWidth={2} />
                 </div>
-                <h4 className="text-lg font-bold text-slate-800 mb-1 tracking-tight">Procurement</h4>
-                <p className="text-slate-500 text-sm font-medium leading-snug">Auto suggest shortage and receive supplier stock.</p>
+                <h4 className="text-lg font-bold text-slate-800 mb-1 tracking-tight">Procurement Cabin</h4>
+                <p className="text-slate-500 text-sm font-medium leading-snug">Manage procurement for Cabin BOM.</p>
+              </div>
+            </Link>
+          )}
+
+          {/* Action 2b: Procurement Hardware */}
+          {hasModuleAccess('procurement') && (
+            <Link
+              href="/procurement/hardware"
+              className="group relative bg-white p-6 rounded-2xl shadow-sm border border-amber-100 hover:border-amber-300 hover:shadow-lg hover:shadow-amber-100/50 transition-all duration-300 active:scale-[0.98] overflow-hidden"
+            >
+              <div className="absolute top-0 right-0 p-4 opacity-5 group-hover:opacity-10 transition-opacity transform group-hover:scale-110 duration-500">
+                <TruckIcon className="w-20 h-20 text-amber-600" />
+              </div>
+              <div className="relative z-10 flex flex-col h-full">
+                <div className="w-12 h-12 bg-amber-50 rounded-xl flex items-center justify-center mb-4 text-amber-600 shadow-inner group-hover:bg-amber-600 group-hover:text-white transition-colors duration-300">
+                  <TruckIcon className="w-6 h-6" strokeWidth={2} />
+                </div>
+                <h4 className="text-lg font-bold text-slate-800 mb-1 tracking-tight">Procurement Hardware</h4>
+                <p className="text-slate-500 text-sm font-medium leading-snug">Manage procurement for Hardware BOM.</p>
+              </div>
+            </Link>
+          )}
+
+          {/* Action 2c: Procurement Hardware Site */}
+          {hasModuleAccess('procurement') && (
+            <Link
+              href="/procurement/hardware-site"
+              className="group relative bg-white p-6 rounded-2xl shadow-sm border border-amber-100 hover:border-amber-300 hover:shadow-lg hover:shadow-amber-100/50 transition-all duration-300 active:scale-[0.98] overflow-hidden"
+            >
+              <div className="absolute top-0 right-0 p-4 opacity-5 group-hover:opacity-10 transition-opacity transform group-hover:scale-110 duration-500">
+                <TruckIcon className="w-20 h-20 text-amber-600" />
+              </div>
+              <div className="relative z-10 flex flex-col h-full">
+                <div className="w-12 h-12 bg-amber-50 rounded-xl flex items-center justify-center mb-4 text-amber-600 shadow-inner group-hover:bg-amber-600 group-hover:text-white transition-colors duration-300">
+                  <TruckIcon className="w-6 h-6" strokeWidth={2} />
+                </div>
+                <h4 className="text-lg font-bold text-slate-800 mb-1 tracking-tight">Procurement Site</h4>
+                <p className="text-slate-500 text-sm font-medium leading-snug">Manage procurement for Hardware Site BOM.</p>
               </div>
             </Link>
           )}
 
           {/* Action 3: Warehouse */}
-          {auth?.user?.role !== 'sales' && auth?.user?.role !== 'procurement' && (
+          {canAccessWarehouse && (
             <Link
               href="/warehouse"
               className="group relative bg-white p-6 rounded-2xl shadow-sm border border-teal-100 hover:border-teal-300 hover:shadow-lg hover:shadow-teal-100/50 transition-all duration-300 active:scale-[0.98] overflow-hidden"
@@ -79,7 +121,7 @@ export default function Dashboard({ stats, canViewLogs }) {
           )}
 
           {/* Action 4: User Management (Admin Only) */}
-          {auth?.user?.role === 'super_admin' && (
+          {hasModuleAccess('admin_users') && (
             <Link
               href="/admin/users"
               className="group relative bg-white p-6 rounded-2xl shadow-sm border border-purple-100 hover:border-purple-300 hover:shadow-lg hover:shadow-purple-100/50 transition-all duration-300 active:scale-[0.98] overflow-hidden"
@@ -98,7 +140,7 @@ export default function Dashboard({ stats, canViewLogs }) {
           )}
 
           {/* Action 5: Activity Logs (Admin Only) */}
-          {canViewLogs && (
+          {hasModuleAccess('admin_logs') && (
             <Link
               href="/admin/logs"
               className="group relative bg-white p-6 rounded-2xl shadow-sm border border-slate-100 hover:border-slate-300 hover:shadow-lg hover:shadow-slate-100/50 transition-all duration-300 active:scale-[0.98] overflow-hidden"
@@ -121,4 +163,3 @@ export default function Dashboard({ stats, canViewLogs }) {
     </AuthenticatedLayout>
   );
 }
-

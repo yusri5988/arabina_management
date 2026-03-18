@@ -227,19 +227,22 @@ export default function CrnCreate({ procurementOrders = [], items = [] }) {
                     label="Expected Qty"
                     value={item.expected_qty}
                     onChange={(val) => updateItem(index, 'expected_qty', val)}
-                    min={1}
+                    min={0.1}
+                    step={0.1}
                   />
                   <QtyInput
                     label="Received Qty"
                     value={item.received_qty}
                     onChange={(val) => updateItem(index, 'received_qty', val)}
                     min={0}
+                    step={0.1}
                   />
                   <QtyInput
                     label="Rejected Qty"
                     value={item.rejected_qty}
                     onChange={(val) => updateItem(index, 'rejected_qty', val)}
                     min={0}
+                    step={0.1}
                   />
                 </div>
               </div>
@@ -264,7 +267,7 @@ export default function CrnCreate({ procurementOrders = [], items = [] }) {
           <button
             type="submit"
             disabled={processing || form.items.length === 0}
-            className="flex items-center gap-2 bg-[#1E3D1A] text-white px-8 py-3 rounded-xl text-sm font-bold hover:bg-emerald-900 disabled:opacity-50 transition-all shadow-lg active:scale-95"
+            className="flex items-center gap-2 bg-[#1b580e] text-white px-8 py-3 rounded-xl text-sm font-bold hover:bg-emerald-900 disabled:opacity-50 transition-all shadow-lg active:scale-95"
           >
             {processing ? (
               <ArrowPathIcon className="w-5 h-5 animate-spin" />

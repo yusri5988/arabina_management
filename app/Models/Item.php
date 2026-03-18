@@ -6,9 +6,18 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
+use Illuminate\Database\Eloquent\SoftDeletes;
+
 class Item extends Model
 {
-    protected $fillable = ['sku', 'name', 'length_m', 'unit', 'created_by'];
+    use SoftDeletes;
+
+    protected $fillable = ['sku', 'name', 'length_m', 'unit', 'bom_scope', 'supplier', 'supplier_id', 'created_by'];
+
+    public function supplier(): BelongsTo
+    {
+        return $this->belongsTo(Supplier::class);
+    }
 
     public function variants(): HasMany
     {
@@ -23,5 +32,10 @@ class Item extends Model
     public function packageItems(): HasMany
     {
         return $this->hasMany(PackageItem::class);
+    }
+
+    public function bomItems(): HasMany
+    {
+        return $this->hasMany(BomItem::class);
     }
 }

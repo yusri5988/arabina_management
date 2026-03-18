@@ -2,8 +2,16 @@ import { Head, Link, router } from '@inertiajs/react';
 import QtyInput from '../../components/QtyInput.jsx';
 import { useEffect, useMemo, useState } from 'react';
 import AuthenticatedLayout from '../../Layouts/AuthenticatedLayout';
+import { apiFetchJson } from '../../lib/http.js';
 
 const initialAlacarteLine = { item_id: '', quantity: '' };
+const BOM_GROUPS = [
+  { key: 'cabin', label: 'BOM Cabin' },
+  { key: 'hardware', label: 'BOM Hardware' },
+  { key: 'hardware_site', label: 'BOM Hardware Site' },
+];
+
+const normalizeQuantity = (value) => Math.round(Number(value || 0) * 10) / 10;
 
 export default function Stock({ items, packages, salesOrders = [], type = 'in', historyData = [] }) {
   const initialType = type === 'out' ? 'out' : 'in';
@@ -16,6 +24,8 @@ export default function Stock({ items, packages, salesOrders = [], type = 'in', 
   const [history, setHistory] = useState(historyData || []);
   const [loadingHistory, setLoadingHistory] = useState(false);
   const [doneConfirmed, setDoneConfirmed] = useState(false);
+  const [showOutHistory, setShowOutHistory] = useState(false);
+  const [showPendingDelivery, setShowPendingDelivery] = useState(false);
 
   const fetchHistory = async () => {
     setLoadingHistory(true);
@@ -37,6 +47,17 @@ export default function Stock({ items, packages, salesOrders = [], type = 'in', 
     fetchHistory();
   }, [isOut]);
 
+  useEffect(() => {
+    if (!isOut) return;
+    const partialDoneSuccess = window.sessionStorage.getItem('stock_out_partial_done_success');
+    if (partialDoneSuccess === '1') {
+      setNotification({ type: 'success', message: 'Partial delivery saved successfully.' });
+      setShowOutHistory(true);
+      setShowPendingDelivery(true);
+      window.sessionStorage.removeItem('stock_out_partial_done_success');
+    }
+  }, [isOut]);
+
   const [packageData, setPackageData] = useState({
     package_id: packages?.[0]?.id?.toString() ?? '',
     package_quantity: '',
@@ -55,11 +76,6 @@ export default function Stock({ items, packages, salesOrders = [], type = 'in', 
   const noPackages = (packages?.length ?? 0) === 0;
   const noItems = (items?.length ?? 0) === 0;
 
-  const csrfToken = useMemo(
-    () => document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') ?? '',
-    [],
-  );
-
   const itemStockById = useMemo(() => {
     const map = new Map();
     (items ?? []).forEach((item) => {
@@ -68,10 +84,27 @@ export default function Stock({ items, packages, salesOrders = [], type = 'in', 
     return map;
   }, [items]);
 
+  const itemById = useMemo(() => {
+    const map = new Map();
+    (items ?? []).forEach((item) => {
+      map.set(String(item.id), item);
+    });
+    return map;
+  }, [items]);
+
   const outSelectableItems = useMemo(() => {
     if (!isOut) return items ?? [];
     return (items ?? []).filter((item) => Number(item.stock_current_total ?? 0) > 0);
   }, [isOut, items]);
+
+  const alacarteLinesByBom = useMemo(() => {
+    return BOM_GROUPS.map((group) => ({
+      ...group,
+      rows: alacarteLines
+        .map((line, index) => ({ line, index, item: itemById.get(String(line.item_id)) }))
+        .filter(({ item }) => String(item?.bom_scope ?? 'hardware') === group.key),
+    }));
+  }, [alacarteLines, itemById]);
 
   const selectedSalesOrder = useMemo(
     () => salesOrders.find((order) => String(order.id) === String(packageData.sales_order_id)),
@@ -106,8 +139,35 @@ export default function Stock({ items, packages, salesOrders = [], type = 'in', 
       return;
     }
 
-    setAlacarteLines([]);
-  }, [isOut, packageData.sales_order_id]);
+    if (!selectedSalesOrder) {
+      setAlacarteLines([]);
+      return;
+    }
+
+    const autoLines = (selectedSalesOrder.pending_sku_lines ?? [])
+      .map((line) => {
+        const matchedItem = (items ?? []).find((item) => String(item.sku) === String(line.sku));
+        if (!matchedItem) {
+          return null;
+        }
+
+        const availableStock = Number(itemStockById.get(String(matchedItem.id)) ?? 0);
+        const pendingQty = Number(line.pending_quantity ?? 0);
+        const fillQty = Math.min(pendingQty, availableStock);
+
+        if (fillQty <= 0) {
+          return null;
+        }
+
+        return {
+          item_id: String(matchedItem.id),
+          quantity: String(fillQty),
+        };
+      })
+      .filter(Boolean);
+
+    setAlacarteLines(autoLines);
+  }, [isOut, selectedSalesOrder, items, itemStockById]);
 
   useEffect(() => {
     if (!isOut) {
@@ -145,7 +205,7 @@ export default function Stock({ items, packages, salesOrders = [], type = 'in', 
 
       if (field === 'quantity') {
         const maxStock = Number(itemStockById.get(String(line.item_id)) ?? 0);
-        const normalized = Math.max(Math.min(Number(value || 0), maxStock), 0);
+        const normalized = normalizeQuantity(Math.max(Math.min(Number(value || 0), maxStock), 0));
         return { ...line, quantity: String(normalized) };
       }
 
@@ -158,7 +218,7 @@ export default function Stock({ items, packages, salesOrders = [], type = 'in', 
     const qty = Number(outAddSku.quantity || 0);
     const availableStock = Number(itemStockById.get(itemId) ?? 0);
 
-    if (!itemId || qty < 1) {
+    if (!itemId || qty <= 0) {
       setNotification({ type: 'error', message: 'Please choose SKU and quantity for stock out.' });
       return;
     }
@@ -173,12 +233,12 @@ export default function Stock({ items, packages, salesOrders = [], type = 'in', 
       if (existingIndex >= 0) {
         return prev.map((line, index) => (
           index === existingIndex
-            ? { ...line, quantity: String(Math.min(Number(line.quantity || 0) + qty, availableStock)) }
+            ? { ...line, quantity: String(normalizeQuantity(Math.min(Number(line.quantity || 0) + qty, availableStock))) }
             : line
         ));
       }
 
-      return [...prev, { item_id: itemId, quantity: String(Math.min(qty, availableStock)) }];
+      return [...prev, { item_id: itemId, quantity: String(normalizeQuantity(Math.min(qty, availableStock))) }];
     });
 
     setOutAddSku((prev) => ({
@@ -227,40 +287,27 @@ export default function Stock({ items, packages, salesOrders = [], type = 'in', 
         };
 
     try {
-      let currentCsrfToken = csrfToken;
-      let attempt = 0;
-      let response;
-      while (attempt < 2) {
-        response = await fetch(endpoint, {
-          method: 'POST',
-          credentials: 'include',
-          headers: {
-            'Content-Type': 'application/json',
-            Accept: 'application/json',
-            'X-Requested-With': 'XMLHttpRequest',
-            'X-CSRF-TOKEN': currentCsrfToken,
-          },
-          body: JSON.stringify(payload),
-        });
-        if (response.status === 419 && attempt === 0) {
-          await fetch('/sanctum/csrf-cookie', { credentials: 'include' });
-          currentCsrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') ?? '';
-          attempt++;
-          continue;
-        }
-        break;
-      }
-
-      const result = await response.json().catch(() => ({}));
+      const { response, payload: result } = await apiFetchJson(endpoint, {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      });
 
       if (response.ok) {
         setNotification({ type: 'success', message: result.message ?? 'Transaction saved.' });
         setPackageData(prev => ({ ...prev, package_quantity: '', notes: '' }));
         setAlacarteLines(isOut ? [] : [{ ...initialAlacarteLine, item_id: items?.[0]?.id?.toString() ?? '' }]);
         if (isOut) {
-          fetchHistory();
+          if (completionAction === 'partial_done') {
+            window.sessionStorage.setItem('stock_out_partial_done_success', '1');
+            router.reload();
+            return;
+          } else {
+            router.reload();
+            return;
+          }
+        } else {
+          router.reload();
         }
-        router.reload();
       } else if (response.status === 422) {
         setErrors(result.errors ?? {});
       } else {
@@ -286,9 +333,19 @@ export default function Stock({ items, packages, salesOrders = [], type = 'in', 
         )}
 
         <div className="bg-white rounded-[2rem] shadow-sm border border-slate-100 p-6 md:p-8">
-          <h2 className="text-lg font-bold text-slate-800 border-b border-slate-100 pb-4">
-            {isOut ? 'Delivery Order by Package / Ala Carte + Customer Tag' : 'Stock In by Package / Ala Carte'}
-          </h2>
+          <div className="border-b border-slate-100 pb-4 flex items-center justify-between gap-3">
+            <h2 className="text-lg font-bold text-slate-800">
+              {isOut ? 'Delivery Order' : 'Stock In by Package / Ala Carte'}
+            </h2>
+            {isOut && (
+              <Link
+                href="/items/stock/out/delivery-orders"
+                className="inline-flex items-center rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-700 hover:bg-slate-50"
+              >
+                DO History List
+              </Link>
+            )}
+          </div>
 
           <form onSubmit={submit} className="mt-5 space-y-6">
             {!isOut && (
@@ -319,6 +376,8 @@ export default function Stock({ items, packages, salesOrders = [], type = 'in', 
                     onChange={e => {
                       setNotification(null);
                       setDoneConfirmed(false);
+                      setShowOutHistory(false);
+                      setShowPendingDelivery(false);
                       setPackageData(prev => ({ ...prev, sales_order_id: e.target.value }));
                     }}
                     className="w-full rounded-2xl border border-slate-200 px-4 py-3.5 text-sm focus:ring-2 focus:ring-arabina-accent focus:outline-none bg-slate-50"
@@ -336,7 +395,7 @@ export default function Stock({ items, packages, salesOrders = [], type = 'in', 
                   {salesOrders.length === 0 && <p className="text-xs text-amber-600 mt-1">Create sales order first before stock out.</p>}
                 </div>
 
-                {selectedSalesOrder && (
+                {selectedSalesOrder && showPendingDelivery && (
                   <div className="col-span-2 rounded-2xl border border-slate-200 bg-slate-50 p-4">
                     <p className="text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">Pending Delivery Items</p>
                     {pendingDeliveryStatus.length > 0 && (
@@ -411,43 +470,57 @@ export default function Stock({ items, packages, salesOrders = [], type = 'in', 
                   )}
                 </div>
 
-                {alacarteLines.map((line, index) => (
-                  <div key={index} className="grid grid-cols-12 gap-3 bg-slate-50 rounded-2xl p-3 border border-slate-100">
-                    <div className="col-span-8">
-                      {isOut ? (
-                        <div className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm bg-white text-slate-700">
-                          {items.find((x) => String(x.id) === String(line.item_id))?.sku} - {items.find((x) => String(x.id) === String(line.item_id))?.name}
+                {alacarteLinesByBom.map((group) => (
+                  <div key={group.key} className="space-y-3">
+                    <div className="flex items-center justify-between px-1">
+                      <h4 className="text-[11px] font-black uppercase tracking-widest text-slate-500">{group.label}</h4>
+                      <span className="text-[10px] font-bold text-slate-400">{group.rows.length} SKU</span>
+                    </div>
+
+                    {group.rows.length > 0 ? group.rows.map(({ line, index, item }) => (
+                      <div key={index} className="grid grid-cols-12 gap-3 bg-slate-50 rounded-2xl p-3 border border-slate-100">
+                        <div className="col-span-8">
+                          {isOut ? (
+                            <div className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm bg-white text-slate-700">
+                              {item?.sku} - {item?.name}
+                            </div>
+                          ) : (
+                            <select
+                              value={line.item_id}
+                              onChange={e => updateLine(index, 'item_id', e.target.value)}
+                              className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm focus:ring-2 focus:ring-arabina-accent focus:outline-none bg-white"
+                              required
+                            >
+                              {items.map(itemOption => (
+                                <option key={itemOption.id} value={itemOption.id}>
+                                  {itemOption.sku} - {itemOption.name}
+                                </option>
+                              ))}
+                            </select>
+                          )}
                         </div>
-                      ) : (
-                        <select
-                          value={line.item_id}
-                          onChange={e => updateLine(index, 'item_id', e.target.value)}
-                          className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm focus:ring-2 focus:ring-arabina-accent focus:outline-none bg-white"
-                          required
-                        >
-                          {items.map(item => (
-                            <option key={item.id} value={item.id}>
-                              {item.sku} - {item.name}
-                            </option>
-                          ))}
-                        </select>
-                      )}
-                    </div>
-                    <div className="col-span-3">
-                      <QtyInput
-                        value={line.quantity}
-                        onChange={(val) => updateLine(index, 'quantity', val)}
-                        min={1}
-                        max={Number(itemStockById.get(String(line.item_id)) ?? 0)}
-                      />
-                    </div>
-                    <div className="col-span-1 flex items-center justify-end">
-                      {(isOut || alacarteLines.length > 1) && (
-                        <button type="button" onClick={() => removeLine(index)} className="text-red-500 text-xs font-bold">
-                          X
-                        </button>
-                      )}
-                    </div>
+                        <div className="col-span-3">
+                          <QtyInput
+                            value={line.quantity}
+                            onChange={(val) => updateLine(index, 'quantity', val)}
+                            min={0.5}
+                            max={Number(itemStockById.get(String(line.item_id)) ?? 0)}
+                            step={0.5}
+                          />
+                        </div>
+                        <div className="col-span-1 flex items-center justify-end">
+                          {(isOut || alacarteLines.length > 1) && (
+                            <button type="button" onClick={() => removeLine(index)} className="text-red-500 text-xs font-bold">
+                              X
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    )) : (
+                      <div className="rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3 text-xs text-slate-400">
+                        No SKU in {group.label.toLowerCase()}.
+                      </div>
+                    )}
                   </div>
                 ))}
 
@@ -478,7 +551,8 @@ export default function Stock({ items, packages, salesOrders = [], type = 'in', 
                   <div className="col-span-8 md:col-span-2">
                     <input
                       type="number"
-                      min="1"
+                      min="0.5"
+                      step="0.5"
                       value={outAddSku.quantity}
                       onChange={e => setOutAddSku(prev => ({ ...prev, quantity: e.target.value }))}
                       placeholder="Qty"
@@ -506,7 +580,7 @@ export default function Stock({ items, packages, salesOrders = [], type = 'in', 
                   onChange={(e) => setDoneConfirmed(e.target.checked)}
                   className="mt-0.5"
                 />
-                Confirm tiada lagi delivery order untuk sales order ini (baru boleh tekan Done).
+                Confirm there are no further delivery orders for this sales order (required before marking as Done).
               </label>
             )}
 
@@ -559,22 +633,16 @@ export default function Stock({ items, packages, salesOrders = [], type = 'in', 
                   || (mode === 'package' && noPackages)
                   || (mode === 'alacarte' && noItems)
                 }
-                className="w-full bg-[#1E3D1A] hover:bg-emerald-950 text-white py-4 rounded-2xl text-sm font-bold disabled:opacity-50 active:scale-[0.98] transition-all shadow-md"
+                className="w-full bg-[#1b580e] hover:bg-emerald-950 text-white py-4 rounded-2xl text-sm font-bold disabled:opacity-50 active:scale-[0.98] transition-all shadow-md"
               >
                 {processing ? 'Saving...' : 'Submit Stock In'}
               </button>
             )}
 
-            <Link
-              href="/items"
-              className="block w-full text-center bg-slate-100 border border-slate-200 text-slate-700 py-3 rounded-2xl text-sm font-bold hover:bg-slate-200 transition-colors"
-            >
-              Back to Register Item
-            </Link>
           </form>
         </div>
 
-        {isOut && (
+        {isOut && showOutHistory && (
           <div className="bg-white rounded-[2rem] shadow-sm border border-slate-100 p-6 md:p-8">
             <div className="flex items-center justify-between border-b border-slate-100 pb-4">
               <h2 className="text-lg font-bold text-slate-800">
@@ -596,7 +664,7 @@ export default function Stock({ items, packages, salesOrders = [], type = 'in', 
                     <th className="px-4 py-3 font-bold text-slate-500 uppercase tracking-wider text-[10px]">DO Code</th>
                     <th className="px-4 py-3 font-bold text-slate-500 uppercase tracking-wider text-[10px]">SO / Customer</th>
                     <th className="px-4 py-3 font-bold text-slate-500 uppercase tracking-wider text-[10px]">Items Summary</th>
-                    <th className="px-4 py-3 font-bold text-slate-500 uppercase tracking-wider text-[10px]">Date</th>
+                    <th className="px-4 py-3 font-bold text-slate-500 uppercase tracking-wider text-[10px]">DO Dates</th>
                     <th className="px-4 py-3 font-bold text-slate-500 uppercase tracking-wider text-[10px] text-right">Action</th>
                   </tr>
                 </thead>
@@ -618,8 +686,8 @@ export default function Stock({ items, packages, salesOrders = [], type = 'in', 
                       <td className="px-4 py-4 text-xs text-slate-600 max-w-[200px] truncate" title={item.items_summary}>
                         {item.items_summary}
                       </td>
-                      <td className="px-4 py-4 text-xs text-slate-500">
-                        {item.created_at}
+                      <td className="px-4 py-4 text-xs text-slate-500 max-w-[280px]">
+                        {item.do_dates_text || item.created_at}
                       </td>
                       <td className="px-4 py-4 text-right">
                         <a

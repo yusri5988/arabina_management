@@ -13,6 +13,8 @@ class RejectedItem extends Model
         'rejectable_id',
         'procurement_order_id',
         'crn_id',
+        'mrn_id',
+        'srn_id',
         'item_id',
         'item_variant_id',
         'quantity',
@@ -22,6 +24,7 @@ class RejectedItem extends Model
     ];
 
     protected $casts = [
+        'quantity' => 'float',
         'rejected_at' => 'datetime',
     ];
 
@@ -38,6 +41,16 @@ class RejectedItem extends Model
     public function crn(): BelongsTo
     {
         return $this->belongsTo(ContainerReceivingNote::class, 'crn_id');
+    }
+
+    public function mrn(): BelongsTo
+    {
+        return $this->belongsTo(MaterialReceivingNote::class, 'mrn_id');
+    }
+
+    public function srn(): BelongsTo
+    {
+        return $this->belongsTo(SiteReceivingNote::class, 'srn_id');
     }
 
     public function item(): BelongsTo

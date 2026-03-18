@@ -14,6 +14,10 @@ class InventoryTransactionLine extends Model
         'quantity',
     ];
 
+    protected $casts = [
+        'quantity' => 'float',
+    ];
+
     public function transaction(): BelongsTo
     {
         return $this->belongsTo(InventoryTransaction::class, 'inventory_transaction_id');

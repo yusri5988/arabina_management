@@ -5,8 +5,8 @@
     <title>CRN - {{ $crn->crn_number }}</title>
     <style>
         body { font-family: sans-serif; font-size: 12px; color: #333; line-height: 1.5; }
-        .header { margin-bottom: 30px; border-bottom: 2px solid #1e3d1a; padding-bottom: 10px; }
-        .header h1 { color: #1e3d1a; margin: 0; font-size: 24px; }
+        .header { margin-bottom: 30px; border-bottom: 2px solid #1b580e; padding-bottom: 10px; }
+        .header h1 { color: #1b580e; margin: 0; font-size: 24px; }
         .info-table { width: 100%; margin-bottom: 20px; }
         .info-table td { padding: 4px 0; vertical-align: top; }
         .label { font-weight: bold; color: #666; width: 120px; }
@@ -34,9 +34,9 @@
         </tr>
         <tr>
             <td class="label">PO Reference:</td>
-            <td>{{ $crn->procurementOrder?->code ?? 'Standalone' }}</td>
+            <td>{{ optional($crn->procurementOrder)->code ?? 'Standalone' }}</td>
             <td class="label">Received By:</td>
-            <td>{{ $crn->creator?->name ?? 'System' }}</td>
+            <td>{{ optional($crn->creator)->name ?? 'System' }}</td>
         </tr>
         <tr>
             <td class="label">Status:</td>
@@ -53,39 +53,109 @@
     </div>
     @endif
 
-    <table class="data-table">
-        <thead>
-            <tr>
-                <th>SKU</th>
-                <th>Item Name</th>
-                <th class="text-center">Expected</th>
-                <th class="text-center">Received</th>
-                <th class="text-center">Rejected</th>
-                <th>Reason</th>
-            </tr>
-        </thead>
-        <tbody>
-            @foreach($crn->items as $item)
-            <tr>
-                <td><strong>{{ $item->itemVariant?->item?->sku }}</strong></td>
-                <td>{{ $item->itemVariant?->item?->name }}</td>
-                <td class="text-center">{{ $item->expected_qty }}</td>
-                <td class="text-center" style="background-color: #f0fdf4; font-weight: bold; color: #166534;">{{ $item->received_qty }}</td>
-                <td class="text-center" style="color: #991b1b;">{{ $item->rejected_qty }}</td>
-                <td><small>{{ $item->rejection_reason ?? '-' }}</small></td>
-            </tr>
-            @endforeach
-        </tbody>
-        <tfoot>
-            <tr style="background-color: #f8fafc; font-weight: bold;">
-                <td colspan="2" class="text-right">Total:</td>
-                <td class="text-center">{{ $crn->items->sum('expected_qty') }}</td>
-                <td class="text-center">{{ $crn->items->sum('received_qty') }}</td>
-                <td class="text-center">{{ $crn->items->sum('rejected_qty') }}</td>
-                <td></td>
-            </tr>
-        </tfoot>
-    </table>
+    @php
+        $bomGroups = [
+            'cabin' => 'BOM Cabin',
+            'hardware' => 'BOM Hardware',
+            'hardware_site' => 'BOM Hardware Site',
+        ];
+        $knownScopes = array_keys($bomGroups);
+    @endphp
+
+    @foreach($bomGroups as $scope => $label)
+        @php
+            $groupedItems = $crn->items->filter(function ($item) use ($scope) {
+                return (optional(optional($item->itemVariant)->item)->bom_scope ?? 'hardware') === $scope;
+            });
+        @endphp
+
+        <div style="margin-top: 18px; font-size: 11px; font-weight: bold; text-transform: uppercase; color: #334155; letter-spacing: 0.08em;">
+            {{ $label }}
+        </div>
+        <table class="data-table" style="margin-top: 8px;">
+            <thead>
+                <tr>
+                    <th>SKU</th>
+                    <th>Item Name</th>
+                    <th class="text-center">Expected</th>
+                    <th class="text-center">Received</th>
+                    <th class="text-center">Rejected</th>
+                    <th>Reason</th>
+                </tr>
+            </thead>
+            <tbody>
+                @forelse($groupedItems as $item)
+                <tr>
+                    <td><strong>{{ optional(optional($item->itemVariant)->item)->sku }}</strong></td>
+                    <td>{{ optional(optional($item->itemVariant)->item)->name }}</td>
+                    <td class="text-center">{{ $item->expected_qty }}</td>
+                    <td class="text-center" style="background-color: #f0fdf4; font-weight: bold; color: #166534;">{{ $item->received_qty }}</td>
+                    <td class="text-center" style="color: #991b1b;">{{ $item->rejected_qty }}</td>
+                    <td><small>{{ $item->rejection_reason ?? '-' }}</small></td>
+                </tr>
+                @empty
+                <tr>
+                    <td colspan="6" class="text-center" style="color: #94a3b8;">No SKU in this BOM category.</td>
+                </tr>
+                @endforelse
+            </tbody>
+            <tfoot>
+                <tr style="background-color: #f8fafc; font-weight: bold;">
+                    <td colspan="2" class="text-right">Total:</td>
+                    <td class="text-center">{{ $groupedItems->sum('expected_qty') }}</td>
+                    <td class="text-center">{{ $groupedItems->sum('received_qty') }}</td>
+                    <td class="text-center">{{ $groupedItems->sum('rejected_qty') }}</td>
+                    <td></td>
+                </tr>
+            </tfoot>
+        </table>
+    @endforeach
+
+    @php
+        $unclassifiedItems = $crn->items->filter(function ($item) use ($knownScopes) {
+            $scope = optional(optional($item->itemVariant)->item)->bom_scope ?? 'hardware';
+            return ! in_array($scope, $knownScopes, true);
+        });
+    @endphp
+
+    @if($unclassifiedItems->isNotEmpty())
+        <div style="margin-top: 18px; font-size: 11px; font-weight: bold; text-transform: uppercase; color: #334155; letter-spacing: 0.08em;">
+            Unclassified BOM
+        </div>
+        <table class="data-table" style="margin-top: 8px;">
+            <thead>
+                <tr>
+                    <th>SKU</th>
+                    <th>Item Name</th>
+                    <th class="text-center">Expected</th>
+                    <th class="text-center">Received</th>
+                    <th class="text-center">Rejected</th>
+                    <th>Reason</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach($unclassifiedItems as $item)
+                <tr>
+                    <td><strong>{{ optional(optional($item->itemVariant)->item)->sku }}</strong></td>
+                    <td>{{ optional(optional($item->itemVariant)->item)->name }}</td>
+                    <td class="text-center">{{ $item->expected_qty }}</td>
+                    <td class="text-center" style="background-color: #f0fdf4; font-weight: bold; color: #166534;">{{ $item->received_qty }}</td>
+                    <td class="text-center" style="color: #991b1b;">{{ $item->rejected_qty }}</td>
+                    <td><small>{{ $item->rejection_reason ?? '-' }}</small></td>
+                </tr>
+                @endforeach
+            </tbody>
+            <tfoot>
+                <tr style="background-color: #f8fafc; font-weight: bold;">
+                    <td colspan="2" class="text-right">Total:</td>
+                    <td class="text-center">{{ $unclassifiedItems->sum('expected_qty') }}</td>
+                    <td class="text-center">{{ $unclassifiedItems->sum('received_qty') }}</td>
+                    <td class="text-center">{{ $unclassifiedItems->sum('rejected_qty') }}</td>
+                    <td></td>
+                </tr>
+            </tfoot>
+        </table>
+    @endif
 
     <div class="footer">
         <p>This is a computer-generated document. No signature required.</p>

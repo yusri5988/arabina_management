@@ -51,7 +51,7 @@
     <div class="card">
         <div><strong>Log ID:</strong> {{ $log->id }}</div>
         <div><strong>Action:</strong> {{ $log->action }}</div>
-        <div><strong>User:</strong> {{ $log->user?->name ?? 'System' }}</div>
+        <div><strong>User:</strong> {{ optional($log->user)->name ?? 'System' }}</div>
         <div><strong>Timestamp:</strong> {{ optional($log->created_at)->format('d/m/Y H:i:s') }}</div>
         <div><strong>Generated:</strong> {{ $generatedAt->format('d/m/Y H:i:s') }}</div>
     </div>
@@ -80,8 +80,8 @@
                     <tr>
                         <td>{{ $i + 1 }}</td>
                         <td>{{ $line->package_id ? 'Package' : 'Loose SKU' }}</td>
-                        <td>{{ $line->package?->code ?? $line->item_sku }}</td>
-                        <td>{{ $line->package?->name ?? $line->item?->name }}</td>
+                        <td>{{ optional($line->package)->code ?? $line->item_sku }}</td>
+                        <td>{{ optional($line->package)->name ?? optional($line->item)->name }}</td>
                         <td>{{ $line->package_quantity ?? $line->item_quantity }}</td>
                     </tr>
                 @endforeach
@@ -110,8 +110,8 @@
                 @foreach($order->lines as $i => $line)
                     <tr>
                         <td>{{ $i + 1 }}</td>
-                        <td>{{ $line->item?->sku }}</td>
-                        <td>{{ $line->item?->name }}</td>
+                        <td>{{ optional($line->item)->sku }}</td>
+                        <td>{{ optional($line->item)->name }}</td>
                         <td>{{ $line->ordered_quantity }}</td>
                         <td>{{ $line->received_quantity }}</td>
                     </tr>
@@ -127,8 +127,8 @@
         <h2>Inventory Transaction Form</h2>
         <div><strong>Type:</strong> {{ strtoupper($tx->type) }}</div>
         <div><strong>Mode:</strong> {{ $tx->mode }}</div>
-        <div><strong>Package:</strong> {{ $tx->package?->code ?? '-' }}</div>
-        <div><strong>Sales Order:</strong> {{ $tx->salesOrder?->code ?? '-' }}</div>
+        <div><strong>Package:</strong> {{ optional($tx->package)->code ?? '-' }}</div>
+        <div><strong>Sales Order:</strong> {{ optional($tx->salesOrder)->code ?? '-' }}</div>
         <table>
             <thead>
                 <tr>
@@ -143,9 +143,9 @@
                 @foreach($tx->lines as $i => $line)
                     <tr>
                         <td>{{ $i + 1 }}</td>
-                        <td>{{ $line->item?->sku }}</td>
-                        <td>{{ $line->item?->name }}</td>
-                        <td>{{ $line->itemVariant?->color ?? '-' }}</td>
+                        <td>{{ optional($line->item)->sku }}</td>
+                        <td>{{ optional($line->item)->name }}</td>
+                        <td>{{ optional($line->itemVariant)->color ?? '-' }}</td>
                         <td>{{ $line->quantity }}</td>
                     </tr>
                 @endforeach
@@ -160,7 +160,7 @@
         <h2>CRN Form</h2>
         <div><strong>CRN Number:</strong> {{ $crn->crn_number }}</div>
         <div><strong>Status:</strong> {{ $crn->status }}</div>
-        <div><strong>PO Code:</strong> {{ $crn->procurementOrder?->code ?? '-' }}</div>
+        <div><strong>PO Code:</strong> {{ optional($crn->procurementOrder)->code ?? '-' }}</div>
         <table>
             <thead>
                 <tr>
@@ -176,8 +176,76 @@
                 @foreach($crn->items as $i => $item)
                     <tr>
                         <td>{{ $i + 1 }}</td>
-                        <td>{{ $item->itemVariant?->item?->sku }}</td>
-                        <td>{{ $item->itemVariant?->item?->name }}</td>
+                        <td>{{ optional(optional($item->itemVariant)->item)->sku }}</td>
+                        <td>{{ optional(optional($item->itemVariant)->item)->name }}</td>
+                        <td>{{ $item->expected_qty }}</td>
+                        <td>{{ $item->received_qty }}</td>
+                        <td>{{ $item->rejected_qty }}</td>
+                    </tr>
+                @endforeach
+            </tbody>
+        </table>
+    </div>
+    @endif
+
+    @if(!empty($payload['data']['mrn']))
+    @php($mrn = $payload['data']['mrn'])
+    <div class="card">
+        <h2>MRN Form</h2>
+        <div><strong>MRN Number:</strong> {{ $mrn->mrn_number }}</div>
+        <div><strong>Status:</strong> {{ $mrn->status }}</div>
+        <div><strong>PO Code:</strong> {{ optional($mrn->procurementOrder)->code ?? '-' }}</div>
+        <table>
+            <thead>
+                <tr>
+                    <th>#</th>
+                    <th>SKU</th>
+                    <th>Item</th>
+                    <th>Expected</th>
+                    <th>Received</th>
+                    <th>Rejected</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach($mrn->items as $i => $item)
+                    <tr>
+                        <td>{{ $i + 1 }}</td>
+                        <td>{{ optional(optional($item->itemVariant)->item)->sku }}</td>
+                        <td>{{ optional(optional($item->itemVariant)->item)->name }}</td>
+                        <td>{{ $item->expected_qty }}</td>
+                        <td>{{ $item->received_qty }}</td>
+                        <td>{{ $item->rejected_qty }}</td>
+                    </tr>
+                @endforeach
+            </tbody>
+        </table>
+    </div>
+    @endif
+
+    @if(!empty($payload['data']['srn']))
+    @php($srn = $payload['data']['srn'])
+    <div class="card">
+        <h2>SRN Form</h2>
+        <div><strong>SRN Number:</strong> {{ $srn->srn_number }}</div>
+        <div><strong>Status:</strong> {{ $srn->status }}</div>
+        <div><strong>PO Code:</strong> {{ optional($srn->procurementOrder)->code ?? '-' }}</div>
+        <table>
+            <thead>
+                <tr>
+                    <th>#</th>
+                    <th>SKU</th>
+                    <th>Item</th>
+                    <th>Expected</th>
+                    <th>Received</th>
+                    <th>Rejected</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach($srn->items as $i => $item)
+                    <tr>
+                        <td>{{ $i + 1 }}</td>
+                        <td>{{ optional(optional($item->itemVariant)->item)->sku }}</td>
+                        <td>{{ optional(optional($item->itemVariant)->item)->name }}</td>
                         <td>{{ $item->expected_qty }}</td>
                         <td>{{ $item->received_qty }}</td>
                         <td>{{ $item->rejected_qty }}</td>

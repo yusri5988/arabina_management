@@ -22,7 +22,7 @@ class SalesOrder extends Model
     protected function casts(): array
     {
         return [
-            'order_date' => 'date',
+            'order_date' => 'date:d/m/Y',
         ];
     }
 

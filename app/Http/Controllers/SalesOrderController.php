@@ -6,8 +6,10 @@ use App\Models\Package;
 use App\Models\SalesOrder;
 use App\Models\SalesOrderLine;
 use App\Models\TransactionLog;
+use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
 use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -16,44 +18,68 @@ class SalesOrderController extends Controller
 {
     public function index(): Response
     {
-        $packagesData = Package::with('packageItems')->get();
-        $itemStocks = DB::table('inventory_transactions as tx')
-            ->join('inventory_transaction_lines as line', 'tx.id', '=', 'line.inventory_transaction_id')
-            ->selectRaw('line.item_id, SUM(CASE WHEN tx.type = "in" THEN line.quantity ELSE -line.quantity END) as stock')
-            ->groupBy('line.item_id')
-            ->pluck('stock', 'item_id');
+        $packages = Package::query()->get(['id', 'code', 'name']);
 
-        $availability = $packagesData->map(function ($package) use ($itemStocks) {
-            $minQty = PHP_INT_MAX;
-            foreach ($package->packageItems as $pi) {
-                $stock = $itemStocks[$pi->item_id] ?? 0;
-                $minQty = min($minQty, (int) floor($stock / $pi->quantity));
-            }
-            $package->available_qty = $minQty === PHP_INT_MAX ? 0 : $minQty;
+        $procuredByPackage = DB::table('procurement_order_package_lines as popl')
+            ->join('procurement_orders as po', 'po.id', '=', 'popl.procurement_order_id')
+            ->where('po.status', '!=', 'draft')
+            ->selectRaw('popl.package_id, SUM(popl.quantity) as qty')
+            ->groupBy('popl.package_id')
+            ->pluck('qty', 'popl.package_id');
+
+        $usedByPackage = DB::table('sales_order_lines')
+            ->whereNotNull('package_id')
+            ->selectRaw('package_id, SUM(package_quantity) as qty')
+            ->groupBy('package_id')
+            ->pluck('qty', 'package_id');
+
+        $availability = $packages->map(function ($package) use ($procuredByPackage, $usedByPackage) {
+            $procured = (int) ($procuredByPackage[$package->id] ?? 0);
+            $used = (int) ($usedByPackage[$package->id] ?? 0);
+
+            $package->available_qty = $procured - $used;
+
             return $package;
         });
 
         return Inertia::render('Sales/Orders', [
             'packages' => Package::query()->get(),
             'items' => \App\Models\Item::query()->select(['id', 'sku', 'name'])->orderBy('sku')->get(),
-            'orders' => SalesOrder::with(['lines.package', 'lines.item'])->latest()->limit(10)->get(),
+            'orders' => SalesOrder::with(['lines.package', 'lines.item', 'creator'])->latest()->limit(10)->get(),
             'availability' => $availability,
-            'canCreate' => auth()->user()->hasRole('sales', 'super_admin'),
+            'canCreate' => auth()->user()?->hasModuleAccess('sales_orders') ?? false,
         ]);
     }
 
     public function history(): Response
     {
         return Inertia::render('Sales/History', [
-            'orders' => SalesOrder::with(['lines.package', 'lines.item'])->latest()->paginate(20),
+            'orders' => SalesOrder::with(['lines.package', 'lines.item', 'creator'])->latest()->paginate(20),
         ]);
+    }
+
+    public function pdf(SalesOrder $order)
+    {
+        $order->load(['lines.package', 'lines.item', 'creator:id,name']);
+
+        $fileName = ($order->code ?: ('sales-order-' . $order->id)) . '.pdf';
+
+        return Pdf::loadView('sales.order-pdf', [
+            'order' => $order,
+            'generatedAt' => now(),
+        ])->download($fileName);
     }
 
     public function store(Request $request): JsonResponse
     {
         $validated = $request->validate([
             'customer_name' => 'required|string|max:255',
-            'site_id' => 'nullable|string|max:100',
+            'site_id' => [
+                'required',
+                'string',
+                'max:100',
+                Rule::unique('sales_orders', 'site_id'),
+            ],
             'order_date' => 'required|date',
             'notes' => 'nullable|string',
             'lines' => 'required|array|min:1',
@@ -62,11 +88,13 @@ class SalesOrderController extends Controller
             'lines.*.package_quantity' => 'required_if:lines.*.type,package|nullable|integer|min:1',
             'lines.*.item_sku' => 'required_if:lines.*.type,loose|nullable|string|exists:items,sku',
             'lines.*.item_quantity' => 'required_if:lines.*.type,loose|nullable|integer|min:1',
+        ], [
+            'site_id.unique' => 'Site ID already registered in another Sales Order.',
         ]);
 
         $order = DB::transaction(function () use ($validated) {
             $order = SalesOrder::create([
-                'code' => 'SO-' . strtoupper(uniqid()),
+                'code' => $validated['site_id'],
                 'customer_name' => $validated['customer_name'],
                 'site_id' => $validated['site_id'] ?? null,
                 'order_date' => $validated['order_date'],
@@ -85,7 +113,7 @@ class SalesOrderController extends Controller
                 ]);
             }
 
-            return $order->load('lines.package', 'lines.item');
+            return $order->load('lines.package', 'lines.item', 'creator');
         });
 
         TransactionLog::record('sales_order_created', [

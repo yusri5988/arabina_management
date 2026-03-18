@@ -14,6 +14,14 @@ export default function Logs({ logs }) {
       crn_po_safe_receive: 'bg-sky-100 text-sky-700',
       crn_created: 'bg-violet-100 text-violet-700',
       crn_transferred: 'bg-fuchsia-100 text-fuchsia-700',
+      mrn_created: 'bg-emerald-100 text-emerald-700',
+      mrn_po_received: 'bg-green-100 text-green-700',
+      mrn_eta_updated: 'bg-lime-100 text-lime-700',
+      mrn_arrived: 'bg-emerald-100 text-emerald-700',
+      srn_created: 'bg-cyan-100 text-cyan-700',
+      srn_po_received: 'bg-teal-100 text-teal-700',
+      srn_eta_updated: 'bg-sky-100 text-sky-700',
+      srn_arrived: 'bg-blue-100 text-blue-700',
       item_created: 'bg-slate-100 text-slate-700',
     };
 
@@ -89,7 +97,7 @@ export default function Logs({ logs }) {
                 href={link.url || '#'}
                 dangerouslySetInnerHTML={{ __html: link.label }}
                 className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${link.active
-                    ? 'bg-[#1E3D1A] text-white shadow-md'
+                    ? 'bg-[#1b580e] text-white shadow-md'
                     : link.url
                       ? 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
                       : 'text-slate-300 cursor-not-allowed'
