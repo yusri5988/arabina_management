@@ -197,6 +197,168 @@ class PackageBulkUploadTest extends TestCase
         );
     }
 
+    public function test_package_create_allows_empty_bom_section_when_other_sections_have_skus(): void
+    {
+        $user = User::factory()->create([
+            'role' => User::ROLE_SUPER_ADMIN,
+        ]);
+
+        $cabin = Item::create([
+            'sku' => 'SKU-CABIN-EMPTY-001',
+            'name' => 'Cabin Item',
+            'unit' => 'pcs',
+            'bom_scope' => Bom::TYPE_CABIN,
+            'created_by' => $user->id,
+        ]);
+
+        $hardware = Item::create([
+            'sku' => 'SKU-HARDWARE-EMPTY-001',
+            'name' => 'Hardware Item',
+            'unit' => 'pcs',
+            'bom_scope' => Bom::TYPE_HARDWARE,
+            'created_by' => $user->id,
+        ]);
+
+        $response = $this->actingAs($user)->postJson('/packages', [
+            'code' => 'PKG-EMPTY-SECTION-001',
+            'name' => 'Package With Empty Section',
+            'boms' => [
+                'cabin' => [
+                    [
+                        'item_id' => $cabin->id,
+                        'quantity' => 1,
+                    ],
+                ],
+                'hardware' => [
+                    [
+                        'item_id' => $hardware->id,
+                        'quantity' => 2,
+                    ],
+                ],
+                'hardware_site' => [],
+            ],
+        ]);
+
+        $response->assertCreated();
+
+        $package = Package::query()
+            ->with(['boms.bomItems', 'packageItems'])
+            ->where('code', 'PKG-EMPTY-SECTION-001')
+            ->firstOrFail();
+
+        $this->assertSame(3, $package->boms->count());
+        $this->assertSame(1, $package->boms->firstWhere('type', Bom::TYPE_CABIN)?->bomItems->count());
+        $this->assertSame(1, $package->boms->firstWhere('type', Bom::TYPE_HARDWARE)?->bomItems->count());
+        $this->assertSame(0, $package->boms->firstWhere('type', Bom::TYPE_HARDWARE_SITE)?->bomItems->count());
+        $this->assertCount(2, $package->packageItems);
+    }
+
+    public function test_package_update_preserves_empty_bom_section(): void
+    {
+        $user = User::factory()->create([
+            'role' => User::ROLE_SUPER_ADMIN,
+        ]);
+
+        $cabin = Item::create([
+            'sku' => 'SKU-CABIN-UPDATE-001',
+            'name' => 'Cabin Item',
+            'unit' => 'pcs',
+            'bom_scope' => Bom::TYPE_CABIN,
+            'created_by' => $user->id,
+        ]);
+
+        $hardware = Item::create([
+            'sku' => 'SKU-HARDWARE-UPDATE-001',
+            'name' => 'Hardware Item',
+            'unit' => 'pcs',
+            'bom_scope' => Bom::TYPE_HARDWARE,
+            'created_by' => $user->id,
+        ]);
+
+        $createResponse = $this->actingAs($user)->postJson('/packages', [
+            'code' => 'PKG-UPDATE-EMPTY-001',
+            'name' => 'Package To Update',
+            'boms' => [
+                'cabin' => [
+                    [
+                        'item_id' => $cabin->id,
+                        'quantity' => 1,
+                    ],
+                ],
+                'hardware' => [
+                    [
+                        'item_id' => $hardware->id,
+                        'quantity' => 2,
+                    ],
+                ],
+                'hardware_site' => [],
+            ],
+        ]);
+
+        $createResponse->assertCreated();
+
+        $package = Package::query()->where('code', 'PKG-UPDATE-EMPTY-001')->firstOrFail();
+
+        $updateResponse = $this->actingAs($user)->putJson("/packages/{$package->id}", [
+            'code' => 'PKG-UPDATE-EMPTY-002',
+            'name' => 'Package Updated',
+            'boms' => [
+                'cabin' => [
+                    [
+                        'item_id' => $cabin->id,
+                        'quantity' => 1,
+                    ],
+                ],
+                'hardware' => [
+                    [
+                        'item_id' => $hardware->id,
+                        'quantity' => 2,
+                    ],
+                ],
+                'hardware_site' => [],
+            ],
+        ]);
+
+        $updateResponse->assertOk();
+
+        $package = Package::query()
+            ->with(['boms.bomItems', 'packageItems'])
+            ->where('code', 'PKG-UPDATE-EMPTY-002')
+            ->firstOrFail();
+
+        $this->assertSame('Package Updated', $package->name);
+        $this->assertSame(3, $package->boms->count());
+        $this->assertSame(0, $package->boms->firstWhere('type', Bom::TYPE_HARDWARE_SITE)?->bomItems->count());
+        $this->assertCount(2, $package->packageItems);
+    }
+
+    public function test_package_create_rejects_when_all_bom_sections_are_empty(): void
+    {
+        $user = User::factory()->create([
+            'role' => User::ROLE_SUPER_ADMIN,
+        ]);
+
+        $response = $this->actingAs($user)->postJson('/packages', [
+            'code' => 'PKG-EMPTY-ALL-001',
+            'name' => 'Empty Package',
+            'boms' => [
+                'cabin' => [],
+                'hardware' => [],
+                'hardware_site' => [],
+            ],
+        ]);
+
+        $response->assertStatus(422)
+            ->assertJsonValidationErrors(['boms']);
+
+        $errors = $response->json('errors');
+
+        $this->assertContains(
+            'At least one SKU line is required in BOM.',
+            $errors['boms'] ?? []
+        );
+    }
+
     public function test_bulk_upload_creates_package_boms_for_all_bom_types(): void
     {
         $user = User::factory()->create([

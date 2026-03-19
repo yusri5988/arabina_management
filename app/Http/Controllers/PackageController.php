@@ -181,27 +181,34 @@ class PackageController extends Controller
         ]);
     }
 
-    public function update(Request $request, Package $package): JsonResponse
+    public function update(Request $request, $package): JsonResponse
     {
-        $validated = $this->validatePackagePayload($request, false, $package->id);
+        $packageModel = $package instanceof Package
+            ? $package
+            : Package::query()->findOrFail((int) $package);
+
+        $validated = $this->validatePackagePayload($request, false, $packageModel);
         $normalizedBoms = $this->normalizeBomPayload($validated);
         $this->validateBomRules($normalizedBoms);
 
-        DB::transaction(function () use ($package, $validated, $normalizedBoms) {
-            $package->update([
-                'code' => strtoupper($validated['code']),
-                'name' => $validated['name'],
-                'is_active' => $validated['is_active'] ?? true,
-            ]);
+        DB::transaction(function () use ($packageModel, $validated, $normalizedBoms) {
+            Package::query()
+                ->whereKey($packageModel->id)
+                ->update([
+                    'code' => strtoupper($validated['code']),
+                    'name' => $validated['name'],
+                    'is_active' => $validated['is_active'] ?? true,
+                ]);
 
-            $this->syncBomAndPackageItems($package, $normalizedBoms);
+            $freshPackage = Package::query()->findOrFail($packageModel->id);
+            $this->syncBomAndPackageItems($freshPackage, $normalizedBoms);
         });
 
         return response()->json([
             'message' => 'Package updated successfully.',
             'data' => Package::query()
                 ->with(['packageItems.item:id,sku,name,unit', 'boms.bomItems.item:id,sku,name,unit'])
-                ->findOrFail($package->id),
+                ->findOrFail($packageModel->id),
         ]);
     }
 
@@ -233,10 +240,19 @@ class PackageController extends Controller
         ]);
     }
 
-    private function validatePackagePayload(Request $request, bool $isCreate, ?int $packageId = null): array
+    private function validatePackagePayload(Request $request, bool $isCreate, ?Package $package = null): array
     {
+        $this->normalizePackageBomInput($request);
+
         $rules = [
-            'code' => ['required', 'string', 'max:50', Rule::unique('packages', 'code')->ignore($packageId)],
+            'code' => [
+                'required',
+                'string',
+                'max:50',
+                $package
+                    ? Rule::unique('packages', 'code')->ignore($package->getKey(), $package->getKeyName())
+                    : Rule::unique('packages', 'code'),
+            ],
             'name' => ['required', 'string', 'max:255'],
             'is_active' => ['nullable', 'boolean'],
         ];
@@ -244,9 +260,9 @@ class PackageController extends Controller
         if ($request->has('boms')) {
             $rules = array_merge($rules, [
                 'boms' => ['required', 'array'],
-                'boms.cabin' => ['required', 'array'],
-                'boms.hardware' => ['required', 'array'],
-                'boms.hardware_site' => ['required', 'array'],
+                'boms.cabin' => ['present', 'array'],
+                'boms.hardware' => ['present', 'array'],
+                'boms.hardware_site' => ['present', 'array'],
                 'boms.cabin.*.item_id' => ['required', 'integer', 'exists:items,id'],
                 'boms.cabin.*.quantity' => $this->decimalQuantityRules(false, true),
                 'boms.hardware.*.item_id' => ['required', 'integer', 'exists:items,id'],
@@ -267,6 +283,26 @@ class PackageController extends Controller
         }
 
         return $request->validate($rules);
+    }
+
+    private function normalizePackageBomInput(Request $request): void
+    {
+        if (! $request->has('boms')) {
+            return;
+        }
+
+        $boms = $request->input('boms');
+        if (! is_array($boms)) {
+            return;
+        }
+
+        $request->merge([
+            'boms' => [
+                Bom::TYPE_CABIN => is_array($boms[Bom::TYPE_CABIN] ?? null) ? $boms[Bom::TYPE_CABIN] : [],
+                Bom::TYPE_HARDWARE => is_array($boms[Bom::TYPE_HARDWARE] ?? null) ? $boms[Bom::TYPE_HARDWARE] : [],
+                Bom::TYPE_HARDWARE_SITE => is_array($boms[Bom::TYPE_HARDWARE_SITE] ?? null) ? $boms[Bom::TYPE_HARDWARE_SITE] : [],
+            ],
+        ]);
     }
 
     private function makeBulkPackageValidator(Request $request): ValidatorContract
