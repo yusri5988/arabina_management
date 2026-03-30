@@ -18,7 +18,9 @@ class SalesOrderController extends Controller
 {
     public function index(): Response
     {
-        $packages = Package::query()->get(['id', 'code', 'name']);
+        $packages = Package::query()
+            ->orderBy('name')
+            ->get(['id', 'code', 'name']);
 
         $procuredByPackage = DB::table('procurement_order_package_lines as popl')
             ->join('procurement_orders as po', 'po.id', '=', 'popl.procurement_order_id')
@@ -43,7 +45,7 @@ class SalesOrderController extends Controller
         });
 
         return Inertia::render('Sales/Orders', [
-            'packages' => Package::query()->get(),
+            'packages' => Package::query()->orderBy('name')->get(),
             'items' => \App\Models\Item::query()->select(['id', 'sku', 'name'])->orderBy('sku')->get(),
             'orders' => SalesOrder::with(['lines.package', 'lines.item', 'creator'])->latest()->limit(10)->get(),
             'availability' => $availability,

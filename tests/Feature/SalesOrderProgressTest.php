@@ -424,4 +424,50 @@ class SalesOrderProgressTest extends TestCase
         $response->assertHeader('content-type', 'application/pdf');
         $this->assertStringContainsString('.pdf', (string) $response->headers->get('content-disposition'));
     }
+
+    public function test_orders_index_returns_packages_sorted_alphabetically_by_name(): void
+    {
+        $user = User::factory()->create([
+            'role' => User::ROLE_SUPER_ADMIN,
+        ]);
+
+        Package::query()->create([
+            'code' => 'PKG-Z',
+            'name' => 'Zulu Package',
+            'is_active' => true,
+            'created_by' => $user->id,
+        ]);
+
+        Package::query()->create([
+            'code' => 'PKG-A',
+            'name' => 'Alpha Package',
+            'is_active' => true,
+            'created_by' => $user->id,
+        ]);
+
+        Package::query()->create([
+            'code' => 'PKG-M',
+            'name' => 'Mega Package',
+            'is_active' => true,
+            'created_by' => $user->id,
+        ]);
+
+        $response = $this->actingAs($user)->get('/orders');
+        $response->assertOk();
+
+        $page = $response->viewData('page');
+        $this->assertIsArray($page);
+
+        $props = $page['props'] ?? [];
+        $packages = $props['packages'] ?? [];
+        $this->assertIsArray($packages);
+        $this->assertCount(3, $packages);
+
+        $names = array_map(fn ($pkg) => $pkg['name'] ?? null, $packages);
+        $this->assertSame([
+            'Alpha Package',
+            'Mega Package',
+            'Zulu Package',
+        ], $names);
+    }
 }
