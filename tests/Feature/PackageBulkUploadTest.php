@@ -426,6 +426,119 @@ class PackageBulkUploadTest extends TestCase
         $this->assertCount(3, $package->packageItems);
     }
 
+    public function test_bulk_upload_merges_existing_package_and_preserves_other_bom_scopes(): void
+    {
+        $user = User::factory()->create([
+            'role' => User::ROLE_SUPER_ADMIN,
+        ]);
+
+        $cabin = Item::create([
+            'sku' => 'SKU-CABIN-MERGE-001',
+            'name' => 'Cabin Merge Item',
+            'unit' => 'pcs',
+            'bom_scope' => Bom::TYPE_CABIN,
+            'created_by' => $user->id,
+        ]);
+
+        $hardware = Item::create([
+            'sku' => 'SKU-HARDWARE-MERGE-001',
+            'name' => 'Hardware Merge Item',
+            'unit' => 'pcs',
+            'bom_scope' => Bom::TYPE_HARDWARE,
+            'created_by' => $user->id,
+        ]);
+
+        $this->actingAs($user)->postJson('/packages/bulk', [
+            'packages' => [
+                [
+                    'package_code' => 'PKG-MERGE-001',
+                    'package_name' => 'Original Name',
+                    'sku' => $cabin->sku,
+                    'quantity' => 1,
+                ],
+            ],
+        ])->assertCreated();
+
+        $mergeResponse = $this->actingAs($user)->postJson('/packages/bulk', [
+            'packages' => [
+                [
+                    'package_code' => 'PKG-MERGE-001',
+                    'package_name' => 'New Name Must Be Ignored',
+                    'sku' => $hardware->sku,
+                    'quantity' => 2,
+                ],
+            ],
+        ]);
+
+        $mergeResponse->assertCreated()
+            ->assertJsonPath('created_count', 0)
+            ->assertJsonPath('merged_count', 1);
+
+        $package = Package::query()
+            ->with(['boms.bomItems', 'packageItems'])
+            ->where('code', 'PKG-MERGE-001')
+            ->firstOrFail();
+
+        $this->assertSame('Original Name', $package->name);
+        $this->assertSame(1, $package->boms->firstWhere('type', Bom::TYPE_CABIN)?->bomItems->count());
+        $this->assertSame(1, $package->boms->firstWhere('type', Bom::TYPE_HARDWARE)?->bomItems->count());
+        $this->assertSame(0, $package->boms->firstWhere('type', Bom::TYPE_HARDWARE_SITE)?->bomItems->count());
+        $this->assertCount(2, $package->packageItems);
+    }
+
+    public function test_bulk_upload_merge_overwrites_existing_sku_quantity_in_same_bom_scope(): void
+    {
+        $user = User::factory()->create([
+            'role' => User::ROLE_SUPER_ADMIN,
+        ]);
+
+        $hardware = Item::create([
+            'sku' => 'SKU-HARDWARE-MERGE-002',
+            'name' => 'Hardware Merge Item 2',
+            'unit' => 'pcs',
+            'bom_scope' => Bom::TYPE_HARDWARE,
+            'created_by' => $user->id,
+        ]);
+
+        $this->actingAs($user)->postJson('/packages/bulk', [
+            'packages' => [
+                [
+                    'package_code' => 'PKG-MERGE-002',
+                    'package_name' => 'Merge Quantity',
+                    'sku' => $hardware->sku,
+                    'quantity' => 1,
+                ],
+            ],
+        ])->assertCreated();
+
+        $this->actingAs($user)->postJson('/packages/bulk', [
+            'packages' => [
+                [
+                    'package_code' => 'PKG-MERGE-002',
+                    'package_name' => 'Merge Quantity',
+                    'sku' => $hardware->sku,
+                    'quantity' => 5,
+                ],
+            ],
+        ])->assertCreated();
+
+        $package = Package::query()
+            ->with(['boms.bomItems', 'packageItems'])
+            ->where('code', 'PKG-MERGE-002')
+            ->firstOrFail();
+
+        $hardwareBom = $package->boms->firstWhere('type', Bom::TYPE_HARDWARE);
+        $this->assertSame(1, $hardwareBom?->bomItems->count());
+        $this->assertSame(
+            5.0,
+            (float) $hardwareBom?->bomItems->firstWhere('item_id', $hardware->id)?->quantity
+        );
+        $this->assertSame(
+            5.0,
+            (float) $package->packageItems->firstWhere('item_id', $hardware->id)?->quantity
+        );
+    }
+
     public function test_bulk_upload_reports_invalid_item_master_bom_scope(): void
     {
         $user = User::factory()->create([

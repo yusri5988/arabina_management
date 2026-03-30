@@ -93,11 +93,11 @@ class PackageController extends Controller
         $rows = $this->normalizeBulkPackageRows($validated['packages']);
         $grouped = $rows->groupBy('package_code');
 
-        $existingCodes = Package::query()
+        $existingPackages = Package::query()
+            ->with(['boms.bomItems'])
             ->whereIn('code', $grouped->keys())
-            ->pluck('code')
-            ->map(fn ($code) => strtoupper($code))
-            ->all();
+            ->get()
+            ->keyBy(fn (Package $package) => strtoupper((string) $package->code));
 
         $itemsBySku = Item::query()
             ->whereIn('sku', $rows->pluck('sku')->unique()->all())
@@ -105,44 +105,33 @@ class PackageController extends Controller
             ->keyBy('sku');
 
         $createdIds = [];
-        $skipped = [];
+        $mergedCodes = [];
 
-        DB::transaction(function () use ($grouped, $existingCodes, $itemsBySku, $request, &$createdIds, &$skipped) {
+        DB::transaction(function () use ($grouped, $existingPackages, $itemsBySku, $request, &$createdIds, &$mergedCodes) {
             foreach ($grouped as $code => $packageRows) {
-                if (in_array(strtoupper($code), $existingCodes, true)) {
-                    $skipped[] = $code;
-                    continue;
+                $firstRow = $packageRows->first();
+                $upperCode = strtoupper((string) $code);
+                $package = $existingPackages->get($upperCode);
+
+                if (! $package) {
+                    $package = Package::create([
+                        'code' => $firstRow['package_code'],
+                        'name' => $firstRow['package_name'],
+                        'is_active' => $firstRow['is_active'],
+                        'created_by' => $request->user()->id,
+                    ]);
+
+                    $createdIds[] = $package->id;
+                } else {
+                    $mergedCodes[] = $package->code;
                 }
 
-                $firstRow = $packageRows->first();
+                $uploadBoms = $this->buildBulkUploadBoms($packageRows, $itemsBySku);
+                $bomsToSync = $package->wasRecentlyCreated
+                    ? $uploadBoms
+                    : $this->mergeBomPayload($this->extractPackageBoms($package), $uploadBoms);
 
-                $package = Package::create([
-                    'code' => $firstRow['package_code'],
-                    'name' => $firstRow['package_name'],
-                    'is_active' => $firstRow['is_active'],
-                    'created_by' => $request->user()->id,
-                ]);
-
-                $boms = collect(Bom::TYPES)
-                    ->mapWithKeys(function (string $type) use ($packageRows, $itemsBySku) {
-                        $lines = $packageRows
-                            ->filter(fn ($row) => (string) ($itemsBySku[$row['sku']]->bom_scope ?? '') === $type)
-                            ->map(function ($row) use ($itemsBySku) {
-                                return [
-                                    'item_id' => $itemsBySku[$row['sku']]->id,
-                                    'quantity' => $row['quantity'],
-                                ];
-                            })
-                            ->values()
-                            ->all();
-
-                        return [$type => $lines];
-                    })
-                    ->all();
-
-                $this->syncBomAndPackageItems($package, $boms);
-
-                $createdIds[] = $package->id;
+                $this->syncBomAndPackageItems($package, $bomsToSync);
             }
         });
 
@@ -152,15 +141,15 @@ class PackageController extends Controller
             ->latest('id')
             ->get();
 
-        $message = $createdPackages->count() . ' package(s) created successfully.';
-        if (count($skipped) > 0) {
-            $message .= ' ' . count($skipped) . ' skipped because package code already exists.';
-        }
+        $message = $createdPackages->count() . ' package(s) created successfully. '
+            . count($mergedCodes) . ' package(s) merged successfully.';
 
         return response()->json([
             'message' => $message,
             'data' => $createdPackages,
-            'skipped' => $skipped,
+            'created_count' => $createdPackages->count(),
+            'merged_count' => count($mergedCodes),
+            'merged' => $mergedCodes,
         ], 201);
     }
 
@@ -443,6 +432,87 @@ class PackageController extends Controller
             Bom::TYPE_HARDWARE => $this->normalizeBomLines($validated['lines'] ?? []),
             Bom::TYPE_HARDWARE_SITE => [],
         ];
+    }
+
+    private function buildBulkUploadBoms($packageRows, $itemsBySku): array
+    {
+        return collect(Bom::TYPES)
+            ->mapWithKeys(function (string $type) use ($packageRows, $itemsBySku) {
+                $lines = $packageRows
+                    ->filter(fn ($row) => (string) ($itemsBySku[$row['sku']]->bom_scope ?? '') === $type)
+                    ->map(function ($row) use ($itemsBySku) {
+                        return [
+                            'item_id' => (int) $itemsBySku[$row['sku']]->id,
+                            'quantity' => $this->normalizeQuantity($row['quantity']),
+                        ];
+                    })
+                    ->values()
+                    ->all();
+
+                return [$type => $lines];
+            })
+            ->all();
+    }
+
+    private function extractPackageBoms(Package $package): array
+    {
+        $package->loadMissing(['boms.bomItems']);
+
+        $boms = collect(Bom::TYPES)
+            ->mapWithKeys(fn (string $type) => [$type => []])
+            ->all();
+
+        foreach ($package->boms as $bom) {
+            $type = (string) $bom->type;
+            if (! in_array($type, Bom::TYPES, true)) {
+                continue;
+            }
+
+            $boms[$type] = $bom->bomItems
+                ->map(function ($bomItem) {
+                    return [
+                        'item_id' => (int) $bomItem->item_id,
+                        'quantity' => $this->normalizeQuantity($bomItem->quantity),
+                    ];
+                })
+                ->values()
+                ->all();
+        }
+
+        return $boms;
+    }
+
+    private function mergeBomPayload(array $existingBoms, array $uploadBoms): array
+    {
+        $merged = collect(Bom::TYPES)
+            ->mapWithKeys(fn (string $type) => [$type => $existingBoms[$type] ?? []])
+            ->all();
+
+        foreach (Bom::TYPES as $type) {
+            $uploadLines = $uploadBoms[$type] ?? [];
+            if ($uploadLines === []) {
+                continue;
+            }
+
+            $lineMap = collect($merged[$type] ?? [])
+                ->mapWithKeys(fn ($line) => [(int) $line['item_id'] => [
+                    'item_id' => (int) $line['item_id'],
+                    'quantity' => $this->normalizeQuantity($line['quantity']),
+                ]]);
+
+            foreach ($uploadLines as $line) {
+                $lineMap->put((int) $line['item_id'], [
+                    'item_id' => (int) $line['item_id'],
+                    'quantity' => $this->normalizeQuantity($line['quantity']),
+                ]);
+            }
+
+            $merged[$type] = $lineMap
+                ->values()
+                ->all();
+        }
+
+        return $merged;
     }
 
     private function normalizeBomLines(array $lines): array
