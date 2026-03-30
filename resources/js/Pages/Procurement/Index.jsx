@@ -291,6 +291,33 @@ export default function ProcurementIndex({
     setNewOrderSkuLines(prev => prev.filter(l => l.item_id !== itemId));
   };
 
+  const removeNewOrderPackageLine = (index) => {
+    const lineToRemove = newOrderPackageLines[index];
+
+    if (!lineToRemove) {
+      return;
+    }
+
+    const pkg = (Array.isArray(packages) ? packages : []).find((p) => Number(p.id) === Number(lineToRemove.package_id));
+    const scopeBom = (pkg?.boms ?? []).find((b) => b.type === activeFlow.key);
+    const affectedItemIds = new Set(
+      (scopeBom?.bomItems ?? scopeBom?.bom_items ?? []).map((bi) => Number(bi.item_id))
+    );
+
+    setNewOrderPackageLines((prev) => prev.filter((_, i) => i !== index));
+
+    if (affectedItemIds.size > 0) {
+      setNewOrderSkuLines((prev) => prev.filter((line) => !affectedItemIds.has(Number(line.item_id))));
+      setSkuSuppliers((prev) => {
+        const next = { ...prev };
+        affectedItemIds.forEach((itemId) => {
+          delete next[itemId];
+        });
+        return next;
+      });
+    }
+  };
+
   const updateNewOrderPackageQuantity = (index, delta) => {
     setNewOrderPackageLines(prev => prev.map((line, i) => {
       if (i === index) {
