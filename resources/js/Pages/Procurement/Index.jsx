@@ -219,6 +219,7 @@ export default function ProcurementIndex({
   const [newOrderPoNumber, setNewOrderPoNumber] = useState('');
   const [newOrderNotes, setNewOrderNotes] = useState('');
   const [skuSuppliers, setSkuSuppliers] = useState({}); // { item_id: supplier_id }
+  const [selectedSkuIds, setSelectedSkuIds] = useState([]);
   const [newOrderAddPackageForm, setNewOrderAddPackageForm] = useState({ package_id: null, quantity: '' });
   const [newOrderAddSkuForm, setNewOrderAddSkuForm] = useState({ item_id: null, quantity: '' });
 
@@ -249,6 +250,9 @@ export default function ProcurementIndex({
   const handleSkuSelect = (itemId) => {
     const item = (Array.isArray(items) ? items : []).find(i => i.id === Number(itemId));
     if (item) {
+      setSelectedSkuIds((prev) => (
+        prev.includes(item.id) ? prev : [...prev, item.id]
+      ));
       setNewOrderSkuLines((prev) => {
         const existing = prev.find((line) => line.item_id === item.id);
 
@@ -288,6 +292,12 @@ export default function ProcurementIndex({
   };
 
   const removeNewOrderSkuLine = (itemId) => {
+    setSelectedSkuIds((prev) => prev.filter((id) => Number(id) !== Number(itemId)));
+    setSkuSuppliers((prev) => {
+      const next = { ...prev };
+      delete next[Number(itemId)];
+      return next;
+    });
     setNewOrderSkuLines(prev => prev.filter(l => l.item_id !== itemId));
   };
 
@@ -308,6 +318,7 @@ export default function ProcurementIndex({
 
     if (affectedItemIds.size > 0) {
       setNewOrderSkuLines((prev) => prev.filter((line) => !affectedItemIds.has(Number(line.item_id))));
+      setSelectedSkuIds((prev) => prev.filter((id) => !affectedItemIds.has(Number(id))));
       setSkuSuppliers((prev) => {
         const next = { ...prev };
         affectedItemIds.forEach((itemId) => {
@@ -411,6 +422,12 @@ export default function ProcurementIndex({
       const remaining = prev.filter((line) => line.item_id !== skuLine.item_id);
 
       if (adjustment === 0) {
+        setSelectedSkuIds((selectedPrev) => selectedPrev.filter((id) => Number(id) !== Number(skuLine.item_id)));
+        setSkuSuppliers((supplierPrev) => {
+          const next = { ...supplierPrev };
+          delete next[Number(skuLine.item_id)];
+          return next;
+        });
         return remaining;
       }
 
@@ -435,6 +452,7 @@ export default function ProcurementIndex({
   };
 
   const useSuggestion = () => {
+    setSelectedSkuIds([]);
     setNewOrderPackageLines((scopedSuggestion?.package_lines ?? []).map(p => ({
       package_id: p.package_id,
       quantity: p.quantity,
@@ -475,6 +493,7 @@ export default function ProcurementIndex({
         setList((prev) => [payload.data, ...prev]);
         setNewOrderPackageLines([]);
         setNewOrderSkuLines([]);
+        setSelectedSkuIds([]);
         setNewOrderPoNumber('');
         setNewOrderNotes('');
         setSkuSuppliers({});
@@ -662,7 +681,7 @@ export default function ProcurementIndex({
                   </div>
 
                   {/* Selected Items / Quantities Display */}
-                  {newOrderPackageLines.length > 0 && (
+                  {(newOrderPackageLines.length > 0 || selectedSkuIds.length > 0) && (
                     <div className="space-y-4">
                       <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Active Selections</h3>
                       <div className="flex flex-wrap gap-3">
@@ -679,6 +698,52 @@ export default function ProcurementIndex({
                             </button>
                           </div>
                         ))}
+                        {selectedSkuIds.map((selectedId) => {
+                          const skuLine = (newOrderSkuLines ?? []).find((line) => Number(line.item_id) === Number(selectedId));
+                          if (!skuLine) return null;
+
+                          return (
+                            <div key={`sku-active-${selectedId}`} className="flex items-center gap-3 bg-emerald-50 border border-emerald-100 px-4 py-2 rounded-2xl shadow-sm">
+                              <span className="text-xs font-black text-emerald-800">{skuLine.sku}</span>
+                              <div className="flex items-center gap-2 bg-white/50 rounded-lg p-0.5 border border-emerald-200/50">
+                                <button
+                                  onClick={() => {
+                                    const next = Math.max(0, normalizeSkuQuantity(Number(skuLine.quantity || 0) - 1));
+                                    if (next === 0) {
+                                      removeNewOrderSkuLine(skuLine.item_id);
+                                      return;
+                                    }
+                                    setNewOrderSkuLines((prev) => prev.map((line) => (
+                                      Number(line.item_id) === Number(skuLine.item_id)
+                                        ? { ...line, quantity: next }
+                                        : line
+                                    )));
+                                  }}
+                                  className="w-6 h-6 flex items-center justify-center font-black text-emerald-600"
+                                >
+                                  -
+                                </button>
+                                <span className="text-[11px] font-black min-w-[20px] text-center">{skuLine.quantity}</span>
+                                <button
+                                  onClick={() => {
+                                    const next = normalizeSkuQuantity(Number(skuLine.quantity || 0) + 1);
+                                    setNewOrderSkuLines((prev) => prev.map((line) => (
+                                      Number(line.item_id) === Number(skuLine.item_id)
+                                        ? { ...line, quantity: next }
+                                        : line
+                                    )));
+                                  }}
+                                  className="w-6 h-6 flex items-center justify-center font-black text-emerald-600"
+                                >
+                                  +
+                                </button>
+                              </div>
+                              <button onClick={() => removeNewOrderSkuLine(skuLine.item_id)} className="text-emerald-300 hover:text-red-500 transition-colors">
+                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4"><path d="M6.28 5.22a.75.75 0 0 0-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 1 0 1.06 1.06L10 11.06l3.72 3.72a.75.75 0 1 0 1.06-1.06L11.06 10l3.72-3.72a.75.75 0 0 0-1.06-1.06L10 8.94 6.28 5.22Z" /></svg>
+                              </button>
+                            </div>
+                          );
+                        })}
                       </div>
                     </div>
                   )}
