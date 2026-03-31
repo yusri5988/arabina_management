@@ -9,7 +9,7 @@ import {
 } from '@heroicons/react/24/outline/index.js';
 
 export default function Dashboard() {
-  const { auth } = usePage().props;
+  const { auth, operationalNotes = [] } = usePage().props;
   const permissions = auth?.user?.module_permissions ?? [];
   const hasModuleAccess = (moduleKey) => permissions.includes(moduleKey);
   const canAccessWarehouse = ['crn', 'mrn', 'srn', 'item_catalog', 'stock_list', 'delivery_order', 'rejected_list', 'create_package']
@@ -158,6 +158,28 @@ export default function Dashboard() {
             </Link>
           )}
 
+        </div>
+
+        <div className="rounded-3xl border border-slate-200 bg-white/90 p-6 shadow-sm shadow-slate-100/70">
+          <div className="flex items-center gap-3 mb-5">
+            <div className="h-2.5 w-2.5 rounded-full bg-slate-800" />
+            <h3 className="text-base font-bold tracking-tight text-slate-800">Operational Notes</h3>
+          </div>
+
+          <div className="space-y-3">
+            {operationalNotes.map((note) => (
+              <div
+                key={note.message}
+                className={`rounded-2xl border-l-4 bg-slate-50 px-4 py-3 text-sm font-medium leading-relaxed text-slate-700 ${
+                  note.tone === 'amber'
+                    ? 'border-l-amber-400'
+                    : 'border-l-emerald-400'
+                }`}
+              >
+                {note.message}
+              </div>
+            ))}
+          </div>
         </div>
       </div>
     </AuthenticatedLayout>
