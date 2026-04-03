@@ -2,29 +2,34 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Bom;
 use App\Models\Package;
 use App\Models\SalesOrder;
 use App\Models\SalesOrderLine;
 use App\Models\TransactionLog;
+use App\Services\ProcurementService;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Validation\Rule;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 use Inertia\Response;
 
 class SalesOrderController extends Controller
 {
-    public function index(): Response
+    public function index(ProcurementService $procurementService): Response
     {
         $packages = Package::query()
             ->orderBy('name')
             ->get(['id', 'code', 'name']);
 
+        $stockByPackage = $procurementService->calculatePackageAvailability(Bom::TYPE_CABIN);
+
         $procuredByPackage = DB::table('procurement_order_package_lines as popl')
             ->join('procurement_orders as po', 'po.id', '=', 'popl.procurement_order_id')
             ->where('po.status', '!=', 'draft')
+            ->where('po.procurement_scope', Bom::TYPE_CABIN)
             ->selectRaw('popl.package_id, SUM(popl.quantity) as qty')
             ->groupBy('popl.package_id')
             ->pluck('qty', 'popl.package_id');
@@ -35,11 +40,12 @@ class SalesOrderController extends Controller
             ->groupBy('package_id')
             ->pluck('qty', 'package_id');
 
-        $availability = $packages->map(function ($package) use ($procuredByPackage, $usedByPackage) {
+        $availability = $packages->map(function ($package) use ($stockByPackage, $procuredByPackage, $usedByPackage) {
+            $stock = (int) ($stockByPackage[$package->id] ?? 0);
             $procured = (int) ($procuredByPackage[$package->id] ?? 0);
             $used = (int) ($usedByPackage[$package->id] ?? 0);
 
-            $package->available_qty = $procured - $used;
+            $package->available_qty = $stock + $procured - $used;
 
             return $package;
         });
@@ -64,7 +70,7 @@ class SalesOrderController extends Controller
     {
         $order->load(['lines.package', 'lines.item', 'creator:id,name']);
 
-        $fileName = ($order->code ?: ('sales-order-' . $order->id)) . '.pdf';
+        $fileName = ($order->code ?: ('sales-order-'.$order->id)).'.pdf';
 
         return Pdf::loadView('sales.order-pdf', [
             'order' => $order,
@@ -134,7 +140,7 @@ class SalesOrderController extends Controller
     public function searchItem(Request $request): JsonResponse
     {
         $query = $request->input('q');
-        if (!$query) {
+        if (! $query) {
             return response()->json([]);
         }
 
