@@ -134,6 +134,27 @@ export default function Stock({ items, packages, salesOrders = [], type = 'in', 
     [pendingDeliveryStatus],
   );
 
+  const stockShortfall = useMemo(() => {
+    if (!isOut || !selectedSalesOrder) return [];
+    return (selectedSalesOrder.pending_sku_lines ?? [])
+      .filter((line) => Number(line.short_quantity ?? 0) > 0)
+      .map((line) => ({
+        sku: line.sku,
+        name: line.name,
+        bom_scope: line.bom_scope ?? 'hardware',
+        pending_quantity: Number(line.pending_quantity ?? 0),
+        current_stock: Number(line.current_stock ?? 0),
+        short_quantity: Number(line.short_quantity ?? 0),
+      }));
+  }, [isOut, selectedSalesOrder]);
+
+  const stockShortfallByBom = useMemo(() => {
+    return BOM_GROUPS.map((group) => ({
+      ...group,
+      items: stockShortfall.filter((item) => String(item.bom_scope) === group.key),
+    })).filter((group) => group.items.length > 0);
+  }, [stockShortfall]);
+
   useEffect(() => {
     if (!isOut) {
       return;
@@ -418,6 +439,46 @@ export default function Stock({ items, packages, salesOrders = [], type = 'in', 
                         ))}
                       </div>
                     )}
+                  </div>
+                )}
+                {selectedSalesOrder && stockShortfall.length > 0 && (
+                  <div className="col-span-2 rounded-2xl border-2 border-red-300 bg-red-50 p-4">
+                    <div className="flex items-center gap-2 mb-3">
+                      <svg className="w-4 h-4 text-red-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z" />
+                      </svg>
+                      <p className="text-xs font-bold text-red-700 uppercase tracking-wider">
+                        Stock Shortfall — {stockShortfall.length} item(s) insufficient stock
+                      </p>
+                    </div>
+
+                    {stockShortfallByBom.map((group) => (
+                      <div key={group.key} className="mb-3 last:mb-0">
+                        <p className="text-[10px] font-black uppercase tracking-widest text-red-500 mb-1.5 px-1">{group.label}</p>
+                        <div className="overflow-x-auto">
+                          <table className="w-full text-xs">
+                            <thead>
+                              <tr className="border-b border-red-200">
+                                <th className="px-2 py-1.5 text-left font-bold text-red-600 uppercase tracking-wider text-[10px]">Item</th>
+                                <th className="px-2 py-1.5 text-right font-bold text-red-600 uppercase tracking-wider text-[10px]">Pending</th>
+                                <th className="px-2 py-1.5 text-right font-bold text-red-600 uppercase tracking-wider text-[10px]">In Stock</th>
+                                <th className="px-2 py-1.5 text-right font-bold text-red-600 uppercase tracking-wider text-[10px]">Short</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-red-100">
+                              {group.items.map((item) => (
+                                <tr key={item.sku} className="bg-white/60">
+                                  <td className="px-2 py-1.5 text-slate-600 max-w-xs truncate" title={item.name}>{item.name}</td>
+                                  <td className="px-2 py-1.5 text-right text-slate-700 font-bold">{item.pending_quantity}</td>
+                                  <td className="px-2 py-1.5 text-right text-amber-600 font-bold">{item.current_stock}</td>
+                                  <td className="px-2 py-1.5 text-right text-red-600 font-black">{item.short_quantity}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 )}
 

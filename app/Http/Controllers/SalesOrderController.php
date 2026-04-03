@@ -68,7 +68,7 @@ class SalesOrderController extends Controller
 
     public function pdf(SalesOrder $order)
     {
-        $order->load(['lines.package', 'lines.item', 'creator:id,name']);
+        $order->load(['lines.package.boms.bomItems.item', 'lines.item', 'creator:id,name']);
 
         $fileName = ($order->code ?: ('sales-order-'.$order->id)).'.pdf';
 

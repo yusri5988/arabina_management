@@ -41,7 +41,7 @@ export default function StockList({ items = [], packages = [] }) {
         available_qty: maxPossible ?? 0,
         is_filtered: false,
       };
-    });
+    }).filter((pkg) => pkg.available_qty > 0);
   }, [packages, selectedScopes]);
 
   const requestSort = (key) => {

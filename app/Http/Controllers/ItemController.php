@@ -136,6 +136,7 @@ class ItemController extends Controller
                 'item_id' => $item->id,
                 'sku' => $item->sku,
                 'name' => $item->name,
+                'bom_scope' => $item->bom_scope,
                 'stock_current' => $stockCurrent,
                 'audited_stock' => $stockCurrent,
             ];
@@ -1205,21 +1206,21 @@ class ItemController extends Controller
                 }
             }
 
-            $orderedSkus = $salesOrders
-                ->flatMap(function ($order) {
-                    return $order->lines
-                        ->whereNotNull('item_sku')
-                        ->pluck('item_sku');
-                })
-                ->filter()
-                ->unique()
-                ->values();
+            $orderedSkus = $salesOrders->flatMap(function ($order) {
+                return $order->lines->flatMap(function ($line) {
+                    if ($line->package_id) {
+                        return ($line->package?->packageItems ?? collect())->map(fn($pi) => $pi->item?->sku);
+                    }
+                    return [$line->item_sku];
+                });
+            })->filter()->unique()->values();
 
             $itemsBySku = $orderedSkus->isEmpty()
                 ? collect()
                 : Item::query()
                     ->whereIn('sku', $orderedSkus->all())
-                    ->get(['sku', 'name', 'bom_scope'])
+                    ->withSum('variants as stock_current_total', 'stock_current')
+                    ->get(['id', 'sku', 'name', 'bom_scope'])
                     ->keyBy('sku');
 
             $salesOrders = $salesOrders->map(function ($order) use ($shippedByOrderSku, $itemsBySku) {
@@ -1258,6 +1259,7 @@ class ItemController extends Controller
                     }
 
                     $item = $itemsBySku->get($sku);
+                    $currentStock = (float) ($item?->stock_current_total ?? 0);
                     $pendingSkuLines[] = [
                         'sku' => $sku,
                         'name' => $item?->name,
@@ -1265,6 +1267,8 @@ class ItemController extends Controller
                         'ordered_quantity' => $ordered,
                         'shipped_quantity' => min($shipped, $ordered),
                         'pending_quantity' => $remaining,
+                        'current_stock' => $currentStock,
+                        'short_quantity' => max($remaining - $currentStock, 0),
                     ];
                 }
 

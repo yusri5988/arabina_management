@@ -21,6 +21,30 @@ export default function StockAudit({ items = [], auditHistories = [] }) {
         return map;
     }, [lines]);
 
+    const BOM_LABELS = {
+        cabin: 'Cabin',
+        hardware: 'Hardware',
+        hardware_site: 'Hardware Site',
+    };
+
+    const groupedItems = useMemo(() => {
+        const groups = {};
+        (items ?? []).forEach((item) => {
+            const scope = item.bom_scope || 'unknown';
+            if (!groups[scope]) groups[scope] = [];
+            groups[scope].push(item);
+        });
+        const order = ['cabin', 'hardware', 'hardware_site'];
+        const sorted = [];
+        order.forEach((key) => {
+            if (groups[key]) sorted.push([key, groups[key]]);
+        });
+        Object.keys(groups).forEach((key) => {
+            if (!order.includes(key)) sorted.push([key, groups[key]]);
+        });
+        return sorted;
+    }, [items]);
+
     const updateAuditedStock = (itemId, value) => {
         if (value === '') {
             setLines((prev) => prev.map((line) => (
@@ -90,47 +114,54 @@ export default function StockAudit({ items = [], auditHistories = [] }) {
                 <form onSubmit={submitAudit} className="bg-white rounded-[2rem] shadow-sm border border-slate-100 p-6 space-y-4">
                     <h2 className="text-lg font-bold text-slate-800">Current Stock vs Audited Stock</h2>
 
-                    <div className="overflow-x-auto border border-slate-100 rounded-2xl">
-                        <table className="min-w-full divide-y divide-slate-100">
-                            <thead className="bg-slate-50">
-                                <tr>
-                                    <th className="px-3 py-2 text-left text-xs">SKU</th>
-                                    <th className="px-3 py-2 text-left text-xs">Item</th>
-                                    <th className="px-3 py-2 text-right text-xs">Current</th>
-                                    <th className="px-3 py-2 text-right text-xs">Audited</th>
-                                    <th className="px-3 py-2 text-right text-xs">Difference</th>
-                                </tr>
-                            </thead>
-                            <tbody className="divide-y divide-slate-50">
-                                {(items ?? []).map((item) => {
-                                    const current = Number(item.stock_current ?? 0);
-                                    const rawAudited = lineMap.get(String(item.item_id));
-                                    const audited = rawAudited ?? '';
-                                    const diff = audited === '' ? null : Number(audited) - current;
-
-                                    return (
-                                        <tr key={item.item_id}>
-                                            <td className="px-3 py-2 text-xs font-bold text-slate-700">{item.sku}</td>
-                                            <td className="px-3 py-2 text-sm text-slate-700">{item.name}</td>
-                                            <td className="px-3 py-2 text-sm text-right">{current}</td>
-                                            <td className="px-3 py-2 text-right">
-                                                <input
-                                                    type="number"
-                                                    min="0"
-                                                    value={audited}
-                                                    onChange={(e) => updateAuditedStock(item.item_id, e.target.value)}
-                                                    className="w-24 rounded-lg border border-slate-200 px-2 py-1 text-right text-sm"
-                                                />
-                                            </td>
-                                            <td className={`px-3 py-2 text-sm text-right font-bold ${diff < 0 ? 'text-red-600' : diff > 0 ? 'text-emerald-600' : 'text-slate-600'}`}>
-                                                {diff === null ? '-' : diff}
-                                            </td>
+                    {groupedItems.map(([bomScope, groupItems]) => (
+                        <div key={bomScope} className="space-y-2">
+                            <h3 className="text-sm font-bold text-white bg-slate-700 rounded-xl px-4 py-2 uppercase tracking-wide">
+                                {BOM_LABELS[bomScope] || bomScope}
+                            </h3>
+                            <div className="overflow-x-auto border border-slate-100 rounded-2xl">
+                                <table className="min-w-full divide-y divide-slate-100">
+                                    <thead className="bg-slate-50">
+                                        <tr>
+                                            <th className="px-3 py-2 text-left text-xs">SKU</th>
+                                            <th className="px-3 py-2 text-left text-xs">Item</th>
+                                            <th className="px-3 py-2 text-right text-xs">Current</th>
+                                            <th className="px-3 py-2 text-right text-xs">Audited</th>
+                                            <th className="px-3 py-2 text-right text-xs">Difference</th>
                                         </tr>
-                                    );
-                                })}
-                            </tbody>
-                        </table>
-                    </div>
+                                    </thead>
+                                    <tbody className="divide-y divide-slate-50">
+                                        {groupItems.map((item) => {
+                                            const current = Number(item.stock_current ?? 0);
+                                            const rawAudited = lineMap.get(String(item.item_id));
+                                            const audited = rawAudited ?? '';
+                                            const diff = audited === '' ? null : Number(audited) - current;
+
+                                            return (
+                                                <tr key={item.item_id}>
+                                                    <td className="px-3 py-2 text-xs font-bold text-slate-700">{item.sku}</td>
+                                                    <td className="px-3 py-2 text-sm text-slate-700">{item.name}</td>
+                                                    <td className="px-3 py-2 text-sm text-right">{current}</td>
+                                                    <td className="px-3 py-2 text-right">
+                                                        <input
+                                                            type="number"
+                                                            min="0"
+                                                            value={audited}
+                                                            onChange={(e) => updateAuditedStock(item.item_id, e.target.value)}
+                                                            className="w-24 rounded-lg border border-slate-200 px-2 py-1 text-right text-sm"
+                                                        />
+                                                    </td>
+                                                    <td className={`px-3 py-2 text-sm text-right font-bold ${diff < 0 ? 'text-red-600' : diff > 0 ? 'text-emerald-600' : 'text-slate-600'}`}>
+                                                        {diff === null ? '-' : diff}
+                                                    </td>
+                                                </tr>
+                                            );
+                                        })}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    ))}
 
                     <div>
                         <label className="block text-xs font-bold text-slate-500 mb-1">Notes (optional)</label>
@@ -156,7 +187,7 @@ export default function StockAudit({ items = [], auditHistories = [] }) {
                 {auditHistories.length > 0 && (
                     <div className="bg-white rounded-[2rem] shadow-sm border border-slate-100 p-6 space-y-3">
                         <h3 className="text-base font-bold text-slate-800">Audit History</h3>
-                        <p className="text-xs text-slate-500">Tekan Open untuk lihat detail audit. Setiap audit ada butang download PDF.</p>
+                        <p className="text-xs text-slate-500">Click Open to view audit details. Each audit includes a PDF download button.</p>
 
                         <div className="space-y-3">
                             {auditHistories.map((history) => (

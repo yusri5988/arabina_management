@@ -53,6 +53,25 @@
             color: #1b580e;
         }
 
+        .bom-title {
+            margin: 14px 0 6px;
+            font-size: 12px;
+            font-weight: bold;
+            color: #374151;
+            padding: 4px 8px;
+            background: #e8f5e3;
+            border-left: 3px solid #1b580e;
+        }
+
+        .package-header {
+            margin: 24px 0 8px;
+            padding: 8px 10px;
+            background: #1b580e;
+            color: #ffffff;
+            font-size: 13px;
+            font-weight: bold;
+        }
+
         table.items {
             width: 100%;
             border-collapse: collapse;
@@ -61,7 +80,7 @@
         table.items th,
         table.items td {
             border: 1px solid #d1d5db;
-            padding: 8px;
+            padding: 6px 8px;
         }
 
         table.items th {
@@ -72,6 +91,10 @@
 
         .text-right {
             text-align: right;
+        }
+
+        .text-center {
+            text-align: center;
         }
 
         .muted {
@@ -90,6 +113,28 @@
             font-size: 10px;
             color: #6b7280;
             text-align: right;
+        }
+
+        .page-break {
+            page-break-before: always;
+        }
+
+        .summary-badge {
+            display: inline-block;
+            padding: 2px 8px;
+            font-size: 10px;
+            border-radius: 4px;
+            font-weight: bold;
+        }
+
+        .badge-package {
+            background: #dbeafe;
+            color: #1e40af;
+        }
+
+        .badge-loose {
+            background: #fef3c7;
+            color: #92400e;
         }
     </style>
 </head>
@@ -115,7 +160,8 @@
         </tr>
     </table>
 
-    <div class="section-title">Order Details</div>
+    {{-- Order Summary --}}
+    <div class="section-title">Order Summary</div>
     <table class="items">
         <thead>
             <tr>
@@ -139,6 +185,86 @@
             @endforeach
         </tbody>
     </table>
+
+    {{-- BOM Breakdown per Package --}}
+    @php
+        $bomTypeLabels = [
+            'cabin' => 'Cabin',
+            'hardware' => 'Hardware',
+            'hardware_site' => 'Hardware Site',
+        ];
+
+        $packageLines = $order->lines->filter(fn($l) => $l->package_id);
+    @endphp
+
+    @if ($packageLines->isNotEmpty())
+        <div class="page-break"></div>
+
+        <div class="header">
+            <h1>Package SKU Breakdown</h1>
+            <p>Order: {{ $order->code }} &mdash; {{ $order->customer_name }}</p>
+        </div>
+
+        @foreach ($packageLines as $line)
+            @php
+                $package = $line->package;
+                $qty = (int) $line->package_quantity;
+            @endphp
+
+            @if ($package)
+                <div class="package-header">
+                    {{ $package->code }} &mdash; {{ $package->name }} (x{{ $qty }})
+                </div>
+
+                @php
+                    $boms = $package->boms->sortBy(function ($bom) {
+                        $order = ['cabin' => 1, 'hardware' => 2, 'hardware_site' => 3];
+                        return $order[$bom->type] ?? 99;
+                    });
+                @endphp
+
+                @if ($boms->isEmpty())
+                    <p class="muted" style="margin-left: 10px;">No BOM defined for this package.</p>
+                @else
+                    @foreach ($boms as $bom)
+                        <div class="bom-title">
+                            {{ $bomTypeLabels[$bom->type] ?? ucfirst($bom->type) }}
+                            &mdash; {{ $bom->code }} {{ $bom->name }}
+                        </div>
+
+                        @if ($bom->bomItems->isEmpty())
+                            <p class="muted" style="margin-left: 10px; font-size: 11px;">No items in this BOM.</p>
+                        @else
+                            <table class="items">
+                                <thead>
+                                    <tr>
+                                        <th style="width: 8%;">No</th>
+                                        <th style="width: 22%;">SKU</th>
+                                        <th>Item Name</th>
+                                        <th style="width: 12%;" class="text-center">Unit</th>
+                                        <th style="width: 12%;" class="text-right">Qty/Pkg</th>
+                                        <th style="width: 12%;" class="text-right">Total</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach ($bom->bomItems as $bi => $bomItem)
+                                        <tr>
+                                            <td>{{ $bi + 1 }}</td>
+                                            <td>{{ optional($bomItem->item)->sku ?? '-' }}</td>
+                                            <td>{{ optional($bomItem->item)->name ?? '-' }}</td>
+                                            <td class="text-center">{{ optional($bomItem->item)->unit ?? '-' }}</td>
+                                            <td class="text-right">{{ $bomItem->quantity }}</td>
+                                            <td class="text-right">{{ $bomItem->quantity * $qty }}</td>
+                                        </tr>
+                                    @endforeach
+                                </tbody>
+                            </table>
+                        @endif
+                    @endforeach
+                @endif
+            @endif
+        @endforeach
+    @endif
 
     @if ($order->notes)
         <div class="notes">

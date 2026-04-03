@@ -38,7 +38,7 @@
             </tr>
         </thead>
         <tbody>
-            @foreach($packages as $pkg)
+            @foreach(collect($packages)->where('available_qty', '>', 0) as $pkg)
             <tr>
                 <td class="font-bold">{{ $pkg['code'] }}</td>
                 <td>{{ $pkg['name'] }}</td>
