@@ -146,6 +146,120 @@ class SalesOrderProgressTest extends TestCase
         ]);
     }
 
+    public function test_sales_user_can_update_open_sales_order(): void
+    {
+        $user = User::factory()->create([
+            'role' => User::ROLE_SALES,
+        ]);
+
+        $oldItem = Item::query()->create([
+            'sku' => 'OLD-SKU-001',
+            'name' => 'Old Item',
+            'unit' => 'pcs',
+            'created_by' => $user->id,
+        ]);
+
+        $newItem = Item::query()->create([
+            'sku' => 'NEW-SKU-001',
+            'name' => 'New Item',
+            'unit' => 'pcs',
+            'created_by' => $user->id,
+        ]);
+
+        $order = SalesOrder::query()->create([
+            'code' => 'SITE-OLD-001',
+            'customer_name' => 'Old Customer',
+            'site_id' => 'SITE-OLD-001',
+            'order_date' => now()->toDateString(),
+            'status' => 'open',
+            'created_by' => $user->id,
+        ]);
+
+        $oldLine = $order->lines()->create([
+            'item_sku' => $oldItem->sku,
+            'item_quantity' => 1,
+            'shipped_quantity' => 0,
+        ]);
+
+        $response = $this->actingAs($user)
+            ->putJson("/orders/{$order->id}", [
+                'customer_name' => 'Updated Customer',
+                'site_id' => 'SITE-NEW-001',
+                'order_date' => now()->toDateString(),
+                'notes' => 'Updated notes',
+                'lines' => [
+                    [
+                        'type' => 'loose',
+                        'item_sku' => $newItem->sku,
+                        'item_quantity' => 4,
+                    ],
+                ],
+            ]);
+
+        $response->assertOk()
+            ->assertJsonPath('message', 'Sales order updated successfully.');
+
+        $this->assertDatabaseHas('sales_orders', [
+            'id' => $order->id,
+            'code' => 'SITE-NEW-001',
+            'customer_name' => 'Updated Customer',
+            'site_id' => 'SITE-NEW-001',
+            'notes' => 'Updated notes',
+        ]);
+
+        $this->assertDatabaseMissing('sales_order_lines', [
+            'id' => $oldLine->id,
+        ]);
+
+        $this->assertDatabaseHas('sales_order_lines', [
+            'sales_order_id' => $order->id,
+            'item_sku' => 'NEW-SKU-001',
+            'item_quantity' => 4,
+        ]);
+    }
+
+    public function test_sales_user_can_delete_open_sales_order(): void
+    {
+        $user = User::factory()->create([
+            'role' => User::ROLE_SALES,
+        ]);
+
+        $item = Item::query()->create([
+            'sku' => 'DELETE-SKU-001',
+            'name' => 'Delete Item',
+            'unit' => 'pcs',
+            'created_by' => $user->id,
+        ]);
+
+        $order = SalesOrder::query()->create([
+            'code' => 'SITE-DELETE-001',
+            'customer_name' => 'Delete Customer',
+            'site_id' => 'SITE-DELETE-001',
+            'order_date' => now()->toDateString(),
+            'status' => 'open',
+            'created_by' => $user->id,
+        ]);
+
+        $order->lines()->create([
+            'item_sku' => $item->sku,
+            'item_quantity' => 2,
+            'shipped_quantity' => 0,
+        ]);
+
+        $response = $this->actingAs($user)->deleteJson("/orders/{$order->id}");
+
+        $response->assertOk()
+            ->assertJsonPath('message', 'Sales order deleted successfully.');
+
+        $this->assertDatabaseMissing('sales_orders', [
+            'id' => $order->id,
+        ]);
+
+        $this->assertDatabaseMissing('sales_order_lines', [
+            'sales_order_id' => $order->id,
+        ]);
+    }
+
     public function test_create_sales_order_fails_without_site_id(): void
     {
         $user = User::factory()->create([

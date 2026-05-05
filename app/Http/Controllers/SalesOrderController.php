@@ -66,8 +66,9 @@ class SalesOrderController extends Controller
         ]);
     }
 
-    public function pdf(SalesOrder $order)
+    public function pdf($order)
     {
+        $order = $this->resolveSalesOrder($order);
         $order->load(['lines.package.boms.bomItems.item', 'lines.item', 'creator:id,name']);
 
         $fileName = ($order->code ?: ('sales-order-'.$order->id)).'.pdf';
@@ -80,25 +81,7 @@ class SalesOrderController extends Controller
 
     public function store(Request $request): JsonResponse
     {
-        $validated = $request->validate([
-            'customer_name' => 'required|string|max:255',
-            'site_id' => [
-                'required',
-                'string',
-                'max:100',
-                Rule::unique('sales_orders', 'site_id'),
-            ],
-            'order_date' => 'required|date',
-            'notes' => 'nullable|string',
-            'lines' => 'required|array|min:1',
-            'lines.*.type' => 'required|in:package,loose',
-            'lines.*.package_id' => 'required_if:lines.*.type,package|nullable|exists:packages,id',
-            'lines.*.package_quantity' => 'required_if:lines.*.type,package|nullable|integer|min:1',
-            'lines.*.item_sku' => 'required_if:lines.*.type,loose|nullable|string|exists:items,sku',
-            'lines.*.item_quantity' => 'required_if:lines.*.type,loose|nullable|integer|min:1',
-        ], [
-            'site_id.unique' => 'Site ID already registered in another Sales Order.',
-        ]);
+        $validated = $this->validateSalesOrder($request);
 
         $order = DB::transaction(function () use ($validated) {
             $order = SalesOrder::create([
@@ -106,7 +89,7 @@ class SalesOrderController extends Controller
                 'customer_name' => $validated['customer_name'],
                 'site_id' => $validated['site_id'] ?? null,
                 'order_date' => $validated['order_date'],
-                'notes' => $validated['notes'],
+                'notes' => $validated['notes'] ?? null,
                 'status' => 'open',
                 'created_by' => auth()->id(),
             ]);
@@ -137,6 +120,70 @@ class SalesOrderController extends Controller
         ]);
     }
 
+    public function update(Request $request, $order): JsonResponse
+    {
+        $order = $this->resolveSalesOrder($order);
+        $this->ensureSalesOrderIsEditable($order);
+
+        $validated = $this->validateSalesOrder($request, $order);
+
+        $order = DB::transaction(function () use ($order, $validated) {
+            $order->update([
+                'code' => $validated['site_id'],
+                'customer_name' => $validated['customer_name'],
+                'site_id' => $validated['site_id'],
+                'order_date' => $validated['order_date'],
+                'notes' => $validated['notes'] ?? null,
+            ]);
+
+            $order->lines()->delete();
+
+            foreach ($validated['lines'] as $line) {
+                SalesOrderLine::create([
+                    'sales_order_id' => $order->id,
+                    'package_id' => $line['type'] === 'package' ? $line['package_id'] : null,
+                    'package_quantity' => $line['type'] === 'package' ? $line['package_quantity'] : null,
+                    'item_sku' => $line['type'] === 'loose' ? $line['item_sku'] : null,
+                    'item_quantity' => $line['type'] === 'loose' ? $line['item_quantity'] : null,
+                ]);
+            }
+
+            return $order->fresh(['lines.package', 'lines.item', 'creator']);
+        });
+
+        TransactionLog::record('sales_order_updated', [
+            'id' => $order->id,
+            'code' => $order->code,
+            'customer_name' => $order->customer_name,
+            'lines_count' => count($validated['lines']),
+        ]);
+
+        return response()->json([
+            'message' => 'Sales order updated successfully.',
+            'data' => $order,
+        ]);
+    }
+
+    public function destroy($order): JsonResponse
+    {
+        $order = $this->resolveSalesOrder($order);
+        $this->ensureSalesOrderIsEditable($order);
+
+        $logPayload = [
+            'id' => $order->id,
+            'code' => $order->code,
+            'customer_name' => $order->customer_name,
+        ];
+
+        $order->delete();
+
+        TransactionLog::record('sales_order_deleted', $logPayload);
+
+        return response()->json([
+            'message' => 'Sales order deleted successfully.',
+        ]);
+    }
+
     public function searchItem(Request $request): JsonResponse
     {
         $query = $request->input('q');
@@ -151,5 +198,48 @@ class SalesOrderController extends Controller
             ->get(['sku', 'name']);
 
         return response()->json($items);
+    }
+
+    private function validateSalesOrder(Request $request, ?SalesOrder $order = null): array
+    {
+        $siteIdRule = Rule::unique('sales_orders', 'site_id');
+        if ($order) {
+            $siteIdRule->ignore($order->id);
+        }
+
+        return $request->validate([
+            'customer_name' => 'required|string|max:255',
+            'site_id' => [
+                'required',
+                'string',
+                'max:100',
+                $siteIdRule,
+            ],
+            'order_date' => 'required|date',
+            'notes' => 'nullable|string',
+            'lines' => 'required|array|min:1',
+            'lines.*.type' => 'required|in:package,loose',
+            'lines.*.package_id' => 'required_if:lines.*.type,package|nullable|exists:packages,id',
+            'lines.*.package_quantity' => 'required_if:lines.*.type,package|nullable|integer|min:1',
+            'lines.*.item_sku' => 'required_if:lines.*.type,loose|nullable|string|exists:items,sku',
+            'lines.*.item_quantity' => 'required_if:lines.*.type,loose|nullable|integer|min:1',
+        ], [
+            'site_id.unique' => 'Site ID already registered in another Sales Order.',
+        ]);
+    }
+
+    private function ensureSalesOrderIsEditable(SalesOrder $order): void
+    {
+        abort_if($order->status !== 'open', 422, 'Only open sales orders can be changed.');
+        abort_if($order->inventoryTransactions()->exists(), 422, 'Sales order already has delivery activity and cannot be changed.');
+    }
+
+    private function resolveSalesOrder($order): SalesOrder
+    {
+        if ($order instanceof SalesOrder && $order->exists) {
+            return $order;
+        }
+
+        return SalesOrder::query()->findOrFail($order);
     }
 }

@@ -5,6 +5,24 @@ import { apiFetchJson } from '../../lib/http';
 
 const initialLine = { type: 'package', package_id: '', package_quantity: '', item_sku: '', item_quantity: '' };
 
+const toInputDate = (value) => {
+  if (!value) {
+    return new Date().toISOString().slice(0, 10);
+  }
+
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    return value;
+  }
+
+  const match = String(value).match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  if (match) {
+    return `${match[3]}-${match[2]}-${match[1]}`;
+  }
+
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? new Date().toISOString().slice(0, 10) : parsed.toISOString().slice(0, 10);
+};
+
 const SearchableSelect = ({ value, onChange, options, placeholder, className = '' }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [search, setSearch] = useState('');
@@ -113,6 +131,8 @@ export default function Orders({ packages = [], items = [], orders = [], availab
   const [errors, setErrors] = useState({});
   const [notification, setNotification] = useState(null);
   const [processing, setProcessing] = useState(false);
+  const [editingOrderId, setEditingOrderId] = useState(null);
+  const [deletingId, setDeletingId] = useState(null);
 
   const [list, setList] = useState(orders);
 
@@ -144,6 +164,65 @@ export default function Orders({ packages = [], items = [], orders = [], availab
       return { ...line, [field]: String(nextValue) };
     }));
   };
+  const resetForm = () => {
+    setEditingOrderId(null);
+    setForm({
+      customer_name: '',
+      site_id: '',
+      order_date: new Date().toISOString().slice(0, 10),
+      notes: '',
+    });
+    setLines([{ ...initialLine, package_id: packages?.[0]?.id?.toString() ?? '' }]);
+    setErrors({});
+  };
+
+  const editOrder = (order) => {
+    setEditingOrderId(order.id);
+    setForm({
+      customer_name: order.customer_name ?? '',
+      site_id: order.site_id ?? order.code ?? '',
+      order_date: toInputDate(order.order_date),
+      notes: order.notes ?? '',
+    });
+    setLines((order.lines ?? []).map((line) => ({
+      type: line.package_id ? 'package' : 'loose',
+      package_id: line.package_id ? String(line.package_id) : '',
+      package_quantity: line.package_id ? String(line.package_quantity ?? '') : '',
+      item_sku: line.package_id ? '' : (line.item_sku ?? ''),
+      item_quantity: line.package_id ? '' : String(line.item_quantity ?? ''),
+    })));
+    setErrors({});
+    setNotification(null);
+  };
+
+  const deleteOrder = async (order) => {
+    if (!confirm(`Delete sales order ${order.code}?`)) {
+      return;
+    }
+
+    setDeletingId(order.id);
+    setNotification(null);
+
+    try {
+      const { response, payload } = await apiFetchJson(`/orders/${order.id}`, {
+        method: 'DELETE',
+      });
+
+      if (response.ok) {
+        setList((prev) => prev.filter((item) => item.id !== order.id));
+        if (editingOrderId === order.id) {
+          resetForm();
+        }
+        setNotification({ type: 'success', message: payload.message ?? 'Sales order deleted.' });
+      } else {
+        setNotification({ type: 'error', message: payload.message ?? 'Failed to delete sales order.' });
+      }
+    } catch (_) {
+      setNotification({ type: 'error', message: 'Network error. Please try again.' });
+    } finally {
+      setDeletingId(null);
+    }
+  };
 
   const submit = async (e) => {
     e.preventDefault();
@@ -152,8 +231,8 @@ export default function Orders({ packages = [], items = [], orders = [], availab
     setErrors({});
 
     try {
-      const { response, payload } = await apiFetchJson('/orders', {
-        method: 'POST',
+      const { response, payload } = await apiFetchJson(editingOrderId ? `/orders/${editingOrderId}` : '/orders', {
+        method: editingOrderId ? 'PUT' : 'POST',
         body: JSON.stringify({
           customer_name: form.customer_name,
           site_id: form.site_id || null,
@@ -170,10 +249,11 @@ export default function Orders({ packages = [], items = [], orders = [], availab
       });
 
       if (response.ok) {
-        setNotification({ type: 'success', message: payload.message ?? 'Sales order submitted.' });
-        setList(prev => [payload.data, ...prev]);
-        setForm(prev => ({ ...prev, customer_name: '', site_id: '', notes: '' }));
-        setLines([{ ...initialLine, package_id: packages?.[0]?.id?.toString() ?? '' }]);
+        setNotification({ type: 'success', message: payload.message ?? (editingOrderId ? 'Sales order updated.' : 'Sales order submitted.') });
+        setList(prev => editingOrderId
+          ? prev.map((order) => (order.id === editingOrderId ? payload.data : order))
+          : [payload.data, ...prev]);
+        resetForm();
       } else if (response.status === 422) {
         setErrors(payload.errors ?? {});
       } else {
@@ -248,7 +328,9 @@ export default function Orders({ packages = [], items = [], orders = [], availab
           <div className="absolute top-0 left-0 w-full h-1.5 bg-[#1b580e]"></div>
           <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-8 gap-4">
             <div>
-              <h2 className="text-2xl font-black text-slate-800 tracking-tight uppercase">Submit Sales Order</h2>
+              <h2 className="text-2xl font-black text-slate-800 tracking-tight uppercase">
+                {editingOrderId ? 'Edit Sales Order' : 'Submit Sales Order'}
+              </h2>
               <div className="h-1 w-12 bg-emerald-500 mt-2 rounded-full"></div>
             </div>
             <Link
@@ -262,7 +344,7 @@ export default function Orders({ packages = [], items = [], orders = [], availab
 
           {!canCreate && (
             <p className="mt-4 text-sm text-slate-500">
-              Akaun ini boleh lihat order sahaja. Hanya role <span className="font-semibold">sales</span> atau <span className="font-semibold">super admin</span> boleh submit.
+              Akaun ini boleh lihat order sahaja. Hanya user dengan module <span className="font-semibold">Sales Orders</span> boleh create, update dan delete.
             </p>
           )}
 
@@ -425,13 +507,25 @@ export default function Orders({ packages = [], items = [], orders = [], availab
               />
             </div>
 
-            <button
-              type="submit"
-              disabled={processing || !databaseReady || !canCreate}
-              className="w-full bg-[#1b580e] text-white py-4 rounded-2xl text-sm font-bold disabled:opacity-50 hover:bg-emerald-950 transition-all shadow-lg shadow-emerald-900/10"
-            >
-              {processing ? 'Saving...' : 'Submit Sales Order'}
-            </button>
+            <div className="flex flex-col sm:flex-row gap-3">
+              {editingOrderId && (
+                <button
+                  type="button"
+                  onClick={resetForm}
+                  disabled={processing}
+                  className="w-full sm:w-auto border border-slate-200 bg-white text-slate-700 px-6 py-4 rounded-2xl text-sm font-bold disabled:opacity-50 hover:bg-slate-50 transition-all"
+                >
+                  Cancel Edit
+                </button>
+              )}
+              <button
+                type="submit"
+                disabled={processing || !databaseReady || !canCreate}
+                className="w-full bg-[#1b580e] text-white py-4 rounded-2xl text-sm font-bold disabled:opacity-50 hover:bg-emerald-950 transition-all shadow-lg shadow-emerald-900/10"
+              >
+                {processing ? 'Saving...' : editingOrderId ? 'Update Sales Order' : 'Submit Sales Order'}
+              </button>
+            </div>
           </form>
         </div>
 
@@ -455,11 +549,11 @@ export default function Orders({ packages = [], items = [], orders = [], availab
               <tbody className="divide-y divide-slate-50">
                 {list.map((order) => (
                   <tr key={order.id} className="group hover:bg-emerald-50/30 transition-colors">
-                    <td className="px-6 py-5 align-top">
+                    <td className="px-6 py-5 align-middle">
                       <p className="text-sm font-black text-slate-900 tracking-tight">{order.code}</p>
                       <p className="text-[10px] text-slate-400 font-bold mt-1 uppercase">{order.order_date}</p>
                     </td>
-                    <td className="px-6 py-5 align-top">
+                    <td className="px-6 py-5 align-middle">
                       <p className="text-sm font-black text-emerald-800">{order.customer_name}</p>
                       {order.site_id && (
                         <div className="flex items-center gap-1 mt-1">
@@ -470,7 +564,7 @@ export default function Orders({ packages = [], items = [], orders = [], availab
                         </div>
                       )}
                     </td>
-                    <td className="px-6 py-5 align-top">
+                    <td className="px-6 py-5 align-middle">
                       <div className="flex items-center gap-2">
                         <div className="w-6 h-6 rounded-full bg-slate-100 flex items-center justify-center text-[10px] font-black text-slate-400 border border-slate-200 uppercase">
                           {order.creator?.name?.charAt(0) || '?'}
@@ -478,7 +572,7 @@ export default function Orders({ packages = [], items = [], orders = [], availab
                         <p className="text-xs font-bold text-slate-600">{order.creator?.name || 'Unknown'}</p>
                       </div>
                     </td>
-                    <td className="px-6 py-5 align-top">
+                    <td className="px-6 py-5 align-middle">
                       <div className="space-y-1.5">
                         {order.lines?.map((line) => (
                           <div key={line.id} className="flex items-center gap-2 text-[11px]">
@@ -493,7 +587,7 @@ export default function Orders({ packages = [], items = [], orders = [], availab
                         ))}
                       </div>
                     </td>
-                    <td className="px-6 py-5 align-top">
+                    <td className="px-6 py-5 align-middle">
                       <span className={`inline-flex text-[9px] font-black uppercase tracking-widest px-2.5 py-1 rounded-lg border ${order.status === 'fulfilled'
                         ? 'bg-emerald-50 text-emerald-600 border-emerald-100'
                         : order.status === 'partial'
@@ -503,18 +597,39 @@ export default function Orders({ packages = [], items = [], orders = [], availab
                         {order.status === 'fulfilled' ? 'Shipped' : order.status}
                       </span>
                     </td>
-                    <td className="px-6 py-5 align-top text-right">
-                      <a
-                        href={`/orders/${order.id}/pdf`}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="inline-flex items-center gap-2 rounded-xl border border-rose-100 bg-white px-3 py-2 text-[10px] font-black uppercase tracking-widest text-rose-600 transition-all hover:border-rose-200 hover:bg-rose-50 active:scale-95"
-                      >
-                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-3.5 w-3.5">
-                          <path d="M4.5 2A1.5 1.5 0 0 0 3 3.5v13A1.5 1.5 0 0 0 4.5 18h11a1.5 1.5 0 0 0 1.5-1.5V7.621a1.5 1.5 0 0 0-.44-1.06l-4.12-4.122A1.5 1.5 0 0 0 11.378 2H4.5Zm2.25 8.5a.75.75 0 0 0 0 1.5h6.5a.75.75 0 0 0 0-1.5h-6.5Zm0 3a.75.75 0 0 0 0 1.5h6.5a.75.75 0 0 0 0-1.5h-6.5Z" />
-                        </svg>
-                        PDF
-                      </a>
+                    <td className="px-6 py-5 align-middle text-right">
+                      <div className="flex flex-wrap items-center justify-end gap-2">
+                        {canCreate && order.status === 'open' && (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => editOrder(order)}
+                              className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-[10px] font-black uppercase tracking-widest text-slate-700 transition-all hover:border-emerald-200 hover:bg-emerald-50 hover:text-emerald-700 active:scale-95"
+                            >
+                              Edit
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => deleteOrder(order)}
+                              disabled={deletingId === order.id}
+                              className="inline-flex items-center gap-2 rounded-xl border border-red-100 bg-white px-3 py-2 text-[10px] font-black uppercase tracking-widest text-red-600 transition-all hover:border-red-200 hover:bg-red-50 active:scale-95 disabled:opacity-50"
+                            >
+                              {deletingId === order.id ? '...' : 'Delete'}
+                            </button>
+                          </>
+                        )}
+                        <a
+                          href={`/orders/${order.id}/pdf`}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex items-center gap-2 rounded-xl border border-rose-100 bg-white px-3 py-2 text-[10px] font-black uppercase tracking-widest text-rose-600 transition-all hover:border-rose-200 hover:bg-rose-50 active:scale-95"
+                        >
+                          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-3.5 w-3.5">
+                            <path d="M4.5 2A1.5 1.5 0 0 0 3 3.5v13A1.5 1.5 0 0 0 4.5 18h11a1.5 1.5 0 0 0 1.5-1.5V7.621a1.5 1.5 0 0 0-.44-1.06l-4.12-4.122A1.5 1.5 0 0 0 11.378 2H4.5Zm2.25 8.5a.75.75 0 0 0 0 1.5h6.5a.75.75 0 0 0 0-1.5h-6.5Zm0 3a.75.75 0 0 0 0 1.5h6.5a.75.75 0 0 0 0-1.5h-6.5Z" />
+                          </svg>
+                          PDF
+                        </a>
+                      </div>
                     </td>
                   </tr>
                 ))}

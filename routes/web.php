@@ -94,6 +94,8 @@ Route::middleware('auth')->group(function () use ($procurementScopes) {
         Route::get('/orders/{order}/pdf', [SalesOrderController::class, 'pdf'])->name('sales.orders.pdf');
         Route::get('/orders/search-item', [SalesOrderController::class, 'searchItem'])->name('sales.orders.search.item');
         Route::post('/orders', [SalesOrderController::class, 'store'])->name('sales.orders.store');
+        Route::put('/orders/{order}', [SalesOrderController::class, 'update'])->name('sales.orders.update');
+        Route::delete('/orders/{order}', [SalesOrderController::class, 'destroy'])->name('sales.orders.destroy');
     });
 
     Route::middleware('module:procurement')->group(function () use ($procurementScopes) {

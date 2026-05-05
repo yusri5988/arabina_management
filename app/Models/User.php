@@ -85,6 +85,10 @@ class User extends Authenticatable
             return true;
         }
 
+        if ($this->role === self::ROLE_SALES && $module === 'sales_orders') {
+            return true;
+        }
+
         if (!Schema::hasColumn($this->getTable(), 'module_permissions')) {
             // Backward-compatible fallback before migration is applied.
             return true;
