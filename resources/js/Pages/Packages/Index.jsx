@@ -32,7 +32,7 @@ const formatQuantity = (value) => {
   return Number.isInteger(numeric) ? String(numeric) : numeric.toFixed(1);
 };
 
-const normalizeBomsFromPackage = (pkg) => {
+const normalizeBomsFromPackage = (pkg, items = []) => {
   const fromBoms = (pkg.boms ?? []).reduce((acc, bom) => {
     acc[bom.type] = (bom.bom_items ?? []).map((line) => ({
       item_id: String(line.item_id),
@@ -41,15 +41,43 @@ const normalizeBomsFromPackage = (pkg) => {
     return acc;
   }, {});
 
-  const fallbackHardware = (pkg.package_items ?? []).map((line) => ({
-    item_id: String(line.item_id),
-    quantity: String(line.quantity),
-  }));
+  const hasAnyBom = Object.values(fromBoms).some((lines) => lines.length > 0);
+
+  if (hasAnyBom) {
+    return {
+      cabin: fromBoms.cabin?.length ? fromBoms.cabin : [createEmptyLine()],
+      hardware: fromBoms.hardware?.length ? fromBoms.hardware : [createEmptyLine()],
+      hardware_site: fromBoms.hardware_site?.length ? fromBoms.hardware_site : [createEmptyLine()],
+    };
+  }
+
+  const itemScopeMap = (items ?? []).reduce((acc, item) => {
+    acc[item.id] = item.bom_scope || 'hardware';
+    return acc;
+  }, {});
+
+  const distributed = (pkg.package_items ?? []).reduce((acc, line) => {
+    const scope = itemScopeMap[line.item_id];
+    if (!scope) {
+      console.warn(`[BOM Fallback] Item ${line.item_id} not found in master; skipping.`);
+      return acc;
+    }
+    if (!['cabin', 'hardware', 'hardware_site'].includes(scope)) {
+      console.warn(`[BOM Fallback] Item ${line.item_id} has invalid bom_scope "${scope}"; skipping.`);
+      return acc;
+    }
+    if (!acc[scope]) acc[scope] = [];
+    acc[scope].push({
+      item_id: String(line.item_id),
+      quantity: String(line.quantity),
+    });
+    return acc;
+  }, {});
 
   return {
-    cabin: fromBoms.cabin?.length ? fromBoms.cabin : [createEmptyLine()],
-    hardware: fromBoms.hardware?.length ? fromBoms.hardware : (fallbackHardware.length ? fallbackHardware : [createEmptyLine()]),
-    hardware_site: fromBoms.hardware_site?.length ? fromBoms.hardware_site : [createEmptyLine()],
+    cabin: distributed.cabin?.length ? distributed.cabin : [createEmptyLine()],
+    hardware: distributed.hardware?.length ? distributed.hardware : [createEmptyLine()],
+    hardware_site: distributed.hardware_site?.length ? distributed.hardware_site : [createEmptyLine()],
   };
 };
 
@@ -126,7 +154,7 @@ export default function Index({ items, packages, schemaReady = true }) {
       code: pkg.code,
       name: pkg.name,
       is_active: Boolean(pkg.is_active),
-      boms: normalizeBomsFromPackage(pkg),
+      boms: normalizeBomsFromPackage(pkg, items),
     });
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
@@ -140,7 +168,7 @@ export default function Index({ items, packages, schemaReady = true }) {
       code: buildDuplicateCode(pkg.code),
       name: `${pkg.name} Copy`,
       is_active: true,
-      boms: normalizeBomsFromPackage(pkg),
+      boms: normalizeBomsFromPackage(pkg, items),
     });
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
@@ -441,7 +469,14 @@ export default function Index({ items, packages, schemaReady = true }) {
                 <div className="space-y-3">
                   {BOM_TYPES.map((bomType) => {
                     const bom = (pkg.boms ?? []).find((b) => b.type === bomType.key);
-                    const lines = bom?.bom_items ?? [];
+                    let lines = bom?.bom_items ?? [];
+                    if (lines.length === 0 && pkg.package_items?.length > 0) {
+                      const itemScopeMap = (items ?? []).reduce((m, item) => { m[item.id] = item.bom_scope || 'hardware'; return m; }, {});
+                      lines = (pkg.package_items ?? [])
+                        .filter((pl) => ['cabin', 'hardware', 'hardware_site'].includes(itemScopeMap[pl.item_id]))
+                        .filter((pl) => itemScopeMap[pl.item_id] === bomType.key)
+                        .map((pl) => ({ id: pl.id, item_id: pl.item_id, quantity: pl.quantity, item: pl.item }));
+                    }
                     return (
                       <div key={`${pkg.id}-${bomType.key}`} className="rounded-xl border border-slate-100 bg-slate-50 px-3 py-2.5">
                         <p className="text-[10px] font-black uppercase tracking-wider text-slate-500 mb-1.5">{bomType.label}</p>

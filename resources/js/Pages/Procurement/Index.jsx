@@ -338,6 +338,29 @@ export default function ProcurementIndex({
     }));
   };
 
+  const setNewOrderPackageQuantity = (index, value) => {
+    const numValue = Math.max(1, parseInt(value) || 1);
+    setNewOrderPackageLines(prev => prev.map((line, i) => {
+      if (i === index) {
+        return { ...line, quantity: numValue };
+      }
+      return line;
+    }));
+  };
+
+  const setNewOrderSkuLineQuantity = (itemId, value) => {
+    const numValue = normalizeSkuQuantity(value);
+    if (numValue <= 0) {
+      removeNewOrderSkuLine(itemId);
+      return;
+    }
+    setNewOrderSkuLines((prev) => prev.map((line) => (
+      Number(line.item_id) === Number(itemId)
+        ? { ...line, quantity: numValue }
+        : line
+    )));
+  };
+
   const handleSkuSupplierChange = (itemId, supplierId) => {
     setSkuSuppliers(prev => ({ ...prev, [itemId]: supplierId }));
   };
@@ -688,10 +711,15 @@ export default function ProcurementIndex({
                         {newOrderPackageLines.map((line, idx) => (
                           <div key={idx} className="flex items-center gap-3 bg-blue-50 border border-blue-100 px-4 py-2 rounded-2xl shadow-sm">
                             <span className="text-xs font-black text-blue-800">{line.package_code}</span>
-                            <div className="flex items-center gap-2 bg-white/50 rounded-lg p-0.5 border border-blue-200/50">
-                              <button onClick={() => updateNewOrderPackageQuantity(idx, -1)} className="w-6 h-6 flex items-center justify-center font-black text-blue-600">-</button>
-                              <span className="text-[11px] font-black min-w-[20px] text-center">{line.quantity}</span>
-                              <button onClick={() => updateNewOrderPackageQuantity(idx, 1)} className="w-6 h-6 flex items-center justify-center font-black text-blue-600">+</button>
+                            <div className="flex items-center gap-1 bg-white/50 rounded-lg p-0.5 border border-blue-200/50 focus-within:ring-2 focus-within:ring-blue-400 focus-within:bg-white transition-all">
+                              <button type="button" onClick={() => updateNewOrderPackageQuantity(idx, -1)} className="w-6 h-6 flex items-center justify-center font-black text-blue-600 hover:bg-blue-100 rounded-md">-</button>
+                              <input
+                                type="number"
+                                value={line.quantity}
+                                onChange={(e) => setNewOrderPackageQuantity(idx, e.target.value)}
+                                className="w-10 bg-transparent border-0 p-0 text-center text-[11px] font-black text-blue-900 focus:ring-0 no-spinner"
+                              />
+                              <button type="button" onClick={() => updateNewOrderPackageQuantity(idx, 1)} className="w-6 h-6 flex items-center justify-center font-black text-blue-600 hover:bg-blue-100 rounded-md">+</button>
                             </div>
                             <button onClick={() => removeNewOrderPackageLine(idx)} className="text-blue-300 hover:text-red-500 transition-colors">
                               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4"><path d="M6.28 5.22a.75.75 0 0 0-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 1 0 1.06 1.06L10 11.06l3.72 3.72a.75.75 0 1 0 1.06-1.06L11.06 10l3.72-3.72a.75.75 0 0 0-1.06-1.06L10 8.94 6.28 5.22Z" /></svg>
@@ -705,8 +733,9 @@ export default function ProcurementIndex({
                           return (
                             <div key={`sku-active-${selectedId}`} className="flex items-center gap-3 bg-emerald-50 border border-emerald-100 px-4 py-2 rounded-2xl shadow-sm">
                               <span className="text-xs font-black text-emerald-800">{skuLine.sku}</span>
-                              <div className="flex items-center gap-2 bg-white/50 rounded-lg p-0.5 border border-emerald-200/50">
+                              <div className="flex items-center gap-1 bg-white/50 rounded-lg p-0.5 border border-emerald-200/50 focus-within:ring-2 focus-within:ring-emerald-400 focus-within:bg-white transition-all">
                                 <button
+                                  type="button"
                                   onClick={() => {
                                     const next = Math.max(0, normalizeSkuQuantity(Number(skuLine.quantity || 0) - 1));
                                     if (next === 0) {
@@ -719,12 +748,18 @@ export default function ProcurementIndex({
                                         : line
                                     )));
                                   }}
-                                  className="w-6 h-6 flex items-center justify-center font-black text-emerald-600"
+                                  className="w-6 h-6 flex items-center justify-center font-black text-emerald-600 hover:bg-emerald-100 rounded-md"
                                 >
                                   -
                                 </button>
-                                <span className="text-[11px] font-black min-w-[20px] text-center">{skuLine.quantity}</span>
+                                <input
+                                  type="number"
+                                  value={skuLine.quantity}
+                                  onChange={(e) => setNewOrderSkuLineQuantity(skuLine.item_id, e.target.value)}
+                                  className="w-10 bg-transparent border-0 p-0 text-center text-[11px] font-black text-emerald-900 focus:ring-0 no-spinner"
+                                />
                                 <button
+                                  type="button"
                                   onClick={() => {
                                     const next = normalizeSkuQuantity(Number(skuLine.quantity || 0) + 1);
                                     setNewOrderSkuLines((prev) => prev.map((line) => (
@@ -733,7 +768,7 @@ export default function ProcurementIndex({
                                         : line
                                     )));
                                   }}
-                                  className="w-6 h-6 flex items-center justify-center font-black text-emerald-600"
+                                  className="w-6 h-6 flex items-center justify-center font-black text-emerald-600 hover:bg-emerald-100 rounded-md"
                                 >
                                   +
                                 </button>
