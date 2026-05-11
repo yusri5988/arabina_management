@@ -495,6 +495,12 @@ export default function ProcurementIndex({
 
   const createDraft = async () => {
     setNotification(null);
+
+    if (!newOrderPoNumber.trim()) {
+      setNotification({ type: 'error', message: 'Please enter PO number before generating POs.' });
+      return;
+    }
+
     setProcessingCreate(true);
 
     try {
@@ -675,10 +681,22 @@ export default function ProcurementIndex({
                 </div>
 
                 <div className="pt-4 px-6 md:pt-5 md:px-8 pb-8 space-y-8">
+                  <div className="pb-8 border-b border-slate-100">
+                    <label className="block text-[11px] font-black text-slate-500 uppercase tracking-widest mb-3 px-1">Step 1: PO Number</label>
+                    <input
+                      type="text"
+                      value={newOrderPoNumber}
+                      onChange={(e) => setNewOrderPoNumber(e.target.value.toUpperCase())}
+                      className="w-full rounded-2xl border-slate-200 text-sm font-medium focus:ring-slate-500/10 focus:border-slate-400 bg-slate-50/30 p-4"
+                      placeholder="Enter PO number manually, e.g. PO-20260312-ABCD"
+                      required
+                    />
+                  </div>
+
                   {/* Unified Selection Header */}
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pb-8 border-b border-slate-100">
                     <div className="space-y-3">
-                      <label className="block text-[11px] font-black text-slate-500 uppercase tracking-widest ml-1">Step 1: Choose Package</label>
+                      <label className="block text-[11px] font-black text-slate-500 uppercase tracking-widest ml-1">Step 2: Choose Package</label>
                       <CustomSelect
                         placeholder="Select a package to explode items..."
                         value={null}
@@ -790,8 +808,8 @@ export default function ProcurementIndex({
                         <h3 className="text-11px font-black text-slate-800 uppercase tracking-[0.2em] flex items-center gap-3">
                           <span className="w-2 h-6 bg-emerald-500 rounded-full animate-pulse"></span>
                           {activeFlow.key === 'hardware'
-                            ? `Step 2: Assign Suppliers for ${consolidatedSkus.length} Items`
-                            : `Step 2: Review ${consolidatedSkus.length} Items`
+                            ? `Step 3: Assign Suppliers for ${consolidatedSkus.length} Items`
+                            : `Step 3: Review ${consolidatedSkus.length} Items`
                           }
                         </h3>
                         <span className="text-[9px] font-black text-emerald-600 bg-emerald-50 px-3 py-1 rounded-full border border-emerald-100">Explosion Success</span>
@@ -866,27 +884,14 @@ export default function ProcurementIndex({
                   ) : (
                     <div className="py-20 text-center space-y-4 bg-slate-50/50 rounded-[3rem] border border-dashed border-slate-200">
                       <div className="text-4xl">🛒</div>
-                      <p className="text-slate-400 font-bold text-sm uppercase tracking-[0.2em]">Choose from Step 1 to start</p>
+                      <p className="text-slate-400 font-bold text-sm uppercase tracking-[0.2em]">Choose from Step 2 to start</p>
                     </div>
                   )}
 
                   <div className="mt-12 pt-8 border-t border-slate-100">
-                    <div className="mb-6">
-                      <label className="block text-[11px] font-black text-slate-900 uppercase tracking-widest mb-3 px-1">PO Number</label>
-                      <input
-                        type="text"
-                        value={newOrderPoNumber}
-                        onChange={(e) => setNewOrderPoNumber(e.target.value.toUpperCase())}
-                        className="w-full rounded-2xl border-slate-200 text-sm font-medium focus:ring-slate-500/10 focus:border-slate-400 bg-slate-50/30 p-4"
-                        placeholder="Enter PO number manually, e.g. PO-20260312-ABCD"
-                      />
-                      <p className="mt-2 px-1 text-[10px] font-bold uppercase tracking-wider text-slate-400">
-                        Leave blank to auto-generate.
-                      </p>
-                    </div>
                     <label className="block text-[11px] font-black text-slate-900 uppercase tracking-widest mb-3 px-1">Internal Procurement Notes</label>
                     <textarea value={newOrderNotes} onChange={(e) => setNewOrderNotes(e.target.value)} rows="3" className="w-full rounded-2xl border-slate-200 text-sm font-medium focus:ring-slate-500/10 focus:border-slate-400 bg-slate-50/30 p-4 mb-8" placeholder="Enter special instructions or context for this order..."></textarea>
-                    <button onClick={createDraft} disabled={!databaseReady || !canManage || processingCreate || consolidatedSkus.length === 0} className="group relative w-full overflow-hidden rounded-[2rem] bg-emerald-600 p-6 text-white shadow-xl hover:bg-emerald-700 disabled:opacity-50 active:scale-[0.98] transition-all">
+                    <button onClick={createDraft} disabled={!databaseReady || !canManage || processingCreate || consolidatedSkus.length === 0 || !newOrderPoNumber.trim()} className="group relative w-full overflow-hidden rounded-[2rem] bg-emerald-600 p-6 text-white shadow-xl hover:bg-emerald-700 disabled:opacity-50 active:scale-[0.98] transition-all">
                       <div className="relative z-10 flex items-center justify-center gap-4">
                         <span className="text-sm font-black uppercase tracking-[0.25em]">{processingCreate ? 'Processing...' : 'Finalize & Generate POs'}</span>
                         {!processingCreate && <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={3} stroke="currentColor" className="w-5 h-5 group-hover:translate-x-2 transition-transform"><path strokeLinecap="round" strokeLinejoin="round" d="M13.5 4.5 21 12m0 0-7.5 7.5M21 12H3" /></svg>}

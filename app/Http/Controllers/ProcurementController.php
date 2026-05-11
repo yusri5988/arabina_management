@@ -227,7 +227,7 @@ class ProcurementController extends Controller
             ],
             'sku_lines.*.unit' => 'nullable|string|max:50',
             'sku_suppliers' => 'nullable|array', // { item_id => supplier_id }
-            'po_number' => 'nullable|string|max:255|unique:procurement_orders,code',
+            'po_number' => 'required|string|max:255|unique:procurement_orders,code',
             'notes' => 'nullable|string|max:500',
         ]);
 
