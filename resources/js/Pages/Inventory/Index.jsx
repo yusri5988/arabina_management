@@ -295,6 +295,7 @@ export default function Index({ items }) {
         showNotification('success', 'Item updated successfully.');
       } else if (response.status === 422) {
         setEditErrors(payload.errors);
+        showNotification('error', 'Validation failed. Please check the fields.');
       } else {
         showNotification('error', payload.message ?? 'Failed to update item.');
       }
@@ -767,7 +768,7 @@ export default function Index({ items }) {
                             </td>
                             <td className="px-4 py-2 text-right whitespace-nowrap">
                               <button type="button" onClick={() => saveEdit(item.id)} disabled={processing} className="inline-flex items-center px-4 py-2 rounded-xl bg-emerald-600 text-white text-[10px] font-black uppercase tracking-wider hover:bg-emerald-700 disabled:opacity-50 transition-all mr-1.5 shadow-sm shadow-emerald-100">
-                                Save
+                                {processing ? 'Saving...' : 'Save'}
                               </button>
                               <button type="button" onClick={cancelEdit} className="inline-flex items-center px-4 py-2 rounded-xl bg-slate-100 text-slate-600 text-[10px] font-black uppercase tracking-wider hover:bg-slate-200 transition-all">
                                 Cancel
