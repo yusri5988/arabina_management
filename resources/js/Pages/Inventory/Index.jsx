@@ -273,12 +273,15 @@ export default function Index({ items }) {
     setProcessing(true);
 
     try {
+      const tokenRes = await fetch('/csrf-token');
+      const tokenData = await tokenRes.json();
+
       const response = await fetch(`/items/${id}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
           Accept: 'application/json',
-          'X-CSRF-TOKEN': csrfToken,
+          'X-CSRF-TOKEN': tokenData.token,
           'X-Requested-With': 'XMLHttpRequest',
         },
         body: JSON.stringify(editData),
