@@ -1,6 +1,7 @@
 import { Head, usePage } from '@inertiajs/react';
 import { useMemo, useState } from 'react';
 import AuthenticatedLayout from '../../Layouts/AuthenticatedLayout';
+import FloatingAlert from '../../components/FloatingAlert';
 
 export default function Edit({ user }) {
   const { flash } = usePage().props;
@@ -106,15 +107,11 @@ export default function Edit({ user }) {
       <Head title="Profile" />
 
       <div className="space-y-6">
-        {notification && (
-          <div className={`rounded-2xl border px-4 py-3 text-sm shadow-sm ${
-            notification.type === 'success'
-              ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
-              : 'border-red-200 bg-red-50 text-red-700'
-          }`}>
-            {notification.message}
-          </div>
-        )}
+        <FloatingAlert
+          type={notification?.type}
+          message={notification?.message}
+          onClose={() => setNotification(null)}
+        />
 
         <div className="bg-white rounded-[2rem] shadow-sm border border-slate-100 p-6 md:p-8">
           <h2 className="text-lg font-bold text-slate-800 border-b border-slate-100 pb-4">Profile Information</h2>

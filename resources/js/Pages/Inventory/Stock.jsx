@@ -1,5 +1,6 @@
 import { Head, Link, router } from '@inertiajs/react';
 import QtyInput from '../../components/QtyInput.jsx';
+import FloatingAlert from '../../components/FloatingAlert.jsx';
 import { useEffect, useMemo, useState } from 'react';
 import AuthenticatedLayout from '../../Layouts/AuthenticatedLayout';
 import { apiFetchJson } from '../../lib/http.js';
@@ -297,14 +298,7 @@ export default function Stock({ items, packages, salesOrders = [], type = 'in', 
         if (isOut) {
           if (completionAction === 'partial_done') {
             window.sessionStorage.setItem('stock_out_partial_done_success', '1');
-            router.reload();
-            return;
-          } else {
-            router.reload();
-            return;
           }
-        } else {
-          router.reload();
         }
       } else if (response.status === 422) {
         setErrors(result.errors ?? {});
@@ -323,12 +317,16 @@ export default function Stock({ items, packages, salesOrders = [], type = 'in', 
       <Head title={isOut ? 'Delivery Order' : 'Stock In'} />
 
       <div className="space-y-6">
-        {notification && (
-          <div className={`rounded-2xl border px-4 py-3 text-sm shadow-sm ${notification.type === 'success' ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-red-200 bg-red-50 text-red-700'
-            }`}>
-            {notification.message}
-          </div>
-        )}
+        <FloatingAlert
+          type={notification?.type}
+          message={notification?.message}
+          onClose={() => {
+            setNotification(null);
+            if (isOut) {
+              router.reload();
+            }
+          }}
+        />
 
         <div className="bg-white rounded-[2rem] shadow-sm border border-slate-100 p-6 md:p-8">
           <div className="border-b border-slate-100 pb-4 flex items-center justify-between gap-3">

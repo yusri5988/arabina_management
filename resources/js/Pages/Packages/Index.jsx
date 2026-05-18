@@ -2,6 +2,7 @@ import { Head } from '@inertiajs/react';
 import { useCallback, useMemo, useRef, useState } from 'react';
 import AuthenticatedLayout from '../../Layouts/AuthenticatedLayout';
 import QtyInput from '../../components/QtyInput.jsx';
+import FloatingAlert from '../../components/FloatingAlert.jsx';
 
 const BOM_TYPES = [
   { key: 'cabin', label: 'BOM Cabin' },
@@ -345,11 +346,11 @@ export default function Index({ items, packages, schemaReady = true }) {
     <AuthenticatedLayout title="Package Setup" backUrl="__back__">
       <Head title="Package Setup" />
       <div className="space-y-6">
-        {notification && (
-          <div className={`rounded-2xl border px-4 py-3 text-sm shadow-sm ${notification.type === 'success' ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-red-200 bg-red-50 text-red-700'}`}>
-            {notification.message}
-          </div>
-        )}
+        <FloatingAlert
+          type={notification?.type}
+          message={notification?.message}
+          onClose={() => setNotification(null)}
+        />
 
         {!schemaReady && (
           <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 shadow-sm">

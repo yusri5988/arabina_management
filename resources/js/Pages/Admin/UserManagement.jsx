@@ -2,6 +2,7 @@ import { Head } from '@inertiajs/react';
 import { useMemo, useState } from 'react';
 import AuthenticatedLayout from '../../Layouts/AuthenticatedLayout';
 import { apiFetchJson } from '../../lib/http';
+import FloatingAlert from '../../components/FloatingAlert';
 import { 
   UsersIcon, 
   UserPlusIcon, 
@@ -244,16 +245,11 @@ export default function UserManagement({ users, moduleOptions = [] }) {
           </button>
         </div>
 
-        {notification && (
-          <div className={`animate-in fade-in slide-in-from-top-4 duration-300 rounded-2xl border px-4 py-3 flex items-center gap-3 shadow-sm ${
-            notification.type === 'success' 
-            ? 'bg-emerald-50 border-emerald-100 text-emerald-700' 
-            : 'bg-red-50 border-red-100 text-red-700'
-          }`}>
-            <div className={`w-2 h-2 rounded-full ${notification.type === 'success' ? 'bg-emerald-500' : 'bg-red-500'}`} />
-            <p className="text-sm font-bold">{notification.message}</p>
-          </div>
-        )}
+        <FloatingAlert
+          type={notification?.type}
+          message={notification?.message}
+          onClose={() => setNotification(null)}
+        />
 
         {/* Create/Edit Form Panel */}
         {showForm && (

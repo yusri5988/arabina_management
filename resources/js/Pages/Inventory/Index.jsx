@@ -1,6 +1,7 @@
 import { Head, router } from '@inertiajs/react';
 import { useMemo, useState, useRef, useCallback, useEffect } from 'react';
 import AuthenticatedLayout from '../../Layouts/AuthenticatedLayout';
+import FloatingAlert from '../../components/FloatingAlert';
 
 const CustomSelect = ({ value, onChange, options, className = "" }) => {
   const [isOpen, setIsOpen] = useState(false);
@@ -196,7 +197,6 @@ export default function Index({ items }) {
 
   const showNotification = (type, message) => {
     setNotification({ type, message });
-    setTimeout(() => setNotification(null), 4000);
   };
 
   const parseResponsePayload = async (response) => {
@@ -445,12 +445,11 @@ export default function Index({ items }) {
       <Head title="Inventory" />
 
       <div className="space-y-8">
-        {notification && (
-          <div className={`rounded-2xl border px-4 py-3 text-sm shadow-sm ${notification.type === 'success' ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-red-200 bg-red-50 text-red-700'
-            }`}>
-            {notification.message}
-          </div>
-        )}
+        <FloatingAlert
+          type={notification?.type}
+          message={notification?.message}
+          onClose={() => setNotification(null)}
+        />
 
         {/* Registration Form */}
         <div className="bg-white rounded-[2rem] shadow-sm border border-slate-100 pt-4 px-6 pb-6 md:pt-5 md:px-8 md:pb-8">

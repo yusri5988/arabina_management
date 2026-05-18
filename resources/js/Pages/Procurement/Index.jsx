@@ -2,6 +2,7 @@ import { Head, usePage, Link } from '@inertiajs/react';
 import { useState, useRef, useEffect, useMemo } from 'react';
 import AuthenticatedLayout from '../../Layouts/AuthenticatedLayout';
 import { apiFetchJson } from '../../lib/http';
+import FloatingAlert from '../../components/FloatingAlert';
 
 const BOM_GROUPS = [
   { key: 'cabin', label: 'BOM Cabin' },
@@ -526,11 +527,6 @@ export default function ProcurementIndex({
         setNewOrderPoNumber('');
         setNewOrderNotes('');
         setSkuSuppliers({});
-
-        // Refresh page to update history and suggestions
-        setTimeout(() => {
-          window.location.reload();
-        }, 1000);
       } else {
         setNotification({ type: 'error', message: payload.message ?? 'Failed to create draft.' });
       }
@@ -575,11 +571,16 @@ export default function ProcurementIndex({
             </div>
           )}
 
-          {notification && (
-            <div className={`rounded-2xl border px-4 py-3 text-sm shadow-sm animate-in fade-in slide-in-from-top-2 duration-300 ${notification.type === 'success' ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-red-200 bg-red-50 text-red-700'}`}>
-              {notification.message}
-            </div>
-          )}
+          <FloatingAlert
+            type={notification?.type}
+            message={notification?.message}
+            onClose={() => {
+              setNotification(null);
+              if (notification?.type === 'success') {
+                window.location.reload();
+              }
+            }}
+          />
 
           {canManage && (
             <div className="flex flex-col gap-8">

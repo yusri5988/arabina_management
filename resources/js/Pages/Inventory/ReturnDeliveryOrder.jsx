@@ -1,6 +1,7 @@
 import { Head, router } from '@inertiajs/react';
 import { useMemo, useState } from 'react';
 import AuthenticatedLayout from '../../Layouts/AuthenticatedLayout';
+import FloatingAlert from '../../components/FloatingAlert';
 
 const normalizeQuantity = (value) => Math.round(Number(value || 0) * 10) / 10;
 
@@ -92,7 +93,6 @@ export default function ReturnDeliveryOrder({ order, skuLines = [] }) {
 
       setNotice({ type: 'success', message: result.message ?? 'Return SKU submitted successfully.' });
       setReturnMap({});
-      router.visit('/items/stock/out/delivery-orders');
     } catch (error) {
       setNotice({ type: 'error', message: 'Network error. Please try again.' });
     } finally {
@@ -125,15 +125,16 @@ export default function ReturnDeliveryOrder({ order, skuLines = [] }) {
           <p className="text-xs text-slate-500">SO: {order?.sales_order_code} | Customer: {order?.customer_name}</p>
         </div>
 
-        {notice && (
-          <div className={`rounded-2xl border px-4 py-3 text-sm font-semibold ${
-            notice.type === 'success'
-              ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
-              : 'border-rose-200 bg-rose-50 text-rose-700'
-          }`}>
-            {notice.message}
-          </div>
-        )}
+        <FloatingAlert
+          type={notice?.type}
+          message={notice?.message}
+          onClose={() => {
+            setNotice(null);
+            if (notice?.type === 'success') {
+              router.visit('/items/stock/out/delivery-orders');
+            }
+          }}
+        />
 
         {/* Unified Box for DO SKU List and Return List */}
         <div className="bg-white rounded-3xl border border-slate-100 overflow-hidden shadow-sm">
