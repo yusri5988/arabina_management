@@ -1,6 +1,8 @@
 import { Head, router } from '@inertiajs/react';
 import { useMemo, useState } from 'react';
 import AuthenticatedLayout from '../../Layouts/AuthenticatedLayout';
+import FloatingAlert from '../../components/FloatingAlert';
+import { apiFetchJson } from '../../lib/http';
 
 const normalizeQuantity = (value) => Math.round(Number(value || 0) * 10) / 10;
 
@@ -20,10 +22,6 @@ export default function ReturnDeliveryOrder({ order, skuLines = [] }) {
   const [inputMap, setInputMap] = useState({});
   const [processing, setProcessing] = useState(false);
   const [notice, setNotice] = useState(null);
-  const csrfToken = useMemo(
-    () => document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') ?? '',
-    [],
-  );
 
   const addToReturnList = (line) => {
     const raw = inputMap[line.item_id];
@@ -72,28 +70,19 @@ export default function ReturnDeliveryOrder({ order, skuLines = [] }) {
     setNotice(null);
 
     try {
-      const response = await fetch(`/items/stock/out/do/${order.id}/return-items`, {
+      const { response, payload } = await apiFetchJson(`/items/stock/out/do/${order.id}/return-items`, {
         method: 'POST',
-        credentials: 'include',
-        headers: {
-          'Content-Type': 'application/json',
-          Accept: 'application/json',
-          'X-Requested-With': 'XMLHttpRequest',
-          'X-CSRF-TOKEN': csrfToken,
-        },
         body: JSON.stringify({ lines }),
       });
 
-      const result = await response.json().catch(() => ({}));
       if (!response.ok) {
-        setNotice({ type: 'error', message: result.message ?? 'Failed to submit return SKU.' });
+        setNotice({ type: 'error', message: payload.message ?? 'Failed to submit return SKU.' });
         return;
       }
 
-      setNotice({ type: 'success', message: result.message ?? 'Return SKU submitted successfully.' });
+      setNotice({ type: 'success', message: payload.message ?? 'Return SKU submitted successfully.' });
       setReturnMap({});
-      router.visit('/items/stock/out/delivery-orders');
-    } catch (error) {
+    } catch (_) {
       setNotice({ type: 'error', message: 'Network error. Please try again.' });
     } finally {
       setProcessing(false);
@@ -125,15 +114,16 @@ export default function ReturnDeliveryOrder({ order, skuLines = [] }) {
           <p className="text-xs text-slate-500">SO: {order?.sales_order_code} | Customer: {order?.customer_name}</p>
         </div>
 
-        {notice && (
-          <div className={`rounded-2xl border px-4 py-3 text-sm font-semibold ${
-            notice.type === 'success'
-              ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
-              : 'border-rose-200 bg-rose-50 text-rose-700'
-          }`}>
-            {notice.message}
-          </div>
-        )}
+        <FloatingAlert
+          type={notice?.type}
+          message={notice?.message}
+          onClose={() => {
+            setNotice(null);
+            if (notice?.type === 'success') {
+              router.visit('/items/stock/out/delivery-orders');
+            }
+          }}
+        />
 
         {/* Unified Box for DO SKU List and Return List */}
         <div className="bg-white rounded-3xl border border-slate-100 overflow-hidden shadow-sm">

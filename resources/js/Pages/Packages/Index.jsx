@@ -1,7 +1,9 @@
 import { Head } from '@inertiajs/react';
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import AuthenticatedLayout from '../../Layouts/AuthenticatedLayout';
 import QtyInput from '../../components/QtyInput.jsx';
+import FloatingAlert from '../../components/FloatingAlert.jsx';
+import { apiFetchJson } from '../../lib/http';
 
 const BOM_TYPES = [
   { key: 'cabin', label: 'BOM Cabin' },
@@ -32,7 +34,7 @@ const formatQuantity = (value) => {
   return Number.isInteger(numeric) ? String(numeric) : numeric.toFixed(1);
 };
 
-const normalizeBomsFromPackage = (pkg) => {
+const normalizeBomsFromPackage = (pkg, items = []) => {
   const fromBoms = (pkg.boms ?? []).reduce((acc, bom) => {
     acc[bom.type] = (bom.bom_items ?? []).map((line) => ({
       item_id: String(line.item_id),
@@ -41,15 +43,43 @@ const normalizeBomsFromPackage = (pkg) => {
     return acc;
   }, {});
 
-  const fallbackHardware = (pkg.package_items ?? []).map((line) => ({
-    item_id: String(line.item_id),
-    quantity: String(line.quantity),
-  }));
+  const hasAnyBom = Object.values(fromBoms).some((lines) => lines.length > 0);
+
+  if (hasAnyBom) {
+    return {
+      cabin: fromBoms.cabin?.length ? fromBoms.cabin : [createEmptyLine()],
+      hardware: fromBoms.hardware?.length ? fromBoms.hardware : [createEmptyLine()],
+      hardware_site: fromBoms.hardware_site?.length ? fromBoms.hardware_site : [createEmptyLine()],
+    };
+  }
+
+  const itemScopeMap = (items ?? []).reduce((acc, item) => {
+    acc[item.id] = item.bom_scope || 'hardware';
+    return acc;
+  }, {});
+
+  const distributed = (pkg.package_items ?? []).reduce((acc, line) => {
+    const scope = itemScopeMap[line.item_id];
+    if (!scope) {
+      console.warn(`[BOM Fallback] Item ${line.item_id} not found in master; skipping.`);
+      return acc;
+    }
+    if (!['cabin', 'hardware', 'hardware_site'].includes(scope)) {
+      console.warn(`[BOM Fallback] Item ${line.item_id} has invalid bom_scope "${scope}"; skipping.`);
+      return acc;
+    }
+    if (!acc[scope]) acc[scope] = [];
+    acc[scope].push({
+      item_id: String(line.item_id),
+      quantity: String(line.quantity),
+    });
+    return acc;
+  }, {});
 
   return {
-    cabin: fromBoms.cabin?.length ? fromBoms.cabin : [createEmptyLine()],
-    hardware: fromBoms.hardware?.length ? fromBoms.hardware : (fallbackHardware.length ? fallbackHardware : [createEmptyLine()]),
-    hardware_site: fromBoms.hardware_site?.length ? fromBoms.hardware_site : [createEmptyLine()],
+    cabin: distributed.cabin?.length ? distributed.cabin : [createEmptyLine()],
+    hardware: distributed.hardware?.length ? distributed.hardware : [createEmptyLine()],
+    hardware_site: distributed.hardware_site?.length ? distributed.hardware_site : [createEmptyLine()],
   };
 };
 
@@ -68,7 +98,6 @@ export default function Index({ items, packages, schemaReady = true }) {
   const fileRef = useRef(null);
   const xlsxRef = useRef(null);
 
-  const csrfToken = useMemo(() => document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') ?? '', []);
 
   const addLine = (bomType) => {
     setData((prev) => ({
@@ -126,7 +155,7 @@ export default function Index({ items, packages, schemaReady = true }) {
       code: pkg.code,
       name: pkg.name,
       is_active: Boolean(pkg.is_active),
-      boms: normalizeBomsFromPackage(pkg),
+      boms: normalizeBomsFromPackage(pkg, items),
     });
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
@@ -140,7 +169,7 @@ export default function Index({ items, packages, schemaReady = true }) {
       code: buildDuplicateCode(pkg.code),
       name: `${pkg.name} Copy`,
       is_active: true,
-      boms: normalizeBomsFromPackage(pkg),
+      boms: normalizeBomsFromPackage(pkg, items),
     });
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
@@ -217,12 +246,10 @@ export default function Index({ items, packages, schemaReady = true }) {
     setBulkErrors([]);
     setNotification(null);
     try {
-      const response = await fetch('/packages/bulk', {
+      const { response, payload } = await apiFetchJson('/packages/bulk', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Accept: 'application/json', 'X-CSRF-TOKEN': csrfToken },
         body: JSON.stringify({ packages: bulkRows.map((row) => ({ ...row, quantity: Number(row.quantity) })) }),
       });
-      const payload = await response.json().catch(() => ({}));
       if (response.status === 201) {
         setList((prev) => [...(payload.data ?? []), ...prev]);
         setNotification({ type: 'success', message: payload.message ?? 'Bulk package upload completed.' });
@@ -233,7 +260,7 @@ export default function Index({ items, packages, schemaReady = true }) {
       } else {
         setBulkErrorMessage(payload.message ?? 'Bulk upload failed.');
       }
-    } catch (error) {
+    } catch (_) {
       setBulkErrorMessage('Network error. Please try again.');
     } finally {
       setBulkUploading(false);
@@ -262,26 +289,26 @@ export default function Index({ items, packages, schemaReady = true }) {
     };
 
     try {
-      const response = await fetch(url, {
+      const { response, payload } = await apiFetchJson(url, {
         method,
-        headers: { 'Content-Type': 'application/json', Accept: 'application/json', 'X-CSRF-TOKEN': csrfToken },
         body: JSON.stringify(payloadData),
       });
-      const payload = await response.json().catch(() => ({}));
       if (response.status === 201 || (editingId && response.ok)) {
-        if (editingId) {
-          setList((prev) => prev.map((item) => (item.id === editingId ? payload.data : item)));
-        } else {
-          setList((prev) => [payload.data, ...prev]);
+        if (payload.data) {
+          if (editingId) {
+            setList((prev) => prev.map((item) => (item.id === editingId ? payload.data : item)));
+          } else {
+            setList((prev) => [payload.data, ...prev]);
+          }
         }
         setNotification({ type: 'success', message: payload.message ?? 'Package saved successfully.' });
-        resetForm();
+        if (payload.data) resetForm();
       } else if (response.status === 422) {
         setErrors(payload.errors ?? {});
       } else {
         setNotification({ type: 'error', message: payload.message ?? 'Something went wrong.' });
       }
-    } catch (error) {
+    } catch (_) {
       setNotification({ type: 'error', message: 'Something went wrong.' });
     } finally {
       setProcessing(false);
@@ -294,11 +321,9 @@ export default function Index({ items, packages, schemaReady = true }) {
     setDeletingId(pkg.id);
     setNotification(null);
     try {
-      const response = await fetch(`/packages/${pkg.id}`, {
+      const { response, payload } = await apiFetchJson(`/packages/${pkg.id}`, {
         method: 'DELETE',
-        headers: { Accept: 'application/json', 'X-CSRF-TOKEN': csrfToken },
       });
-      const payload = await response.json().catch(() => ({}));
       if (response.ok) {
         setList((prev) => prev.filter((item) => item.id !== pkg.id));
         setNotification({ type: 'success', message: payload.message ?? 'Package deleted successfully.' });
@@ -306,9 +331,9 @@ export default function Index({ items, packages, schemaReady = true }) {
       } else {
         setNotification({ type: 'error', message: payload.message ?? 'Failed to delete package.' });
       }
-    } catch (error) {
+    } catch (_) {
       setNotification({ type: 'error', message: 'Network error. Please try again.' });
-    } finally {
+} finally {
       setDeletingId(null);
     }
   };
@@ -317,11 +342,11 @@ export default function Index({ items, packages, schemaReady = true }) {
     <AuthenticatedLayout title="Package Setup" backUrl="__back__">
       <Head title="Package Setup" />
       <div className="space-y-6">
-        {notification && (
-          <div className={`rounded-2xl border px-4 py-3 text-sm shadow-sm ${notification.type === 'success' ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-red-200 bg-red-50 text-red-700'}`}>
-            {notification.message}
-          </div>
-        )}
+        <FloatingAlert
+          type={notification?.type}
+          message={notification?.message}
+          onClose={() => setNotification(null)}
+        />
 
         {!schemaReady && (
           <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 shadow-sm">
@@ -441,7 +466,14 @@ export default function Index({ items, packages, schemaReady = true }) {
                 <div className="space-y-3">
                   {BOM_TYPES.map((bomType) => {
                     const bom = (pkg.boms ?? []).find((b) => b.type === bomType.key);
-                    const lines = bom?.bom_items ?? [];
+                    let lines = bom?.bom_items ?? [];
+                    if (lines.length === 0 && pkg.package_items?.length > 0) {
+                      const itemScopeMap = (items ?? []).reduce((m, item) => { m[item.id] = item.bom_scope || 'hardware'; return m; }, {});
+                      lines = (pkg.package_items ?? [])
+                        .filter((pl) => ['cabin', 'hardware', 'hardware_site'].includes(itemScopeMap[pl.item_id]))
+                        .filter((pl) => itemScopeMap[pl.item_id] === bomType.key)
+                        .map((pl) => ({ id: pl.id, item_id: pl.item_id, quantity: pl.quantity, item: pl.item }));
+                    }
                     return (
                       <div key={`${pkg.id}-${bomType.key}`} className="rounded-xl border border-slate-100 bg-slate-50 px-3 py-2.5">
                         <p className="text-[10px] font-black uppercase tracking-wider text-slate-500 mb-1.5">{bomType.label}</p>

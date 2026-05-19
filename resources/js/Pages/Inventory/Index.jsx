@@ -1,6 +1,8 @@
 import { Head, router } from '@inertiajs/react';
 import { useMemo, useState, useRef, useCallback, useEffect } from 'react';
 import AuthenticatedLayout from '../../Layouts/AuthenticatedLayout';
+import FloatingAlert from '../../components/FloatingAlert';
+import { apiFetchJson } from '../../lib/http';
 
 const CustomSelect = ({ value, onChange, options, className = "" }) => {
   const [isOpen, setIsOpen] = useState(false);
@@ -125,11 +127,6 @@ export default function Index({ items }) {
     return Number.isNaN(numericValue) ? '—' : numericValue.toFixed(2);
   };
 
-  const csrfToken = useMemo(
-    () => document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') ?? '',
-    [],
-  );
-
   useEffect(() => {
     setInventory(normalizedItems);
   }, [normalizedItems]);
@@ -196,21 +193,6 @@ export default function Index({ items }) {
 
   const showNotification = (type, message) => {
     setNotification({ type, message });
-    setTimeout(() => setNotification(null), 4000);
-  };
-
-  const parseResponsePayload = async (response) => {
-    const contentType = response.headers.get('content-type') ?? '';
-
-    if (contentType.includes('application/json')) {
-      return response.json();
-    }
-
-    const text = await response.text();
-
-    return {
-      message: text || 'Unexpected server response.',
-    };
   };
 
   const submit = async (e) => {
@@ -220,18 +202,10 @@ export default function Index({ items }) {
     setProcessing(true);
 
     try {
-      const response = await fetch('/items', {
+      const { response, payload } = await apiFetchJson('/items', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Accept: 'application/json',
-          'X-CSRF-TOKEN': csrfToken,
-          'X-Requested-With': 'XMLHttpRequest',
-        },
         body: JSON.stringify(data),
       });
-
-      const payload = await parseResponsePayload(response);
 
       if (response.status === 201) {
         setInventory(prev => [payload.data, ...prev]);
@@ -242,7 +216,7 @@ export default function Index({ items }) {
       } else {
         showNotification('error', payload.message ?? 'Failed to register item.');
       }
-    } catch (error) {
+    } catch (_) {
       showNotification('error', 'Something went wrong.');
     } finally {
       setProcessing(false);
@@ -273,18 +247,10 @@ export default function Index({ items }) {
     setProcessing(true);
 
     try {
-      const response = await fetch(`/items/${id}`, {
+      const { response, payload } = await apiFetchJson(`/items/${id}`, {
         method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          Accept: 'application/json',
-          'X-CSRF-TOKEN': csrfToken,
-          'X-Requested-With': 'XMLHttpRequest',
-        },
         body: JSON.stringify(editData),
       });
-
-      const payload = await parseResponsePayload(response);
 
       if (response.ok) {
         setInventory(prev =>
@@ -295,10 +261,11 @@ export default function Index({ items }) {
         showNotification('success', 'Item updated successfully.');
       } else if (response.status === 422) {
         setEditErrors(payload.errors);
+        showNotification('error', 'Validation failed. Please check the fields.');
       } else {
         showNotification('error', payload.message ?? 'Failed to update item.');
       }
-    } catch (error) {
+    } catch (_) {
       showNotification('error', 'Failed to update item.');
     } finally {
       setProcessing(false);
@@ -308,16 +275,9 @@ export default function Index({ items }) {
   const deleteItem = async (id) => {
     setProcessing(true);
     try {
-      const response = await fetch(`/items/${id}`, {
+      const { response, payload } = await apiFetchJson(`/items/${id}`, {
         method: 'DELETE',
-        headers: {
-          Accept: 'application/json',
-          'X-CSRF-TOKEN': csrfToken,
-          'X-Requested-With': 'XMLHttpRequest',
-        },
       });
-
-      const payload = await parseResponsePayload(response);
 
       if (response.ok) {
         setInventory(prev => prev.filter(item => item.id !== id));
@@ -325,7 +285,7 @@ export default function Index({ items }) {
       } else {
         showNotification('error', payload.message ?? 'Failed to delete item.');
       }
-    } catch (error) {
+    } catch (_) {
       showNotification('error', 'Failed to delete item.');
     } finally {
       setProcessing(false);
@@ -441,12 +401,11 @@ export default function Index({ items }) {
       <Head title="Inventory" />
 
       <div className="space-y-8">
-        {notification && (
-          <div className={`rounded-2xl border px-4 py-3 text-sm shadow-sm ${notification.type === 'success' ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-red-200 bg-red-50 text-red-700'
-            }`}>
-            {notification.message}
-          </div>
-        )}
+        <FloatingAlert
+          type={notification?.type}
+          message={notification?.message}
+          onClose={() => setNotification(null)}
+        />
 
         {/* Registration Form */}
         <div className="bg-white rounded-[2rem] shadow-sm border border-slate-100 pt-4 px-6 pb-6 md:pt-5 md:px-8 md:pb-8">
@@ -767,7 +726,7 @@ export default function Index({ items }) {
                             </td>
                             <td className="px-4 py-2 text-right whitespace-nowrap">
                               <button type="button" onClick={() => saveEdit(item.id)} disabled={processing} className="inline-flex items-center px-4 py-2 rounded-xl bg-emerald-600 text-white text-[10px] font-black uppercase tracking-wider hover:bg-emerald-700 disabled:opacity-50 transition-all mr-1.5 shadow-sm shadow-emerald-100">
-                                Save
+                                {processing ? 'Saving...' : 'Save'}
                               </button>
                               <button type="button" onClick={cancelEdit} className="inline-flex items-center px-4 py-2 rounded-xl bg-slate-100 text-slate-600 text-[10px] font-black uppercase tracking-wider hover:bg-slate-200 transition-all">
                                 Cancel

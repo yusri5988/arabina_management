@@ -1,5 +1,6 @@
 import { Head, Link, router } from '@inertiajs/react';
 import QtyInput from '../../components/QtyInput.jsx';
+import FloatingAlert from '../../components/FloatingAlert.jsx';
 import { useEffect, useMemo, useState } from 'react';
 import AuthenticatedLayout from '../../Layouts/AuthenticatedLayout';
 import { apiFetchJson } from '../../lib/http.js';
@@ -70,7 +71,7 @@ export default function Stock({ items, packages, salesOrders = [], type = 'in', 
       : [{ ...initialAlacarteLine, item_id: items?.[0]?.id?.toString() ?? '', quantity: '' }],
   );
   const [outAddSku, setOutAddSku] = useState({
-    item_id: items?.[0]?.id?.toString() ?? '',
+    item_id: '',
     quantity: '',
   });
   const noPackages = (packages?.length ?? 0) === 0;
@@ -190,27 +191,7 @@ export default function Stock({ items, packages, salesOrders = [], type = 'in', 
     setAlacarteLines(autoLines);
   }, [isOut, selectedSalesOrder, items, itemStockById]);
 
-  useEffect(() => {
-    if (!isOut) {
-      return;
-    }
 
-    if ((outSelectableItems?.length ?? 0) === 0) {
-      setOutAddSku({ item_id: '', quantity: '' });
-      return;
-    }
-
-    setOutAddSku((prev) => {
-      if (prev.item_id && outSelectableItems.some((item) => String(item.id) === String(prev.item_id))) {
-        return prev;
-      }
-
-      return {
-        ...prev,
-        item_id: String(outSelectableItems[0].id),
-      };
-    });
-  }, [isOut, outSelectableItems]);
 
   const addLine = () => {
     setAlacarteLines(prev => [...prev, { ...initialAlacarteLine }]);
@@ -262,10 +243,7 @@ export default function Stock({ items, packages, salesOrders = [], type = 'in', 
       return [...prev, { item_id: itemId, quantity: String(normalizeQuantity(Math.min(qty, availableStock))) }];
     });
 
-    setOutAddSku((prev) => ({
-      ...prev,
-      quantity: '',
-    }));
+    setOutAddSku({ item_id: '', quantity: '' });
   };
 
   const submit = async (e) => {
@@ -320,14 +298,7 @@ export default function Stock({ items, packages, salesOrders = [], type = 'in', 
         if (isOut) {
           if (completionAction === 'partial_done') {
             window.sessionStorage.setItem('stock_out_partial_done_success', '1');
-            router.reload();
-            return;
-          } else {
-            router.reload();
-            return;
           }
-        } else {
-          router.reload();
         }
       } else if (response.status === 422) {
         setErrors(result.errors ?? {});
@@ -346,12 +317,16 @@ export default function Stock({ items, packages, salesOrders = [], type = 'in', 
       <Head title={isOut ? 'Delivery Order' : 'Stock In'} />
 
       <div className="space-y-6">
-        {notification && (
-          <div className={`rounded-2xl border px-4 py-3 text-sm shadow-sm ${notification.type === 'success' ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-red-200 bg-red-50 text-red-700'
-            }`}>
-            {notification.message}
-          </div>
-        )}
+        <FloatingAlert
+          type={notification?.type}
+          message={notification?.message}
+          onClose={() => {
+            setNotification(null);
+            if (isOut) {
+              router.reload();
+            }
+          }}
+        />
 
         <div className="bg-white rounded-[2rem] shadow-sm border border-slate-100 p-6 md:p-8">
           <div className="border-b border-slate-100 pb-4 flex items-center justify-between gap-3">
@@ -601,7 +576,8 @@ export default function Stock({ items, packages, salesOrders = [], type = 'in', 
                       onChange={e => setOutAddSku(prev => ({ ...prev, item_id: e.target.value }))}
                       className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm focus:ring-2 focus:ring-arabina-accent focus:outline-none bg-white"
                     >
-                      {outSelectableItems.length === 0 && <option value="">No SKU with stock</option>}
+                      <option value="">Select SKU</option>
+                      {outSelectableItems.length === 0 && <option value="" disabled>No SKU with stock</option>}
                       {outSelectableItems.map(item => (
                         <option key={item.id} value={item.id}>
                           {item.sku} - {item.name} (Stock: {Number(item.stock_current_total ?? 0)})

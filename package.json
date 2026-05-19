@@ -17,8 +17,8 @@
         "vite": "^5.4.8"
     },
     "dependencies": {
+        "@earendil-works/pi-coding-agent": "^0.75.3",
         "@heroicons/react": "^2.2.0",
-        "@openai/codex": "^0.106.0",
         "date-fns": "^4.1.0",
         "react": "^18.3.1",
         "react-datepicker": "^9.1.0",

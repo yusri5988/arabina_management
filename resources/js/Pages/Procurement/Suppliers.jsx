@@ -2,6 +2,7 @@ import { Head } from '@inertiajs/react';
 import { useState } from 'react';
 import AuthenticatedLayout from '../../Layouts/AuthenticatedLayout';
 import { apiFetchJson } from '../../lib/http';
+import FloatingAlert from '../../components/FloatingAlert';
 
 export default function Suppliers({ suppliers: initialSuppliers = [], items = [] }) {
   const [list, setList] = useState(initialSuppliers);
@@ -25,7 +26,6 @@ export default function Suppliers({ suppliers: initialSuppliers = [], items = []
 
   const showNotification = (type, message) => {
     setNotification({ type, message });
-    setTimeout(() => setNotification(null), 4000);
   };
 
   const submit = async (e) => {
@@ -103,11 +103,11 @@ export default function Suppliers({ suppliers: initialSuppliers = [], items = []
     <AuthenticatedLayout title="Procurement • Supplier Management" backUrl="/procurement/hardware">
       <Head title="Supplier Management" />
       <div className="space-y-8 pb-20 max-w-5xl mx-auto">
-        {notification && (
-          <div className={`p-4 rounded-2xl border text-sm shadow-sm ${notification.type === 'success' ? 'bg-emerald-50 border-emerald-100 text-emerald-700' : 'bg-red-50 border-red-100 text-red-700'}`}>
-            {notification.message}
-          </div>
-        )}
+        <FloatingAlert
+          type={notification?.type}
+          message={notification?.message}
+          onClose={() => setNotification(null)}
+        />
 
         <div className="bg-white rounded-[2.5rem] shadow-sm border border-slate-100 overflow-hidden">
           <div className="bg-slate-900 py-6 px-8 relative overflow-hidden">

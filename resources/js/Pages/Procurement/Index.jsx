@@ -2,6 +2,7 @@ import { Head, usePage, Link } from '@inertiajs/react';
 import { useState, useRef, useEffect, useMemo } from 'react';
 import AuthenticatedLayout from '../../Layouts/AuthenticatedLayout';
 import { apiFetchJson } from '../../lib/http';
+import FloatingAlert from '../../components/FloatingAlert';
 
 const BOM_GROUPS = [
   { key: 'cabin', label: 'BOM Cabin' },
@@ -40,6 +41,28 @@ const detectFlowFromPath = (path) => {
 
 const getOrderPackageLines = (order) => order.packageLines ?? order.package_lines ?? [];
 const getOrderLines = (order) => order.lines ?? [];
+
+const getOrderLockReason = (order) => {
+  if (['partial', 'received', 'fulfilled', 'closed', 'cancelled'].includes(String(order.status ?? ''))) {
+    return 'Locked after receiving';
+  }
+
+  if ((order.crns ?? []).some((note) => !['draft', 'awaiting_shipping'].includes(String(note.status ?? '')))) {
+    return 'Locked after ETA';
+  }
+
+  if ((order.mrns ?? []).some((note) => !['draft', 'awaiting_shipping', 'arrived'].includes(String(note.status ?? '')))) {
+    return 'Locked after ETA';
+  }
+
+  if ((order.srns ?? []).some((note) => !['draft', 'awaiting_shipping', 'arrived'].includes(String(note.status ?? '')))) {
+    return 'Locked after ETA';
+  }
+
+  return null;
+};
+
+const canModifyOrder = (order) => !getOrderLockReason(order);
 
 const computeLooseLines = (order) => {
   const pkgLines = getOrderPackageLines(order);
@@ -211,8 +234,17 @@ export default function ProcurementIndex({
   const [notification, setNotification] = useState(null);
   const [processingCreate, setProcessingCreate] = useState(false);
   const [processingDeleteId, setProcessingDeleteId] = useState(null);
+  const [processingUpdateId, setProcessingUpdateId] = useState(null);
+  const [editingOrderId, setEditingOrderId] = useState(null);
   const [list, setList] = useState(orders);
   const [expandedReceiveForms, setExpandedReceiveForms] = useState({});
+
+  const [editOrderPackageLines, setEditOrderPackageLines] = useState([]);
+  const [editOrderSkuLines, setEditOrderSkuLines] = useState([]);
+  const [editOrderNotes, setEditOrderNotes] = useState('');
+  const [editSelectedSkuIds, setEditSelectedSkuIds] = useState([]);
+  const [editNewPackageForm, setEditNewPackageForm] = useState({ package_id: null, quantity: '' });
+  const [editNewSkuForm, setEditNewSkuForm] = useState({ item_id: null, quantity: '' });
 
   const [newOrderPackageLines, setNewOrderPackageLines] = useState([]);
   const [newOrderSkuLines, setNewOrderSkuLines] = useState([]);
@@ -336,6 +368,29 @@ export default function ProcurementIndex({
       }
       return line;
     }));
+  };
+
+  const setNewOrderPackageQuantity = (index, value) => {
+    const numValue = Math.max(1, parseInt(value) || 1);
+    setNewOrderPackageLines(prev => prev.map((line, i) => {
+      if (i === index) {
+        return { ...line, quantity: numValue };
+      }
+      return line;
+    }));
+  };
+
+  const setNewOrderSkuLineQuantity = (itemId, value) => {
+    const numValue = normalizeSkuQuantity(value);
+    if (numValue <= 0) {
+      removeNewOrderSkuLine(itemId);
+      return;
+    }
+    setNewOrderSkuLines((prev) => prev.map((line) => (
+      Number(line.item_id) === Number(itemId)
+        ? { ...line, quantity: numValue }
+        : line
+    )));
   };
 
   const handleSkuSupplierChange = (itemId, supplierId) => {
@@ -472,6 +527,12 @@ export default function ProcurementIndex({
 
   const createDraft = async () => {
     setNotification(null);
+
+    if (!newOrderPoNumber.trim()) {
+      setNotification({ type: 'error', message: 'Please enter PO number before generating POs.' });
+      return;
+    }
+
     setProcessingCreate(true);
 
     try {
@@ -497,11 +558,6 @@ export default function ProcurementIndex({
         setNewOrderPoNumber('');
         setNewOrderNotes('');
         setSkuSuppliers({});
-
-        // Refresh page to update history and suggestions
-        setTimeout(() => {
-          window.location.reload();
-        }, 1000);
       } else {
         setNotification({ type: 'error', message: payload.message ?? 'Failed to create draft.' });
       }
@@ -513,7 +569,7 @@ export default function ProcurementIndex({
   };
 
   const deleteDraft = async (order) => {
-    if (!confirm(`Are you sure you want to delete draft ${order.code}?`)) return;
+    if (!confirm(`Are you sure you want to delete ${order.code}?`)) return;
     setProcessingDeleteId(order.id);
 
     try {
@@ -522,16 +578,141 @@ export default function ProcurementIndex({
       });
 
       if (response.ok) {
-        setNotification({ type: 'success', message: payload.message ?? 'Draft deleted.' });
+        setNotification({ type: 'success', message: payload.message ?? 'Order deleted.' });
         setList((prev) => prev.filter((o) => o.id !== order.id));
       } else {
-        setNotification({ type: 'error', message: payload.message ?? 'Failed to delete draft.' });
+        setNotification({ type: 'error', message: payload.message ?? 'Failed to delete order.' });
       }
     } catch (_) {
       setNotification({ type: 'error', message: 'Network error. Please try again.' });
     } finally {
       setProcessingDeleteId(null);
     }
+  };
+
+  const enterEditMode = (order) => {
+    setEditingOrderId(order.id);
+    setEditOrderNotes(order.notes || '');
+
+    const pkgLines = getOrderPackageLines(order).map(l => ({
+      package_id: l.package_id,
+      quantity: l.quantity,
+      package_code: l.package?.code,
+      package_name: l.package?.name,
+    }));
+    setEditOrderPackageLines(pkgLines);
+
+    const looseLines = computeLooseLines(order);
+    setEditOrderSkuLines(looseLines.map(l => ({
+      item_id: l.item_id,
+      quantity: l.looseQty,
+      sku: l.item?.sku,
+      name: l.item?.name,
+      unit: l.item?.unit || 'pcs',
+    })));
+    setEditSelectedSkuIds(looseLines.map(l => l.item_id));
+  };
+
+  const cancelEditMode = () => {
+    setEditingOrderId(null);
+    setEditOrderPackageLines([]);
+    setEditOrderSkuLines([]);
+    setEditOrderNotes('');
+    setEditSelectedSkuIds([]);
+    setEditNewPackageForm({ package_id: null, quantity: '' });
+    setEditNewSkuForm({ item_id: null, quantity: '' });
+  };
+
+  const updateDraft = async (order) => {
+    if (!confirm(`Save changes to ${order.code}?`)) return;
+    setProcessingUpdateId(order.id);
+
+    try {
+      const { response, payload } = await apiFetchJson(`${orderApiBase}/${order.id}`, {
+        method: 'PUT',
+        body: JSON.stringify({
+          package_lines: editOrderPackageLines.map(line => ({ package_id: line.package_id, quantity: line.quantity })),
+          sku_lines: editOrderSkuLines
+            .filter((line) => normalizeSkuQuantity(line.quantity) !== 0)
+            .map(line => ({ item_id: line.item_id, quantity: line.quantity, unit: line.unit })),
+          notes: editOrderNotes,
+        }),
+      });
+
+      if (response.ok) {
+        setNotification({ type: 'success', message: payload.message || 'Order updated.' });
+        setList((prev) => prev.map((o) => o.id === order.id ? payload.data : o));
+        cancelEditMode();
+      } else {
+        setNotification({ type: 'error', message: payload.message ?? 'Failed to update order.' });
+      }
+    } catch (_) {
+      setNotification({ type: 'error', message: 'Network error. Please try again.' });
+    } finally {
+      setProcessingUpdateId(null);
+    }
+  };
+
+  const addEditPackageLine = (packageId) => {
+    const pkg = (Array.isArray(packages) ? packages : []).find(p => p.id === Number(packageId));
+    if (pkg) {
+      setEditOrderPackageLines(prev => [...prev, { package_id: pkg.id, quantity: 1, package_code: pkg.code, package_name: pkg.name }]);
+    }
+  };
+
+  const addEditSkuLine = (itemId) => {
+    const item = (Array.isArray(items) ? items : []).find(i => i.id === Number(itemId));
+    if (item) {
+      setEditSelectedSkuIds((prev) => (prev.includes(item.id) ? prev : [...prev, item.id]));
+      setEditOrderSkuLines((prev) => {
+        const existing = prev.find((line) => line.item_id === item.id);
+        if (existing) {
+          return prev.map((line) => (line.item_id === item.id ? { ...line, quantity: normalizeSkuQuantity(line.quantity) + 1 } : line));
+        }
+        return [...prev, { item_id: item.id, quantity: 1, sku: item.sku, name: item.name, unit: item.unit || 'pcs' }];
+      });
+    }
+  };
+
+  const removeEditPackageLine = (index) => {
+    setEditOrderPackageLines((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  const removeEditSkuLine = (itemId) => {
+    setEditSelectedSkuIds((prev) => prev.filter((id) => Number(id) !== Number(itemId)));
+    setEditOrderSkuLines(prev => prev.filter(l => l.item_id !== itemId));
+  };
+
+  const updateEditPackageQuantity = (index, delta) => {
+    setEditOrderPackageLines(prev => prev.map((line, i) => {
+      if (i === index) {
+        return { ...line, quantity: Math.max(1, line.quantity + delta) };
+      }
+      return line;
+    }));
+  };
+
+  const setEditPackageQuantity = (index, value) => {
+    const numValue = Math.max(1, parseInt(value) || 1);
+    setEditOrderPackageLines(prev => prev.map((line, i) => {
+      if (i === index) {
+        return { ...line, quantity: numValue };
+      }
+      return line;
+    }));
+  };
+
+  const setEditSkuLineQuantity = (itemId, value) => {
+    const numValue = normalizeSkuQuantity(value);
+    if (numValue <= 0) {
+      removeEditSkuLine(itemId);
+      return;
+    }
+    setEditOrderSkuLines((prev) => prev.map((line) => (
+      Number(line.item_id) === Number(itemId)
+        ? { ...line, quantity: numValue }
+        : line
+    )));
   };
 
   return (
@@ -546,11 +727,16 @@ export default function ProcurementIndex({
             </div>
           )}
 
-          {notification && (
-            <div className={`rounded-2xl border px-4 py-3 text-sm shadow-sm animate-in fade-in slide-in-from-top-2 duration-300 ${notification.type === 'success' ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-red-200 bg-red-50 text-red-700'}`}>
-              {notification.message}
-            </div>
-          )}
+          <FloatingAlert
+            type={notification?.type}
+            message={notification?.message}
+            onClose={() => {
+              setNotification(null);
+              if (notification?.type === 'success') {
+                window.location.reload();
+              }
+            }}
+          />
 
           {canManage && (
             <div className="flex flex-col gap-8">
@@ -652,10 +838,22 @@ export default function ProcurementIndex({
                 </div>
 
                 <div className="pt-4 px-6 md:pt-5 md:px-8 pb-8 space-y-8">
+                  <div className="pb-8 border-b border-slate-100">
+                    <label className="block text-[11px] font-black text-slate-500 uppercase tracking-widest mb-3 px-1">Step 1: PO Number</label>
+                    <input
+                      type="text"
+                      value={newOrderPoNumber}
+                      onChange={(e) => setNewOrderPoNumber(e.target.value.toUpperCase())}
+                      className="w-full rounded-2xl border-slate-200 text-sm font-medium focus:ring-slate-500/10 focus:border-slate-400 bg-slate-50/30 p-4"
+                      placeholder="Enter PO number manually, e.g. PO-20260312-ABCD"
+                      required
+                    />
+                  </div>
+
                   {/* Unified Selection Header */}
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pb-8 border-b border-slate-100">
                     <div className="space-y-3">
-                      <label className="block text-[11px] font-black text-slate-500 uppercase tracking-widest ml-1">Step 1: Choose Package</label>
+                      <label className="block text-[11px] font-black text-slate-500 uppercase tracking-widest ml-1">Step 2: Choose Package</label>
                       <CustomSelect
                         placeholder="Select a package to explode items..."
                         value={null}
@@ -688,10 +886,15 @@ export default function ProcurementIndex({
                         {newOrderPackageLines.map((line, idx) => (
                           <div key={idx} className="flex items-center gap-3 bg-blue-50 border border-blue-100 px-4 py-2 rounded-2xl shadow-sm">
                             <span className="text-xs font-black text-blue-800">{line.package_code}</span>
-                            <div className="flex items-center gap-2 bg-white/50 rounded-lg p-0.5 border border-blue-200/50">
-                              <button onClick={() => updateNewOrderPackageQuantity(idx, -1)} className="w-6 h-6 flex items-center justify-center font-black text-blue-600">-</button>
-                              <span className="text-[11px] font-black min-w-[20px] text-center">{line.quantity}</span>
-                              <button onClick={() => updateNewOrderPackageQuantity(idx, 1)} className="w-6 h-6 flex items-center justify-center font-black text-blue-600">+</button>
+                            <div className="flex items-center gap-1 bg-white/50 rounded-lg p-0.5 border border-blue-200/50 focus-within:ring-2 focus-within:ring-blue-400 focus-within:bg-white transition-all">
+                              <button type="button" onClick={() => updateNewOrderPackageQuantity(idx, -1)} className="w-6 h-6 flex items-center justify-center font-black text-blue-600 hover:bg-blue-100 rounded-md">-</button>
+                              <input
+                                type="number"
+                                value={line.quantity}
+                                onChange={(e) => setNewOrderPackageQuantity(idx, e.target.value)}
+                                className="w-10 bg-transparent border-0 p-0 text-center text-[11px] font-black text-blue-900 focus:ring-0 no-spinner"
+                              />
+                              <button type="button" onClick={() => updateNewOrderPackageQuantity(idx, 1)} className="w-6 h-6 flex items-center justify-center font-black text-blue-600 hover:bg-blue-100 rounded-md">+</button>
                             </div>
                             <button onClick={() => removeNewOrderPackageLine(idx)} className="text-blue-300 hover:text-red-500 transition-colors">
                               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4"><path d="M6.28 5.22a.75.75 0 0 0-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 1 0 1.06 1.06L10 11.06l3.72 3.72a.75.75 0 1 0 1.06-1.06L11.06 10l3.72-3.72a.75.75 0 0 0-1.06-1.06L10 8.94 6.28 5.22Z" /></svg>
@@ -705,8 +908,9 @@ export default function ProcurementIndex({
                           return (
                             <div key={`sku-active-${selectedId}`} className="flex items-center gap-3 bg-emerald-50 border border-emerald-100 px-4 py-2 rounded-2xl shadow-sm">
                               <span className="text-xs font-black text-emerald-800">{skuLine.sku}</span>
-                              <div className="flex items-center gap-2 bg-white/50 rounded-lg p-0.5 border border-emerald-200/50">
+                              <div className="flex items-center gap-1 bg-white/50 rounded-lg p-0.5 border border-emerald-200/50 focus-within:ring-2 focus-within:ring-emerald-400 focus-within:bg-white transition-all">
                                 <button
+                                  type="button"
                                   onClick={() => {
                                     const next = Math.max(0, normalizeSkuQuantity(Number(skuLine.quantity || 0) - 1));
                                     if (next === 0) {
@@ -719,12 +923,18 @@ export default function ProcurementIndex({
                                         : line
                                     )));
                                   }}
-                                  className="w-6 h-6 flex items-center justify-center font-black text-emerald-600"
+                                  className="w-6 h-6 flex items-center justify-center font-black text-emerald-600 hover:bg-emerald-100 rounded-md"
                                 >
                                   -
                                 </button>
-                                <span className="text-[11px] font-black min-w-[20px] text-center">{skuLine.quantity}</span>
+                                <input
+                                  type="number"
+                                  value={skuLine.quantity}
+                                  onChange={(e) => setNewOrderSkuLineQuantity(skuLine.item_id, e.target.value)}
+                                  className="w-10 bg-transparent border-0 p-0 text-center text-[11px] font-black text-emerald-900 focus:ring-0 no-spinner"
+                                />
                                 <button
+                                  type="button"
                                   onClick={() => {
                                     const next = normalizeSkuQuantity(Number(skuLine.quantity || 0) + 1);
                                     setNewOrderSkuLines((prev) => prev.map((line) => (
@@ -733,7 +943,7 @@ export default function ProcurementIndex({
                                         : line
                                     )));
                                   }}
-                                  className="w-6 h-6 flex items-center justify-center font-black text-emerald-600"
+                                  className="w-6 h-6 flex items-center justify-center font-black text-emerald-600 hover:bg-emerald-100 rounded-md"
                                 >
                                   +
                                 </button>
@@ -755,8 +965,8 @@ export default function ProcurementIndex({
                         <h3 className="text-11px font-black text-slate-800 uppercase tracking-[0.2em] flex items-center gap-3">
                           <span className="w-2 h-6 bg-emerald-500 rounded-full animate-pulse"></span>
                           {activeFlow.key === 'hardware'
-                            ? `Step 2: Assign Suppliers for ${consolidatedSkus.length} Items`
-                            : `Step 2: Review ${consolidatedSkus.length} Items`
+                            ? `Step 3: Assign Suppliers for ${consolidatedSkus.length} Items`
+                            : `Step 3: Review ${consolidatedSkus.length} Items`
                           }
                         </h3>
                         <span className="text-[9px] font-black text-emerald-600 bg-emerald-50 px-3 py-1 rounded-full border border-emerald-100">Explosion Success</span>
@@ -831,27 +1041,14 @@ export default function ProcurementIndex({
                   ) : (
                     <div className="py-20 text-center space-y-4 bg-slate-50/50 rounded-[3rem] border border-dashed border-slate-200">
                       <div className="text-4xl">🛒</div>
-                      <p className="text-slate-400 font-bold text-sm uppercase tracking-[0.2em]">Choose from Step 1 to start</p>
+                      <p className="text-slate-400 font-bold text-sm uppercase tracking-[0.2em]">Choose from Step 2 to start</p>
                     </div>
                   )}
 
                   <div className="mt-12 pt-8 border-t border-slate-100">
-                    <div className="mb-6">
-                      <label className="block text-[11px] font-black text-slate-900 uppercase tracking-widest mb-3 px-1">PO Number</label>
-                      <input
-                        type="text"
-                        value={newOrderPoNumber}
-                        onChange={(e) => setNewOrderPoNumber(e.target.value.toUpperCase())}
-                        className="w-full rounded-2xl border-slate-200 text-sm font-medium focus:ring-slate-500/10 focus:border-slate-400 bg-slate-50/30 p-4"
-                        placeholder="Enter PO number manually, e.g. PO-20260312-ABCD"
-                      />
-                      <p className="mt-2 px-1 text-[10px] font-bold uppercase tracking-wider text-slate-400">
-                        Leave blank to auto-generate.
-                      </p>
-                    </div>
                     <label className="block text-[11px] font-black text-slate-900 uppercase tracking-widest mb-3 px-1">Internal Procurement Notes</label>
                     <textarea value={newOrderNotes} onChange={(e) => setNewOrderNotes(e.target.value)} rows="3" className="w-full rounded-2xl border-slate-200 text-sm font-medium focus:ring-slate-500/10 focus:border-slate-400 bg-slate-50/30 p-4 mb-8" placeholder="Enter special instructions or context for this order..."></textarea>
-                    <button onClick={createDraft} disabled={!databaseReady || !canManage || processingCreate || consolidatedSkus.length === 0} className="group relative w-full overflow-hidden rounded-[2rem] bg-emerald-600 p-6 text-white shadow-xl hover:bg-emerald-700 disabled:opacity-50 active:scale-[0.98] transition-all">
+                    <button onClick={createDraft} disabled={!databaseReady || !canManage || processingCreate || consolidatedSkus.length === 0 || !newOrderPoNumber.trim()} className="group relative w-full overflow-hidden rounded-[2rem] bg-emerald-600 p-6 text-white shadow-xl hover:bg-emerald-700 disabled:opacity-50 active:scale-[0.98] transition-all">
                       <div className="relative z-10 flex items-center justify-center gap-4">
                         <span className="text-sm font-black uppercase tracking-[0.25em]">{processingCreate ? 'Processing...' : 'Finalize & Generate POs'}</span>
                         {!processingCreate && <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={3} stroke="currentColor" className="w-5 h-5 group-hover:translate-x-2 transition-transform"><path strokeLinecap="round" strokeLinejoin="round" d="M13.5 4.5 21 12m0 0-7.5 7.5M21 12H3" /></svg>}
@@ -878,6 +1075,8 @@ export default function ProcurementIndex({
                     .map((order) => {
                       const orderPackageLines = getOrderPackageLines(order);
                       const orderLines = getOrderLines(order);
+                      const lockReason = getOrderLockReason(order);
+                      const isModifiable = canModifyOrder(order);
                       return (
                         <div key={order.id} className="group rounded-[2rem] border border-slate-100 bg-white hover:border-slate-300 hover:shadow-md transition-all overflow-hidden">
                           <div className="p-5 flex flex-wrap items-center justify-between gap-4 bg-slate-50/30 border-b border-slate-100/50">
@@ -932,11 +1131,227 @@ export default function ProcurementIndex({
                               )}
                             </div>
                           </div>
-                          <div className="px-5 py-4 border-t border-slate-100 flex gap-3 bg-slate-50/20">
-                            <a href={`${orderApiBase}/${order.id}/pdf`} target="_blank" rel="noreferrer" className="flex-1 bg-white border border-slate-200 text-slate-700 py-3 rounded-xl text-[10px] font-black text-center uppercase tracking-widest hover:border-slate-400 active:scale-[0.98] transition-all flex items-center justify-center gap-2">
-                              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4 text-red-500"><path d="M4.5 2A1.5 1.5 0 0 0 3 3.5v13A1.5 1.5 0 0 0 4.5 18h11a1.5 1.5 0 0 0 1.5-1.5V7.621a1.5 1.5 0 0 0-.44-1.06l-4.12-4.122A1.5 1.5 0 0 0 11.378 2H4.5Zm2.25 8.5a.75.75 0 0 0 0 1.5h6.5a.75.75 0 0 0 0-1.5h-6.5Zm0 3a.75.75 0 0 0 0 1.5h6.5a.75.75 0 0 0 0-1.5h-6.5Z" /></svg>
-                              Export PDF
-                            </a>
+                          <div className="px-5 py-4 border-t border-slate-100 bg-slate-50/20">
+                            <div className="flex flex-col gap-2 md:flex-row">
+                              <a href={`${orderApiBase}/${order.id}/pdf`} target="_blank" rel="noreferrer" className="flex-1 bg-white border border-slate-200 text-slate-700 py-3 rounded-xl text-[10px] font-black text-center uppercase tracking-widest hover:border-slate-400 active:scale-[0.98] transition-all flex items-center justify-center gap-2">
+                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4 text-red-500"><path d="M4.5 2A1.5 1.5 0 0 0 3 3.5v13A1.5 1.5 0 0 0 4.5 18h11a1.5 1.5 0 0 0 1.5-1.5V7.621a1.5 1.5 0 0 0-.44-1.06l-4.12-4.122A1.5 1.5 0 0 0 11.378 2H4.5Zm2.25 8.5a.75.75 0 0 0 0 1.5h6.5a.75.75 0 0 0 0-1.5h-6.5Zm0 3a.75.75 0 0 0 0 1.5h6.5a.75.75 0 0 0 0-1.5h-6.5Z" /></svg>
+                                Export PDF
+                              </a>
+                              {editingOrderId !== order.id && (
+                                <>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      if (!isModifiable) return;
+                                      enterEditMode(order);
+                                    }}
+                                    disabled={!isModifiable}
+                                    className={`flex-1 py-3 rounded-xl text-[10px] font-black text-center uppercase tracking-widest active:scale-[0.98] transition-all flex items-center justify-center gap-2 border ${isModifiable ? 'bg-emerald-50 border-emerald-200 text-emerald-700 hover:bg-emerald-100' : 'bg-slate-50 border-slate-200 text-slate-400 cursor-not-allowed'}`}
+                                  >
+                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4"><path d="m5.433 13.917 1.262-3.155A4 4 0 0 1 7.58 9.42l6.92-6.918a2.121 2.121 0 0 1 3 3l-6.92 6.918c-.383.383-.84.685-1.343.886l-3.155 1.262a.5.5 0 0 1-.65-.65Z" /><path d="M3.5 5.75c0-.69.56-1.25 1.25-1.25H10A.75.75 0 0 0 10 3H4.75A2.75 2.75 0 0 0 2 5.75v9.5A2.75 2.75 0 0 0 4.75 18h9.5A2.75 2.75 0 0 0 17 15.25V10a.75.75 0 0 0-1.5 0v5.25c0 .69-.56 1.25-1.25 1.25h-9.5c-.69 0-1.25-.56-1.25-1.25v-9.5Z" /></svg>
+                                    Edit
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      if (!isModifiable) return;
+                                      deleteDraft(order);
+                                    }}
+                                    disabled={!isModifiable || processingDeleteId === order.id}
+                                    className={`flex-1 py-3 rounded-xl text-[10px] font-black text-center uppercase tracking-widest active:scale-[0.98] transition-all flex items-center justify-center gap-2 border ${isModifiable ? 'bg-red-50 border-red-200 text-red-700 hover:bg-red-100' : 'bg-slate-50 border-slate-200 text-slate-400 cursor-not-allowed'} disabled:opacity-50`}
+                                  >
+                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4"><path d="M6.28 5.22a.75.75 0 0 0-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 1 0 1.06 1.06L10 11.06l3.72 3.72a.75.75 0 1 0 1.06-1.06L11.06 10l3.72-3.72a.75.75 0 0 0-1.06-1.06L10 8.94 6.28 5.22Z" /></svg>
+                                    {processingDeleteId === order.id ? 'Deleting...' : 'Delete'}
+                                  </button>
+                                </>
+                              )}
+                            </div>
+                            {editingOrderId !== order.id && lockReason && (
+                              <p className="mt-2 text-[9px] font-black text-slate-400 uppercase tracking-widest text-right">{lockReason}</p>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  {list
+                    .filter((order) => getOrderLines(order).some((line) => String(line.item?.bom_scope ?? 'hardware') === activeFlow.key))
+                    .filter((order) => editingOrderId === order.id)
+                    .map((order) => {
+                      const editPackageDerivedSkus = new Map();
+                      (editOrderPackageLines ?? []).forEach((pLine) => {
+                        const pkg = (Array.isArray(packages) ? packages : []).find(p => p.id === pLine.package_id);
+                        if (!pkg) return;
+                        const scopeBom = (pkg?.boms ?? []).find(b => b.type === activeFlow.key);
+                        if (scopeBom) {
+                          const itemsList = scopeBom.bomItems || scopeBom.bom_items || [];
+                          itemsList.forEach((bi) => {
+                            const itemId = Number(bi.item_id);
+                            const itemData = bi.item || {};
+                            const current = editPackageDerivedSkus.get(itemId) || { item_id: itemId, sku: itemData.sku, name: itemData.name, unit: itemData.unit || 'pcs', quantity: 0 };
+                            editPackageDerivedSkus.set(itemId, {
+                              ...current,
+                              quantity: normalizeSkuQuantity(current.quantity + (Number(pLine.quantity) * Number(bi.quantity))),
+                            });
+                          });
+                        }
+                      });
+
+                      const editConsolidatedSkus = new Map(
+                        Array.from(editPackageDerivedSkus.entries()).map(([itemId, line]) => [itemId, { ...line }])
+                      );
+                      (editOrderSkuLines ?? []).forEach((sLine) => {
+                        const itemId = Number(sLine.item_id);
+                        const current = editConsolidatedSkus.get(itemId) || { item_id: itemId, sku: sLine.sku, name: sLine.name, unit: sLine.unit || 'pcs', quantity: 0 };
+                        editConsolidatedSkus.set(itemId, {
+                          ...current,
+                          quantity: normalizeSkuQuantity(current.quantity + Number(sLine.quantity)),
+                          unit: sLine.unit || current.unit || 'pcs',
+                        });
+                      });
+                      const consolidatedForEdit = Array.from(editConsolidatedSkus.values())
+                        .filter((line) => normalizeSkuQuantity(line.quantity) > 0)
+                        .sort((a, b) => String(a.sku ?? '').localeCompare(String(b.sku ?? '')));
+
+                      const setEditConsolidatedQuantity = (itemId, nextQty) => {
+                        const safeQuantity = normalizeSkuQuantity(nextQty);
+                        const baseQuantity = normalizeSkuQuantity(editPackageDerivedSkus.get(itemId)?.quantity ?? 0);
+                        const adjustment = normalizeSkuQuantity(safeQuantity - baseQuantity);
+
+                        setEditOrderSkuLines((prev) => {
+                          const remaining = (prev ?? []).filter((line) => Number(line.item_id) !== Number(itemId));
+                          
+                          if (adjustment === 0) {
+                            setEditSelectedSkuIds((selectedPrev) => (selectedPrev ?? []).filter((id) => Number(id) !== Number(itemId)));
+                            return remaining;
+                          }
+
+                          const itemData = consolidatedForEdit.find(l => Number(l.item_id) === Number(itemId));
+                          
+                          return [
+                            ...remaining,
+                            {
+                              item_id: itemId,
+                              quantity: adjustment,
+                              sku: itemData?.sku,
+                              name: itemData?.name,
+                              unit: itemData?.unit || 'pcs',
+                            },
+                          ];
+                        });
+                      };
+
+                      return (
+                        <div key={`edit-${order.id}`} className="group rounded-[2rem] border-2 border-emerald-300 bg-emerald-50/30 shadow-lg overflow-hidden">
+                          <div className="p-5 flex flex-wrap items-center justify-between gap-4 bg-emerald-100/50 border-b border-emerald-200">
+                            <div className="flex items-center gap-4">
+                              <div className="w-10 h-10 rounded-xl bg-emerald-500 flex items-center justify-center text-white shadow-sm text-lg">
+                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5"><path d="m5.433 13.917 1.262-3.155A4 4 0 0 1 7.58 9.42l6.92-6.918a2.121 2.121 0 0 1 3 3l-6.92 6.918c-.383.383-.84.685-1.343.886l-3.155 1.262a.5.5 0 0 1-.65-.65Z" /></svg>
+                              </div>
+                              <div>
+                                <p className="text-xs font-black text-emerald-900 tracking-tight">Editing: {order.code}</p>
+                                 <p className="text-[10px] text-emerald-600 font-bold uppercase tracking-tighter">Edit Mode • Modify items and quantities</p>
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="p-6 space-y-6">
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                              <div>
+                                <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2">Add Package</label>
+                                <CustomSelect
+                                  placeholder="Select package..."
+                                  value={null}
+                                  onChange={addEditPackageLine}
+                                  options={(Array.isArray(packages) ? packages : []).map(pkg => ({ value: pkg.id, label: `${pkg.code} — ${pkg.name}` }))}
+                                />
+                              </div>
+                              <div>
+                                <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2">Add SKU</label>
+                                <CustomSelect
+                                  placeholder="Select SKU..."
+                                  value={null}
+                                  onChange={addEditSkuLine}
+                                  options={(Array.isArray(scopedItems) ? scopedItems : []).map(item => ({ value: item.id, label: `${item.sku} — ${item.name}` }))}
+                                />
+                              </div>
+                            </div>
+
+                            {editOrderPackageLines.length > 0 && (
+                              <div>
+                                <h4 className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-3">Selected Packages</h4>
+                                <div className="flex flex-wrap gap-2">
+                                  {editOrderPackageLines.map((line, idx) => (
+                                    <div key={idx} className="flex items-center gap-2 bg-blue-50 border border-blue-100 px-3 py-2 rounded-xl">
+                                      <span className="text-xs font-black text-blue-800">{line.package_code}</span>
+                                      <div className="flex items-center gap-1 bg-white/50 rounded-lg p-0.5">
+                                        <button type="button" onClick={() => updateEditPackageQuantity(idx, -1)} className="w-5 h-5 flex items-center justify-center font-black text-blue-600 hover:bg-blue-100 rounded">-</button>
+                                        <input type="number" value={line.quantity} onChange={(e) => setEditPackageQuantity(idx, e.target.value)} className="w-8 bg-transparent border-0 p-0 text-center text-xs font-black text-blue-900 focus:ring-0 no-spinner" />
+                                        <button type="button" onClick={() => updateEditPackageQuantity(idx, 1)} className="w-5 h-5 flex items-center justify-center font-black text-blue-600 hover:bg-blue-100 rounded">+</button>
+                                      </div>
+                                      <button onClick={() => removeEditPackageLine(idx)} className="text-blue-300 hover:text-red-500">
+                                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4"><path d="M6.28 5.22a.75.75 0 0 0-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 1 0 1.06 1.06L10 11.06l3.72 3.72a.75.75 0 1 0 1.06-1.06L11.06 10l3.72-3.72a.75.75 0 0 0-1.06-1.06L10 8.94 6.28 5.22Z" /></svg>
+                                      </button>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+
+                            {consolidatedForEdit.length > 0 && (
+                              <div>
+                                <h4 className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-3">Items Summary ({consolidatedForEdit.length})</h4>
+                                <div className="space-y-2 max-h-[70vh] overflow-y-auto pr-2 custom-scrollbar">
+                                  {consolidatedForEdit.map((skuLine) => (
+                                    <div key={skuLine.item_id} className="flex items-center justify-between bg-white border border-slate-100 rounded-xl p-3">
+                                      <div className="flex items-center gap-3">
+                                        <span className="text-lg">🧩</span>
+                                        <div>
+                                          <p className="text-xs font-black text-slate-800">{skuLine.sku}</p>
+                                          <p className="text-[9px] text-slate-400 font-bold uppercase">{skuLine.name}</p>
+                                        </div>
+                                      </div>
+                                      <div className="flex items-center gap-2">
+                                        <div className="flex items-center gap-1 bg-slate-50 rounded-lg p-0.5 border border-slate-200">
+                                          <button type="button" onClick={() => {
+                                            const current = normalizeSkuQuantity(skuLine.quantity);
+                                            const next = Math.max(0, normalizeSkuQuantity(current - 1));
+                                            setEditConsolidatedQuantity(skuLine.item_id, next);
+                                          }} className="w-6 h-6 flex items-center justify-center font-black text-slate-600 hover:bg-slate-200 rounded">-</button>
+                                          <input type="number" value={skuLine.quantity} onChange={(e) => setEditConsolidatedQuantity(skuLine.item_id, e.target.value)} className="w-12 bg-transparent border-0 p-0 text-center text-xs font-black text-slate-700 focus:ring-0 no-spinner" />
+                                          <button type="button" onClick={() => {
+                                            const current = normalizeSkuQuantity(skuLine.quantity);
+                                            const next = normalizeSkuQuantity(current + 1);
+                                            setEditConsolidatedQuantity(skuLine.item_id, next);
+                                          }} className="w-6 h-6 flex items-center justify-center font-black text-slate-600 hover:bg-slate-200 rounded">+</button>
+                                        </div>
+                                        <span className="text-xs font-bold text-slate-500 w-8">{skuLine.unit}</span>
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+
+                            <div>
+                              <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2">Notes</label>
+                              <textarea value={editOrderNotes} onChange={(e) => setEditOrderNotes(e.target.value)} rows="2" className="w-full rounded-xl border-slate-200 text-xs font-medium focus:ring-emerald-500/10 focus:border-emerald-400 bg-white p-3" placeholder="Update notes..."></textarea>
+                            </div>
+                          </div>
+
+                          <div className="px-5 py-4 border-t border-emerald-200 flex gap-3 bg-emerald-100/30">
+                            <button
+                              onClick={() => updateDraft(order)}
+                              disabled={processingUpdateId === order.id || consolidatedForEdit.length === 0}
+                              className="flex-1 bg-emerald-600 text-white py-3 rounded-xl text-[10px] font-black text-center uppercase tracking-widest hover:bg-emerald-700 disabled:opacity-50 active:scale-[0.98] transition-all flex items-center justify-center gap-2"
+                            >
+                              {processingUpdateId === order.id ? 'Saving...' : 'Save Changes'}
+                            </button>
+                            <button
+                              onClick={cancelEditMode}
+                              className="flex-1 bg-white border border-slate-200 text-slate-700 py-3 rounded-xl text-[10px] font-black text-center uppercase tracking-widest hover:bg-slate-50 active:scale-[0.98] transition-all"
+                            >
+                              Cancel
+                            </button>
                           </div>
                         </div>
                       );

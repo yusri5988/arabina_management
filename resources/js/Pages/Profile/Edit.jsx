@@ -1,6 +1,8 @@
 import { Head, usePage } from '@inertiajs/react';
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import AuthenticatedLayout from '../../Layouts/AuthenticatedLayout';
+import FloatingAlert from '../../components/FloatingAlert';
+import { apiFetchJson } from '../../lib/http';
 
 export default function Edit({ user }) {
   const { flash } = usePage().props;
@@ -23,11 +25,6 @@ export default function Edit({ user }) {
   const [profileProcessing, setProfileProcessing] = useState(false);
   const [passwordProcessing, setPasswordProcessing] = useState(false);
 
-  const csrfToken = useMemo(
-    () => document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') ?? '',
-    [],
-  );
-
   const submitProfile = async (e) => {
     e.preventDefault();
     setNotification(null);
@@ -35,18 +32,10 @@ export default function Edit({ user }) {
     setProfileProcessing(true);
 
     try {
-      const response = await fetch('/profile', {
+      const { response, payload } = await apiFetchJson('/profile', {
         method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-          Accept: 'application/json',
-          'X-Requested-With': 'XMLHttpRequest',
-          'X-CSRF-TOKEN': csrfToken,
-        },
         body: JSON.stringify(profileData),
       });
-
-      const payload = await response.json().catch(() => ({}));
 
       if (response.ok) {
         setNotification({ type: 'success', message: payload.message ?? 'Profile updated successfully.' });
@@ -55,7 +44,7 @@ export default function Edit({ user }) {
       } else {
         setNotification({ type: 'error', message: payload.message ?? 'Failed to update profile.' });
       }
-    } catch (error) {
+    } catch (_) {
       setNotification({ type: 'error', message: 'Network error. Please try again.' });
     } finally {
       setProfileProcessing(false);
@@ -69,18 +58,10 @@ export default function Edit({ user }) {
     setPasswordProcessing(true);
 
     try {
-      const response = await fetch('/profile/password', {
+      const { response, payload } = await apiFetchJson('/profile/password', {
         method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          Accept: 'application/json',
-          'X-Requested-With': 'XMLHttpRequest',
-          'X-CSRF-TOKEN': csrfToken,
-        },
         body: JSON.stringify(passwordData),
       });
-
-      const payload = await response.json().catch(() => ({}));
 
       if (response.ok) {
         setNotification({ type: 'success', message: payload.message ?? 'Password updated successfully.' });
@@ -94,7 +75,7 @@ export default function Edit({ user }) {
       } else {
         setNotification({ type: 'error', message: payload.message ?? 'Failed to update password.' });
       }
-    } catch (error) {
+    } catch (_) {
       setNotification({ type: 'error', message: 'Network error. Please try again.' });
     } finally {
       setPasswordProcessing(false);
@@ -106,15 +87,11 @@ export default function Edit({ user }) {
       <Head title="Profile" />
 
       <div className="space-y-6">
-        {notification && (
-          <div className={`rounded-2xl border px-4 py-3 text-sm shadow-sm ${
-            notification.type === 'success'
-              ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
-              : 'border-red-200 bg-red-50 text-red-700'
-          }`}>
-            {notification.message}
-          </div>
-        )}
+        <FloatingAlert
+          type={notification?.type}
+          message={notification?.message}
+          onClose={() => setNotification(null)}
+        />
 
         <div className="bg-white rounded-[2rem] shadow-sm border border-slate-100 p-6 md:p-8">
           <h2 className="text-lg font-bold text-slate-800 border-b border-slate-100 pb-4">Profile Information</h2>

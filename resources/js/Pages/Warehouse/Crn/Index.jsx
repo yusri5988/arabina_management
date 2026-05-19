@@ -7,6 +7,7 @@ import { ChevronDownIcon, PlusIcon, ArrowDownTrayIcon, CalendarDaysIcon } from '
 import DatePicker from "react-datepicker";
 import "react-datepicker/dist/react-datepicker.css";
 import { format, parseISO } from 'date-fns';
+import FloatingAlert from '../../../components/FloatingAlert';
 
 const BOM_GROUPS = [
   { key: 'cabin', label: 'BOM Cabin' },
@@ -58,7 +59,6 @@ export default function CrnIndex({
       const { response, payload } = await request();
       if (response.ok) {
         setNotification({ type: 'success', message: successMessage });
-        refreshCrnPage();
       } else {
         setNotification({ type: 'error', message: payload.message });
       }
@@ -144,9 +144,16 @@ export default function CrnIndex({
       <Head title={headTitle} />
       <div className="space-y-4">
 
-        {notification && (
-          <div className={`rounded-2xl border px-4 py-3 text-sm ${notification.type === 'success' ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-red-200 bg-red-50 text-red-700'}`}>{notification.message}</div>
-        )}
+        <FloatingAlert
+          type={notification?.type}
+          message={notification?.message}
+          onClose={() => {
+            setNotification(null);
+            if (notification?.type === 'success') {
+              refreshCrnPage();
+            }
+          }}
+        />
 
         {/* ── Incoming Shipments ── */}
         {showIncomingShipments && (

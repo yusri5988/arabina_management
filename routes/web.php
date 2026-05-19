@@ -94,6 +94,8 @@ Route::middleware('auth')->group(function () use ($procurementScopes) {
         Route::get('/orders/{order}/pdf', [SalesOrderController::class, 'pdf'])->name('sales.orders.pdf');
         Route::get('/orders/search-item', [SalesOrderController::class, 'searchItem'])->name('sales.orders.search.item');
         Route::post('/orders', [SalesOrderController::class, 'store'])->name('sales.orders.store');
+        Route::put('/orders/{order}', [SalesOrderController::class, 'update'])->name('sales.orders.update');
+        Route::delete('/orders/{order}', [SalesOrderController::class, 'destroy'])->name('sales.orders.destroy');
     });
 
     Route::middleware('module:procurement')->group(function () use ($procurementScopes) {
@@ -110,6 +112,7 @@ Route::middleware('auth')->group(function () use ($procurementScopes) {
                 ->group(function () use ($scope) {
                     Route::get('/', [ProcurementController::class, 'index'])->defaults('procurement_scope', $scope)->name('index');
                     Route::post('/orders', [ProcurementController::class, 'store'])->defaults('procurement_scope', $scope)->name('orders.store');
+                    Route::put('/orders/{order}', [ProcurementController::class, 'update'])->defaults('procurement_scope', $scope)->name('orders.update');
                     Route::get('/orders/{order}/pdf', [ProcurementController::class, 'pdf'])->defaults('procurement_scope', $scope)->name('orders.pdf');
                     Route::post('/orders/{order}/lines', [ProcurementController::class, 'addLine'])->defaults('procurement_scope', $scope)->name('orders.lines.store');
                     Route::post('/orders/{order}/packages', [ProcurementController::class, 'addPackageLine'])->defaults('procurement_scope', $scope)->name('orders.packages.store');

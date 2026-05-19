@@ -2,6 +2,7 @@ import { Head, router } from '@inertiajs/react';
 import { useMemo, useState } from 'react';
 import AuthenticatedLayout from '../../Layouts/AuthenticatedLayout';
 import { apiFetchJson } from '../../lib/http';
+import FloatingAlert from '../../components/FloatingAlert';
 
 export default function StockAudit({ items = [], auditHistories = [] }) {
     const [lines, setLines] = useState(
@@ -85,7 +86,6 @@ export default function StockAudit({ items = [], auditHistories = [] }) {
         if (response.ok) {
             setNotification({ type: 'success', message: result.message ?? 'Stock audit saved.' });
             setNotes('');
-            router.visit('/items/stocks');
         } else if (response.status === 422) {
             setErrors(result.errors ?? {});
         } else {
@@ -105,11 +105,16 @@ export default function StockAudit({ items = [], auditHistories = [] }) {
             <Head title="Stock Audit" />
 
             <div className="space-y-6">
-                {notification && (
-                    <div className={`rounded-2xl border px-4 py-3 text-sm ${notification.type === 'success' ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-red-200 bg-red-50 text-red-700'}`}>
-                        {notification.message}
-                    </div>
-                )}
+                <FloatingAlert
+                    type={notification?.type}
+                    message={notification?.message}
+                    onClose={() => {
+                        setNotification(null);
+                        if (notification?.type === 'success') {
+                            router.visit('/items/stocks');
+                        }
+                    }}
+                />
 
                 <form onSubmit={submitAudit} className="bg-white rounded-[2rem] shadow-sm border border-slate-100 p-6 space-y-4">
                     <h2 className="text-lg font-bold text-slate-800">Current Stock vs Audited Stock</h2>
