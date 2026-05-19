@@ -8,6 +8,7 @@ use App\Models\Item;
 use App\Models\Package;
 use App\Models\ProcurementOrder;
 use App\Models\ProcurementOrderLine;
+use App\Models\ProcurementOrderPackageLine;
 use App\Models\TransactionLog;
 use App\Models\ContainerReceivingNote;
 use App\Models\CrnItem;
@@ -60,6 +61,9 @@ class ProcurementController extends Controller
         'packageLines.package.packageItems.item:id,sku,name,unit',
         'lines.item:id,sku,name,unit,bom_scope',
         'supplier:id,name',
+        'crns:id,procurement_order_id,status,eta',
+        'mrns:id,procurement_order_id,status,eta',
+        'srns:id,procurement_order_id,status,eta',
     ];
 
     public function index(Request $request): Response
@@ -582,23 +586,305 @@ class ProcurementController extends Controller
         ]);
     }
 
+    public function update(Request $request, ProcurementOrder $order): JsonResponse
+    {
+        $this->authorizeModule($request, 'procurement');
+        $scope = $this->resolveScope($request);
+        $this->ensureOrderMatchesScope($order, $scope);
+
+        if ($lockReason = $this->receivingOrderLockReason($order)) {
+            return response()->json([
+                'message' => $lockReason,
+            ], 422);
+        }
+
+        $validated = $request->validate([
+            'package_lines' => 'nullable|array',
+            'package_lines.*.package_id' => 'required|integer|exists:packages,id|distinct',
+            'package_lines.*.quantity' => 'required|integer|min:1',
+            'sku_lines' => 'nullable|array',
+            'sku_lines.*.item_id' => 'required|integer|exists:items,id|distinct',
+            'sku_lines.*.quantity' => [
+                'required',
+                'numeric',
+                function (string $attribute, mixed $value, \Closure $fail): void {
+                    if (!preg_match('/^-?\d+(?:\.\d)?$/', trim((string) $value))) {
+                        $fail('The ' . str_replace('_', ' ', $attribute) . ' field must have at most 1 decimal place.');
+                    }
+                },
+            ],
+            'sku_lines.*.unit' => 'nullable|string|max:50',
+            'notes' => 'nullable|string|max:500',
+        ]);
+
+        if (empty($validated['package_lines']) && empty($validated['sku_lines'])) {
+            return response()->json([
+                'message' => 'Please add at least one package or SKU to the order.',
+            ], 422);
+        }
+
+        $scopedItems = Item::query()
+            ->whereIn('id', collect($validated['sku_lines'] ?? [])->pluck('item_id'))
+            ->where('bom_scope', $scope)
+            ->get()
+            ->keyBy('id');
+
+        $scopedPackages = $this->scopedPackagesById(collect($validated['package_lines'] ?? [])->pluck('package_id'), $scope);
+
+        $supplierGroups = [];
+        $skuSuppliersMap = ($scope === Bom::TYPE_HARDWARE) ? [] : [];
+
+        foreach ($validated['package_lines'] ?? [] as $pLine) {
+            $packageId = (int) $pLine['package_id'];
+            $packageQty = (int) $pLine['quantity'];
+            $package = $scopedPackages->get($packageId);
+            $scopeBom = $this->packageBomForScope($package, $scope);
+
+            if ($scopeBom) {
+                foreach ($scopeBom->bomItems as $bomItem) {
+                    $itemId = (int) $bomItem->item_id;
+                    $supplierId = (int) ($skuSuppliersMap[$itemId] ?? 0);
+                    $needed = $this->normalizeQuantity($packageQty * $bomItem->quantity);
+
+                    if (!isset($supplierGroups[$supplierId][$itemId])) {
+                        $supplierGroups[$supplierId][$itemId] = ['qty' => 0, 'unit' => $bomItem->item?->unit];
+                    }
+                    $supplierGroups[$supplierId][$itemId]['qty'] = $this->normalizeQuantity($supplierGroups[$supplierId][$itemId]['qty'] + $needed);
+                }
+            }
+        }
+
+        foreach ($validated['sku_lines'] ?? [] as $sLine) {
+            $itemId = (int) $sLine['item_id'];
+            $supplierId = (int) ($skuSuppliersMap[$itemId] ?? 0);
+            $qty = $this->normalizeQuantity($sLine['quantity']);
+            $unit = $sLine['unit'] ?? null;
+
+            if (!isset($supplierGroups[$supplierId][$itemId])) {
+                $supplierGroups[$supplierId][$itemId] = ['qty' => 0, 'unit' => $unit];
+            } else if ($unit) {
+                $supplierGroups[$supplierId][$itemId]['unit'] = $unit;
+            }
+
+            $supplierGroups[$supplierId][$itemId]['qty'] = $this->normalizeQuantity($supplierGroups[$supplierId][$itemId]['qty'] + $qty);
+        }
+
+        foreach ($supplierGroups as $supplierId => $items) {
+            foreach ($items as $itemId => $data) {
+                if ($this->normalizeQuantity($data['qty']) <= 0) {
+                    unset($supplierGroups[$supplierId][$itemId]);
+                }
+            }
+
+            if (empty($supplierGroups[$supplierId])) {
+                unset($supplierGroups[$supplierId]);
+            }
+        }
+
+        if (empty($supplierGroups)) {
+            return response()->json([
+                'message' => 'Please keep at least one SKU quantity above 0.',
+            ], 422);
+        }
+
+        DB::transaction(function () use ($order, $validated, $scope, $supplierGroups) {
+            $order->packageLines()->delete();
+
+            if ($scope !== Bom::TYPE_HARDWARE) {
+                foreach ($validated['package_lines'] ?? [] as $packageLine) {
+                    ProcurementOrderPackageLine::create([
+                        'procurement_order_id' => $order->id,
+                        'package_id' => (int) $packageLine['package_id'],
+                        'quantity' => (int) $packageLine['quantity'],
+                    ]);
+                }
+            }
+
+            $order->lines()->delete();
+
+            foreach ($supplierGroups as $supplierId => $items) {
+                foreach ($items as $itemId => $data) {
+                    ProcurementOrderLine::create([
+                        'procurement_order_id' => $order->id,
+                        'item_id' => $itemId,
+                        'suggested_quantity' => $data['qty'],
+                        'ordered_quantity' => $data['qty'],
+                        'item_unit' => $data['unit'],
+                        'received_quantity' => 0,
+                        'rejected_quantity' => 0,
+                    ]);
+                }
+            }
+
+            if (isset($validated['notes'])) {
+                $order->update(['notes' => $validated['notes']]);
+            }
+
+            $order->refresh()->load('lines');
+            $this->syncReceivingNotesForOrder($order);
+        });
+
+        return response()->json([
+            'message' => 'Procurement order updated successfully.',
+            'data' => $this->findOrderWithRelations($order->id),
+        ]);
+    }
+
     public function destroy(Request $request, ProcurementOrder $order): JsonResponse
     {
         $this->authorizeModule($request, 'procurement');
         $scope = $this->resolveScope($request);
         $this->ensureOrderMatchesScope($order, $scope);
 
-        if ($order->status !== 'draft') {
+        if ($lockReason = $this->receivingOrderLockReason($order)) {
             return response()->json([
-                'message' => 'Only draft procurement order can be deleted.',
+                'message' => $lockReason,
             ], 422);
         }
 
-        $order->delete();
+        DB::transaction(function () use ($order) {
+            $order->loadMissing(['crns.items.rejectedItems', 'mrns.items.rejectedItems', 'srns.items.rejectedItems']);
+            $this->deleteReceivingNotesForOrder($order);
+            ProcurementOrder::query()->whereKey($order->id)->delete();
+        });
 
         return response()->json([
-            'message' => 'Procurement draft deleted successfully.',
+            'message' => 'Procurement order deleted successfully.',
         ]);
+    }
+
+    private function receivingOrderLockReason(ProcurementOrder $order): ?string
+    {
+        if (in_array($order->status, ['partial', 'received', 'fulfilled', 'closed', 'cancelled'], true)) {
+            return 'Procurement order is already processed and cannot be modified.';
+        }
+
+        $this->loadReceivingNotesForModification($order);
+
+        foreach ($this->allReceivingNotesForOrder($order) as $note) {
+            if ($this->noteHasProcessedQuantities($note)) {
+                return 'Procurement order cannot be modified because receiving has already started.';
+            }
+
+            if (! $this->noteCanBeModified($note)) {
+                return match (true) {
+                    $note instanceof ContainerReceivingNote => 'This procurement order is locked after ETA was set for CRN.',
+                    $note instanceof MaterialReceivingNote => 'This procurement order is locked after ETA was set for MRN.',
+                    $note instanceof SiteReceivingNote => 'This procurement order is locked after ETA was set for SRN.',
+                    default => 'This procurement order cannot be modified.',
+                };
+            }
+        }
+
+        return null;
+    }
+
+    private function loadReceivingNotesForModification(ProcurementOrder $order): void
+    {
+        $order->loadMissing([
+            'crns.items.rejectedItems',
+            'mrns.items.rejectedItems',
+            'srns.items.rejectedItems',
+        ]);
+    }
+
+    private function allReceivingNotesForOrder(ProcurementOrder $order): Collection
+    {
+        return collect([
+            $order->crns ?? collect(),
+            $order->mrns ?? collect(),
+            $order->srns ?? collect(),
+        ])->flatten(1)->values();
+    }
+
+    private function noteCanBeModified(ContainerReceivingNote|MaterialReceivingNote|SiteReceivingNote $note): bool
+    {
+        $status = (string) ($note->status ?? '');
+
+        if ($note instanceof ContainerReceivingNote) {
+            return in_array($status, ['draft', 'awaiting_shipping'], true);
+        }
+
+        return in_array($status, ['draft', 'awaiting_shipping', 'arrived'], true);
+    }
+
+    private function noteHasProcessedQuantities(ContainerReceivingNote|MaterialReceivingNote|SiteReceivingNote $note): bool
+    {
+        return $note->items->contains(function ($item): bool {
+            return $this->normalizeQuantity($item->received_qty) > 0
+                || $this->normalizeQuantity($item->rejected_qty) > 0;
+        });
+    }
+
+    private function syncReceivingNotesForOrder(ProcurementOrder $order): void
+    {
+        $this->loadReceivingNotesForModification($order);
+
+        foreach ($this->allReceivingNotesForOrder($order) as $note) {
+            if (! $this->noteCanBeModified($note)) {
+                throw ValidationException::withMessages([
+                    'notes' => ['Procurement order cannot be modified because receiving has already started.'],
+                ]);
+            }
+
+            if ($this->noteHasProcessedQuantities($note)) {
+                throw ValidationException::withMessages([
+                    'notes' => ['Procurement order cannot be modified because receiving has already started.'],
+                ]);
+            }
+
+            $this->replaceReceivingNoteItems($note, $order->lines);
+        }
+    }
+
+    private function replaceReceivingNoteItems(ContainerReceivingNote|MaterialReceivingNote|SiteReceivingNote $note, Collection $lines): void
+    {
+        foreach ($note->items as $item) {
+            $item->rejectedItems()->delete();
+            $item->delete();
+        }
+
+        foreach ($lines as $line) {
+            if (! $line->item_id) {
+                continue;
+            }
+
+            $variant = $this->findOrCreateDefaultVariant((int) $line->item_id);
+
+            $note->items()->create([
+                'item_variant_id' => $variant->id,
+                'expected_qty' => $this->normalizeQuantity($line->ordered_quantity),
+                'received_qty' => 0,
+                'rejected_qty' => 0,
+                'rejection_reason' => null,
+            ]);
+        }
+    }
+
+    private function deleteReceivingNotesForOrder(ProcurementOrder $order): void
+    {
+        $this->loadReceivingNotesForModification($order);
+
+        foreach ($this->allReceivingNotesForOrder($order) as $note) {
+            if (! $this->noteCanBeModified($note)) {
+                throw ValidationException::withMessages([
+                    'notes' => ['Procurement order cannot be deleted because ETA has already been set.'],
+                ]);
+            }
+
+            if ($this->noteHasProcessedQuantities($note)) {
+                throw ValidationException::withMessages([
+                    'notes' => ['Procurement order cannot be deleted because receiving has already started.'],
+                ]);
+            }
+
+            foreach ($note->items as $item) {
+                $item->rejectedItems()->delete();
+                $item->delete();
+            }
+
+            $note->delete();
+        }
     }
 
     public function pdf(Request $request, ProcurementOrder $order)

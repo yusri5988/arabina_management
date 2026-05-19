@@ -112,6 +112,7 @@ Route::middleware('auth')->group(function () use ($procurementScopes) {
                 ->group(function () use ($scope) {
                     Route::get('/', [ProcurementController::class, 'index'])->defaults('procurement_scope', $scope)->name('index');
                     Route::post('/orders', [ProcurementController::class, 'store'])->defaults('procurement_scope', $scope)->name('orders.store');
+                    Route::put('/orders/{order}', [ProcurementController::class, 'update'])->defaults('procurement_scope', $scope)->name('orders.update');
                     Route::get('/orders/{order}/pdf', [ProcurementController::class, 'pdf'])->defaults('procurement_scope', $scope)->name('orders.pdf');
                     Route::post('/orders/{order}/lines', [ProcurementController::class, 'addLine'])->defaults('procurement_scope', $scope)->name('orders.lines.store');
                     Route::post('/orders/{order}/packages', [ProcurementController::class, 'addPackageLine'])->defaults('procurement_scope', $scope)->name('orders.packages.store');
