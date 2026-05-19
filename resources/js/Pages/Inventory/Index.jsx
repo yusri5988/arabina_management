@@ -2,6 +2,7 @@ import { Head, router } from '@inertiajs/react';
 import { useMemo, useState, useRef, useCallback, useEffect } from 'react';
 import AuthenticatedLayout from '../../Layouts/AuthenticatedLayout';
 import FloatingAlert from '../../components/FloatingAlert';
+import { apiFetchJson } from '../../lib/http';
 
 const CustomSelect = ({ value, onChange, options, className = "" }) => {
   const [isOpen, setIsOpen] = useState(false);
@@ -126,11 +127,6 @@ export default function Index({ items }) {
     return Number.isNaN(numericValue) ? '—' : numericValue.toFixed(2);
   };
 
-  const csrfToken = useMemo(
-    () => document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') ?? '',
-    [],
-  );
-
   useEffect(() => {
     setInventory(normalizedItems);
   }, [normalizedItems]);
@@ -199,20 +195,6 @@ export default function Index({ items }) {
     setNotification({ type, message });
   };
 
-  const parseResponsePayload = async (response) => {
-    const contentType = response.headers.get('content-type') ?? '';
-
-    if (contentType.includes('application/json')) {
-      return response.json();
-    }
-
-    const text = await response.text();
-
-    return {
-      message: text || 'Unexpected server response.',
-    };
-  };
-
   const submit = async (e) => {
     e.preventDefault();
     setNotification(null);
@@ -220,18 +202,10 @@ export default function Index({ items }) {
     setProcessing(true);
 
     try {
-      const response = await fetch('/items', {
+      const { response, payload } = await apiFetchJson('/items', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Accept: 'application/json',
-          'X-CSRF-TOKEN': csrfToken,
-          'X-Requested-With': 'XMLHttpRequest',
-        },
         body: JSON.stringify(data),
       });
-
-      const payload = await parseResponsePayload(response);
 
       if (response.status === 201) {
         setInventory(prev => [payload.data, ...prev]);
@@ -242,7 +216,7 @@ export default function Index({ items }) {
       } else {
         showNotification('error', payload.message ?? 'Failed to register item.');
       }
-    } catch (error) {
+    } catch (_) {
       showNotification('error', 'Something went wrong.');
     } finally {
       setProcessing(false);
@@ -273,21 +247,10 @@ export default function Index({ items }) {
     setProcessing(true);
 
     try {
-      const tokenRes = await fetch('/csrf-token');
-      const tokenData = await tokenRes.json();
-
-      const response = await fetch(`/items/${id}`, {
+      const { response, payload } = await apiFetchJson(`/items/${id}`, {
         method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          Accept: 'application/json',
-          'X-CSRF-TOKEN': tokenData.token,
-          'X-Requested-With': 'XMLHttpRequest',
-        },
         body: JSON.stringify(editData),
       });
-
-      const payload = await parseResponsePayload(response);
 
       if (response.ok) {
         setInventory(prev =>
@@ -302,7 +265,7 @@ export default function Index({ items }) {
       } else {
         showNotification('error', payload.message ?? 'Failed to update item.');
       }
-    } catch (error) {
+    } catch (_) {
       showNotification('error', 'Failed to update item.');
     } finally {
       setProcessing(false);
@@ -312,16 +275,9 @@ export default function Index({ items }) {
   const deleteItem = async (id) => {
     setProcessing(true);
     try {
-      const response = await fetch(`/items/${id}`, {
+      const { response, payload } = await apiFetchJson(`/items/${id}`, {
         method: 'DELETE',
-        headers: {
-          Accept: 'application/json',
-          'X-CSRF-TOKEN': csrfToken,
-          'X-Requested-With': 'XMLHttpRequest',
-        },
       });
-
-      const payload = await parseResponsePayload(response);
 
       if (response.ok) {
         setInventory(prev => prev.filter(item => item.id !== id));
@@ -329,7 +285,7 @@ export default function Index({ items }) {
       } else {
         showNotification('error', payload.message ?? 'Failed to delete item.');
       }
-    } catch (error) {
+    } catch (_) {
       showNotification('error', 'Failed to delete item.');
     } finally {
       setProcessing(false);

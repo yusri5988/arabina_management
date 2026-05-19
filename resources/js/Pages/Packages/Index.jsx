@@ -1,8 +1,9 @@
 import { Head } from '@inertiajs/react';
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import AuthenticatedLayout from '../../Layouts/AuthenticatedLayout';
 import QtyInput from '../../components/QtyInput.jsx';
 import FloatingAlert from '../../components/FloatingAlert.jsx';
+import { apiFetchJson } from '../../lib/http';
 
 const BOM_TYPES = [
   { key: 'cabin', label: 'BOM Cabin' },
@@ -97,7 +98,6 @@ export default function Index({ items, packages, schemaReady = true }) {
   const fileRef = useRef(null);
   const xlsxRef = useRef(null);
 
-  const csrfToken = useMemo(() => document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') ?? '', []);
 
   const addLine = (bomType) => {
     setData((prev) => ({
@@ -246,12 +246,10 @@ export default function Index({ items, packages, schemaReady = true }) {
     setBulkErrors([]);
     setNotification(null);
     try {
-      const response = await fetch('/packages/bulk', {
+      const { response, payload } = await apiFetchJson('/packages/bulk', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Accept: 'application/json', 'X-CSRF-TOKEN': csrfToken },
         body: JSON.stringify({ packages: bulkRows.map((row) => ({ ...row, quantity: Number(row.quantity) })) }),
       });
-      const payload = await response.json().catch(() => ({}));
       if (response.status === 201) {
         setList((prev) => [...(payload.data ?? []), ...prev]);
         setNotification({ type: 'success', message: payload.message ?? 'Bulk package upload completed.' });
@@ -262,7 +260,7 @@ export default function Index({ items, packages, schemaReady = true }) {
       } else {
         setBulkErrorMessage(payload.message ?? 'Bulk upload failed.');
       }
-    } catch (error) {
+    } catch (_) {
       setBulkErrorMessage('Network error. Please try again.');
     } finally {
       setBulkUploading(false);
@@ -291,26 +289,26 @@ export default function Index({ items, packages, schemaReady = true }) {
     };
 
     try {
-      const response = await fetch(url, {
+      const { response, payload } = await apiFetchJson(url, {
         method,
-        headers: { 'Content-Type': 'application/json', Accept: 'application/json', 'X-CSRF-TOKEN': csrfToken },
         body: JSON.stringify(payloadData),
       });
-      const payload = await response.json().catch(() => ({}));
       if (response.status === 201 || (editingId && response.ok)) {
-        if (editingId) {
-          setList((prev) => prev.map((item) => (item.id === editingId ? payload.data : item)));
-        } else {
-          setList((prev) => [payload.data, ...prev]);
+        if (payload.data) {
+          if (editingId) {
+            setList((prev) => prev.map((item) => (item.id === editingId ? payload.data : item)));
+          } else {
+            setList((prev) => [payload.data, ...prev]);
+          }
         }
         setNotification({ type: 'success', message: payload.message ?? 'Package saved successfully.' });
-        resetForm();
+        if (payload.data) resetForm();
       } else if (response.status === 422) {
         setErrors(payload.errors ?? {});
       } else {
         setNotification({ type: 'error', message: payload.message ?? 'Something went wrong.' });
       }
-    } catch (error) {
+    } catch (_) {
       setNotification({ type: 'error', message: 'Something went wrong.' });
     } finally {
       setProcessing(false);
@@ -323,11 +321,9 @@ export default function Index({ items, packages, schemaReady = true }) {
     setDeletingId(pkg.id);
     setNotification(null);
     try {
-      const response = await fetch(`/packages/${pkg.id}`, {
+      const { response, payload } = await apiFetchJson(`/packages/${pkg.id}`, {
         method: 'DELETE',
-        headers: { Accept: 'application/json', 'X-CSRF-TOKEN': csrfToken },
       });
-      const payload = await response.json().catch(() => ({}));
       if (response.ok) {
         setList((prev) => prev.filter((item) => item.id !== pkg.id));
         setNotification({ type: 'success', message: payload.message ?? 'Package deleted successfully.' });
@@ -335,9 +331,9 @@ export default function Index({ items, packages, schemaReady = true }) {
       } else {
         setNotification({ type: 'error', message: payload.message ?? 'Failed to delete package.' });
       }
-    } catch (error) {
+    } catch (_) {
       setNotification({ type: 'error', message: 'Network error. Please try again.' });
-    } finally {
+} finally {
       setDeletingId(null);
     }
   };
