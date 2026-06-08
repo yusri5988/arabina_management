@@ -231,7 +231,7 @@ class ProcurementController extends Controller
             ],
             'sku_lines.*.unit' => 'nullable|string|max:50',
             'sku_suppliers' => 'nullable|array', // { item_id => supplier_id }
-            'po_number' => 'required|string|max:255|unique:procurement_orders,code',
+            'po_number' => 'required|string|max:255',
             'notes' => 'nullable|string|max:500',
         ]);
 
@@ -310,12 +310,6 @@ class ProcurementController extends Controller
         }
 
         $manualPoNumber = isset($validated['po_number']) ? trim((string) $validated['po_number']) : '';
-
-        if ($manualPoNumber !== '' && count($supplierGroups) > 1) {
-            return response()->json([
-                'message' => 'Manual PO number can only be used when the request generates a single procurement order.',
-            ], 422);
-        }
 
         $createdOrders = DB::transaction(function () use ($request, $validated, $scope, $supplierGroups, $manualPoNumber) {
             $orders = [];
@@ -896,7 +890,7 @@ class ProcurementController extends Controller
         return Pdf::loadView('procurement.order-pdf', [
             'order' => $order,
             'printedAt' => now(),
-        ])->download("{$order->code}.pdf");
+        ])->download("procurement-order-{$order->id}.pdf");
     }
 
     public function rejectedList(Request $request): Response

@@ -838,6 +838,7 @@ class PackageController extends Controller
             ->distinct()
             ->pluck('procurement_orders.code')
             ->filter()
+            ->unique()
             ->values();
 
         if ($procurementOrderCodes->isNotEmpty()) {
