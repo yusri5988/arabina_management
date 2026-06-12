@@ -64,10 +64,7 @@ class LogsController extends Controller
         }
 
         if (isset($details['po_code']) && in_array($log->action, ['crn_po_received', 'crn_po_safe_receive'], true)) {
-            $order = ProcurementOrder::with([
-                'packageLines.package:id,code,name',
-                'lines.item:id,sku,name,unit',
-            ])->where('code', (string) $details['po_code'])->first();
+            $order = $this->resolveProcurementOrder($details);
 
             if ($order) {
                 $data['procurement_order'] = $order;
@@ -75,10 +72,7 @@ class LogsController extends Controller
         }
 
         if (isset($details['po_code']) && in_array($log->action, ['mrn_po_received', 'srn_po_received'], true)) {
-            $order = ProcurementOrder::with([
-                'packageLines.package:id,code,name',
-                'lines.item:id,sku,name,unit',
-            ])->where('code', (string) $details['po_code'])->first();
+            $order = $this->resolveProcurementOrder($details);
 
             if ($order) {
                 $data['procurement_order'] = $order;
@@ -168,5 +162,19 @@ class LogsController extends Controller
             'details' => $details,
             'data' => $data,
         ];
+    }
+
+    private function resolveProcurementOrder(array $details): ?ProcurementOrder
+    {
+        $query = ProcurementOrder::with([
+            'packageLines.package:id,code,name',
+            'lines.item:id,sku,name,unit',
+        ]);
+
+        if (isset($details['procurement_order_id'])) {
+            return $query->find((int) $details['procurement_order_id']);
+        }
+
+        return $query->where('code', (string) $details['po_code'])->latest('id')->first();
     }
 }

@@ -156,7 +156,7 @@ class SiteReceivingNoteController extends Controller
         DB::transaction(function () use ($request, $order, $processableLines, $validated) {
             $transaction = $this->createInventoryTransaction(
                 $request->user()->id,
-                "Transfer from SRN PO: {$order->code}"
+                "Transfer from SRN PO: {$order->code} (#{$order->id})"
             );
 
             $srn = SiteReceivingNote::create([
@@ -199,6 +199,7 @@ class SiteReceivingNoteController extends Controller
 
             TransactionLog::record('srn_po_received', [
                 'srn_number' => $srn->srn_number,
+                'procurement_order_id' => $order->id,
                 'po_code' => $order->code,
                 'lines_count' => count($validated['lines']),
             ]);

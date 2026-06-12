@@ -156,7 +156,7 @@ class MaterialReceivingNoteController extends Controller
         DB::transaction(function () use ($request, $order, $processableLines, $validated) {
             $transaction = $this->createInventoryTransaction(
                 $request->user()->id,
-                "Transfer from MRN PO: {$order->code}"
+                "Transfer from MRN PO: {$order->code} (#{$order->id})"
             );
 
             $mrn = MaterialReceivingNote::create([
@@ -199,6 +199,7 @@ class MaterialReceivingNoteController extends Controller
 
             TransactionLog::record('mrn_po_received', [
                 'mrn_number' => $mrn->mrn_number,
+                'procurement_order_id' => $order->id,
                 'po_code' => $order->code,
                 'lines_count' => count($validated['lines']),
             ]);

@@ -145,7 +145,7 @@ class CrnController extends Controller
         DB::transaction(function () use ($request, $order, $processableLines, $validated) {
             $transaction = $this->createInventoryTransaction(
                 $request->user()->id,
-                "Direct receive from PO: {$order->code}"
+                "Direct receive from PO: {$order->code} (#{$order->id})"
             );
 
             $crn = ContainerReceivingNote::create([
@@ -188,6 +188,7 @@ class CrnController extends Controller
 
             TransactionLog::record('crn_po_received', [
                 'crn_number' => $crn->crn_number,
+                'procurement_order_id' => $order->id,
                 'po_code' => $order->code,
                 'lines_count' => count($validated['lines']),
             ]);
@@ -223,7 +224,7 @@ class CrnController extends Controller
             $variant = $this->findOrCreateDefaultVariant((int) $line->item_id);
             $transaction = $this->createInventoryTransaction(
                 $request->user()->id,
-                "Safe receive from PO: {$order->code}"
+                "Safe receive from PO: {$order->code} (#{$order->id})"
             );
 
             $this->applyReceivedStock($transaction, $variant, (int) $line->item_id, $remaining);
@@ -233,6 +234,7 @@ class CrnController extends Controller
             $this->updateProcurementOrderStatus($order->id);
 
             TransactionLog::record('crn_po_safe_receive', [
+                'procurement_order_id' => $order->id,
                 'po_code' => $order->code,
                 'sku' => $line->item?->sku,
                 'quantity' => $remaining,
