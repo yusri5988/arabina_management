@@ -325,6 +325,77 @@ class ItemController extends Controller
         ])->download('Inventory_Stock_List_' . now()->format('Ymd_His') . '.pdf');
     }
 
+    public function downloadStockExcel()
+    {
+        $items = Item::with('variants')->orderBy('sku')->get();
+
+        $spreadsheet = new \PhpOffice\PhpSpreadsheet\Spreadsheet();
+        $sheet = $spreadsheet->getActiveSheet();
+        $sheet->setTitle('Stock List');
+
+        $scopes = [
+            'cabin' => 'BOM CABIN',
+            'hardware' => 'BOM HARDWARE',
+            'hardware_site' => 'BOM HARDWARE SITE',
+        ];
+
+        $row = 1;
+
+        foreach ($scopes as $scopeKey => $scopeLabel) {
+            $scopeItems = $items->filter(function ($item) use ($scopeKey) {
+                return ($item->bom_scope ?? 'hardware') === $scopeKey;
+            });
+
+            // Section Header
+            $sheet->setCellValue('A' . $row, $scopeLabel);
+            $sheet->getStyle('A' . $row)->getFont()->setBold(true)->setSize(14);
+            $sheet->mergeCells('A' . $row . ':E' . $row);
+            $row++;
+
+            // Table Headers
+            $sheet->setCellValue('A' . $row, 'SKU');
+            $sheet->setCellValue('B' . $row, 'Item Name');
+            $sheet->setCellValue('C' . $row, 'Length (m)');
+            $sheet->setCellValue('D' . $row, 'Unit');
+            $sheet->setCellValue('E' . $row, 'Total Stock');
+            $sheet->getStyle('A' . $row . ':E' . $row)->getFont()->setBold(true);
+            $row++;
+
+            if ($scopeItems->isEmpty()) {
+                $sheet->setCellValue('A' . $row, 'No SKU in ' . strtolower($scopeLabel) . '.');
+                $sheet->mergeCells('A' . $row . ':E' . $row);
+                $row++;
+            } else {
+                foreach ($scopeItems as $item) {
+                    $totalStock = $item->variants->sum('stock_current');
+
+                    $sheet->setCellValue('A' . $row, $item->sku);
+                    $sheet->setCellValue('B' . $row, $item->name);
+                    $sheet->setCellValue('C' . $row, $item->length_m ? number_format((float)$item->length_m, 2) : '-');
+                    $sheet->setCellValue('D' . $row, strtoupper($item->unit));
+                    $sheet->setCellValue('E' . $row, $totalStock);
+                    
+                    $row++;
+                }
+            }
+
+            // Add an empty row between sections
+            $row++;
+        }
+
+        // Auto-size columns
+        foreach (range('A', 'E') as $col) {
+            $sheet->getColumnDimension($col)->setAutoSize(true);
+        }
+
+        $writer = new \PhpOffice\PhpSpreadsheet\Writer\Xlsx($spreadsheet);
+        $fileName = 'Inventory_Stock_List_' . now()->format('Ymd_His') . '.xlsx';
+        $tempFile = tempnam(sys_get_temp_dir(), 'excel');
+        $writer->save($tempFile);
+
+        return response()->download($tempFile, $fileName)->deleteFileAfterSend(true);
+    }
+
     public function store(Request $request): JsonResponse
     {
         $validated = $request->validate([

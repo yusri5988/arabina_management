@@ -122,7 +122,7 @@ export default function StockList({ items = [], packages = [] }) {
               <p className="text-xs text-slate-600 font-semibold">Download the latest stock list or proceed directly to a stock audit.</p>
             </div>
 
-            <div className="grid w-full gap-2 sm:grid-cols-2 lg:w-auto">
+            <div className="grid w-full gap-2 sm:grid-cols-3 lg:w-auto">
               <a
                 href="/items/stocks/pdf"
                 className="inline-flex items-center justify-center gap-2 rounded-xl bg-rose-600 px-6 py-3 text-sm font-black text-white shadow-lg shadow-rose-200/80 transition-all hover:-translate-y-0.5 hover:bg-rose-700 active:translate-y-0 active:scale-[0.99] uppercase tracking-wider"
@@ -133,8 +133,17 @@ export default function StockList({ items = [], packages = [] }) {
                 Generate List PDF
               </a>
               <a
-                href="/items/stocks/audit"
+                href="/items/stocks/excel"
                 className="inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-600 px-6 py-3 text-sm font-black text-white shadow-lg shadow-emerald-200/80 transition-all hover:-translate-y-0.5 hover:bg-emerald-700 active:translate-y-0 active:scale-[0.99] uppercase tracking-wider"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2.6} stroke="currentColor" className="w-4 h-4">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M7.5 12l4.5 4.5m0 0l4.5-4.5M12 3v13.5" />
+                </svg>
+                Generate List Excel
+              </a>
+              <a
+                href="/items/stocks/audit"
+                className="inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-6 py-3 text-sm font-black text-white shadow-lg shadow-blue-200/80 transition-all hover:-translate-y-0.5 hover:bg-blue-700 active:translate-y-0 active:scale-[0.99] uppercase tracking-wider"
               >
                 Stock Audit
               </a>

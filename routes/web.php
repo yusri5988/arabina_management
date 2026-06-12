@@ -69,6 +69,7 @@ Route::middleware('auth')->group(function () use ($procurementScopes) {
         Route::post('/items/stocks/audit', [ItemController::class, 'stockAuditStore'])->name('items.stocks.audit.store');
         Route::get('/items/stocks/audit/pdf', [ItemController::class, 'downloadStockAuditPdf'])->name('items.stocks.audit.pdf');
         Route::get('/items/stocks/pdf', [ItemController::class, 'downloadStockPdf'])->name('items.stocks.pdf');
+        Route::get('/items/stocks/excel', [ItemController::class, 'downloadStockExcel'])->name('items.stocks.excel');
     });
 
     Route::middleware('module:stock_in')->group(function () {
