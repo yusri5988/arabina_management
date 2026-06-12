@@ -11,7 +11,11 @@ return new class extends Migration
     public function up(): void
     {
         // Disable FK checks to allow truncating tables with foreign keys
-        DB::statement('SET FOREIGN_KEY_CHECKS = 0');
+        if (DB::getDriverName() === 'sqlite') {
+            DB::statement('PRAGMA foreign_keys = OFF');
+        } else {
+            DB::statement('SET FOREIGN_KEY_CHECKS = 0');
+        }
 
         // Truncate tables — data removed, table structure preserved
         DB::table('sales_order_lines')->truncate();
@@ -33,7 +37,11 @@ return new class extends Migration
         DB::table('transaction_logs')->truncate();
 
         // Re-enable FK checks
-        DB::statement('SET FOREIGN_KEY_CHECKS = 1');
+        if (DB::getDriverName() === 'sqlite') {
+            DB::statement('PRAGMA foreign_keys = ON');
+        } else {
+            DB::statement('SET FOREIGN_KEY_CHECKS = 1');
+        }
     }
 
     /**

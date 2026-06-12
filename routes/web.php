@@ -159,6 +159,8 @@ Route::middleware('auth')->group(function () use ($procurementScopes) {
     Route::middleware('module:create_package')->group(function () {
         Route::get('/packages', [PackageController::class, 'index'])->name('packages.index');
         Route::get('/packages/bulk/template', [PackageController::class, 'downloadBulkTemplate'])->name('packages.bulk.template');
+        Route::get('/packages/export', [PackageController::class, 'exportExcel'])->name('packages.export');
+        Route::get('/packages/{package}/export', [PackageController::class, 'exportSingleExcel'])->name('packages.export.single');
         Route::post('/packages', [PackageController::class, 'store'])->name('packages.store');
         Route::post('/packages/bulk', [PackageController::class, 'bulkStore'])->name('packages.bulk.store');
         Route::put('/packages/{package}', [PackageController::class, 'update'])->name('packages.update');

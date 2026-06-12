@@ -170,6 +170,210 @@ class PackageController extends Controller
         ]);
     }
 
+    public function exportExcel()
+    {
+        if (! $this->isSchemaReady()) {
+            return response()->json([
+                'message' => 'Packages table is not ready. Please run php artisan migrate.',
+            ], 503);
+        }
+
+        $packages = Package::query()
+            ->with([
+                'packageItems.item:id,sku,name,unit,bom_scope',
+            ])
+            ->latest('id')
+            ->get();
+
+        $spreadsheet = new \PhpOffice\PhpSpreadsheet\Spreadsheet();
+        $sheet = $spreadsheet->getActiveSheet();
+        $sheet->setTitle('Packages List');
+
+        // Set headers
+        $headers = [
+            'Package Code',
+            'Package Name',
+            'Status',
+            'SKU',
+            'Item Name',
+            'BOM Category',
+            'Quantity',
+            'Unit',
+        ];
+
+        $sheet->fromArray($headers, null, 'A1');
+
+        // Style header row
+        $headerStyle = [
+            'font' => [
+                'bold' => true,
+                'color' => ['argb' => 'FFFFFFFF'],
+            ],
+            'fill' => [
+                'fillType' => \PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID,
+                'startColor' => ['argb' => 'FF1B580E'], // arabina-green (#1b580e)
+            ],
+            'alignment' => [
+                'horizontal' => \PhpOffice\PhpSpreadsheet\Style\Alignment::HORIZONTAL_CENTER,
+            ],
+        ];
+        $sheet->getStyle('A1:H1')->applyFromArray($headerStyle);
+
+        $row = 2;
+        foreach ($packages as $package) {
+            $status = $package->is_active ? 'Active' : 'Inactive';
+
+            if ($package->packageItems->isEmpty()) {
+                $sheet->setCellValue('A' . $row, $package->code);
+                $sheet->setCellValue('B' . $row, $package->name);
+                $sheet->setCellValue('C' . $row, $status);
+                $sheet->setCellValue('D' . $row, '');
+                $sheet->setCellValue('E' . $row, '');
+                $sheet->setCellValue('F' . $row, '');
+                $sheet->setCellValue('G' . $row, '');
+                $sheet->setCellValue('H' . $row, '');
+                $row++;
+            } else {
+                foreach ($package->packageItems as $itemLine) {
+                    $item = $itemLine->item;
+                    $sheet->setCellValue('A' . $row, $package->code);
+                    $sheet->setCellValue('B' . $row, $package->name);
+                    $sheet->setCellValue('C' . $row, $status);
+                    $sheet->setCellValue('D' . $row, $item ? $item->sku : '');
+                    $sheet->setCellValue('E' . $row, $item ? $item->name : '');
+                    $sheet->setCellValue('F' . $row, $item ? ucfirst(str_replace('_', ' ', $item->bom_scope)) : '');
+                    $sheet->setCellValue('G' . $row, $itemLine->quantity);
+                    $sheet->setCellValue('H' . $row, $item ? strtoupper($item->unit) : '');
+                    $row++;
+                }
+            }
+        }
+
+        // Set auto column width
+        foreach (range('A', 'H') as $col) {
+            $sheet->getColumnDimension($col)->setAutoSize(true);
+        }
+
+        // Add border style for data
+        $borderStyle = [
+            'borders' => [
+                'allBorders' => [
+                    'borderStyle' => \PhpOffice\PhpSpreadsheet\Style\Border::BORDER_THIN,
+                    'color' => ['argb' => 'FFE0E0E0'],
+                ],
+            ],
+        ];
+        $sheet->getStyle('A1:H' . ($row - 1))->applyFromArray($borderStyle);
+
+        $fileName = 'packages-list-' . date('Ymd-His') . '.xlsx';
+
+        return response()->streamDownload(function () use ($spreadsheet) {
+            $writer = new \PhpOffice\PhpSpreadsheet\Writer\Xlsx($spreadsheet);
+            $writer->save('php://output');
+        }, $fileName, [
+            'Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            'Content-Disposition' => 'attachment; filename="' . $fileName . '"',
+        ]);
+    }
+
+    public function exportSingleExcel($package)
+    {
+        if (! $this->isSchemaReady()) {
+            return response()->json([
+                'message' => 'Packages table is not ready. Please run php artisan migrate.',
+            ], 503);
+        }
+
+        $packageModel = $package instanceof Package
+            ? $package
+            : Package::query()
+                ->with([
+                    'packageItems.item:id,sku,name,unit,bom_scope',
+                ])
+                ->findOrFail((int) $package);
+
+        $spreadsheet = new \PhpOffice\PhpSpreadsheet\Spreadsheet();
+        $sheet = $spreadsheet->getActiveSheet();
+        $sheet->setTitle('Package ' . substr($packageModel->code, 0, 20));
+
+        // Header/Title
+        $sheet->setCellValue('A1', 'Package Details Report');
+        $sheet->getStyle('A1')->getFont()->setBold(true)->setSize(14);
+        
+        // Package info
+        $sheet->setCellValue('A3', 'Package Code:');
+        $sheet->setCellValue('B3', $packageModel->code);
+        $sheet->setCellValue('A4', 'Package Name:');
+        $sheet->setCellValue('B4', $packageModel->name);
+        $sheet->setCellValue('A5', 'Status:');
+        $sheet->setCellValue('B5', $packageModel->is_active ? 'Active' : 'Inactive');
+        
+        $sheet->getStyle('A3:A5')->getFont()->setBold(true);
+
+        // Items Table Header
+        $headers = [
+            'SKU',
+            'Item Name',
+            'BOM Category',
+            'Quantity',
+            'Unit',
+        ];
+        $sheet->fromArray($headers, null, 'A7');
+        
+        // Style table headers
+        $headerStyle = [
+            'font' => [
+                'bold' => true,
+                'color' => ['argb' => 'FFFFFFFF'],
+            ],
+            'fill' => [
+                'fillType' => \PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID,
+                'startColor' => ['argb' => 'FF1B580E'], // arabina-green (#1b580e)
+            ],
+            'alignment' => [
+                'horizontal' => \PhpOffice\PhpSpreadsheet\Style\Alignment::HORIZONTAL_CENTER,
+            ],
+        ];
+        $sheet->getStyle('A7:E7')->applyFromArray($headerStyle);
+
+        $row = 8;
+        foreach ($packageModel->packageItems as $itemLine) {
+            $item = $itemLine->item;
+            $sheet->setCellValue('A' . $row, $item ? $item->sku : '');
+            $sheet->setCellValue('B' . $row, $item ? $item->name : '');
+            $sheet->setCellValue('C' . $row, $item ? ucfirst(str_replace('_', ' ', $item->bom_scope)) : '');
+            $sheet->setCellValue('D' . $row, $itemLine->quantity);
+            $sheet->setCellValue('E' . $row, $item ? strtoupper($item->unit) : '');
+            $row++;
+        }
+
+        // Set column widths
+        foreach (range('A', 'E') as $col) {
+            $sheet->getColumnDimension($col)->setAutoSize(true);
+        }
+
+        // Borders for table
+        $borderStyle = [
+            'borders' => [
+                'allBorders' => [
+                    'borderStyle' => \PhpOffice\PhpSpreadsheet\Style\Border::BORDER_THIN,
+                    'color' => ['argb' => 'FFE0E0E0'],
+                ],
+            ],
+        ];
+        $sheet->getStyle('A7:E' . ($row - 1))->applyFromArray($borderStyle);
+
+        $fileName = 'package-' . strtolower($packageModel->code) . '-' . date('Ymd-His') . '.xlsx';
+
+        return response()->streamDownload(function () use ($spreadsheet) {
+            $writer = new \PhpOffice\PhpSpreadsheet\Writer\Xlsx($spreadsheet);
+            $writer->save('php://output');
+        }, $fileName, [
+            'Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            'Content-Disposition' => 'attachment; filename="' . $fileName . '"',
+        ]);
+    }
+
     public function update(Request $request, $package): JsonResponse
     {
         $packageModel = $package instanceof Package
