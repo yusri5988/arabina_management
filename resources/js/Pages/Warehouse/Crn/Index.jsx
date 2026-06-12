@@ -20,6 +20,10 @@ const getDefaultLineForm = (line) => ({
   received_qty: Number(line?.remaining_qty ?? 0),
   rejected_qty: 0,
   rejection_reason: '',
+  unit_cost: '',
+  currency: 'MYR',
+  exchange_rate: '',
+  invoice_number: '',
 });
 
 export default function CrnIndex({
@@ -103,7 +107,16 @@ export default function CrnIndex({
   const submitAllLines = async (order) => {
     const linesPayload = (order.lines ?? []).map(line => {
       const current = forms?.[order.id]?.[line.line_id] ?? getDefaultLineForm(line);
-      return { line_id: line.line_id, received_qty: Number(current.received_qty || 0), rejected_qty: Number(current.rejected_qty || 0), rejection_reason: current.rejection_reason || null };
+      return {
+        line_id: line.line_id,
+        received_qty: Number(current.received_qty || 0),
+        rejected_qty: Number(current.rejected_qty || 0),
+        rejection_reason: current.rejection_reason || null,
+        unit_cost: current.unit_cost !== '' ? Number(current.unit_cost) : null,
+        currency: current.currency || 'MYR',
+        exchange_rate: current.exchange_rate !== '' ? Number(current.exchange_rate) : null,
+        invoice_number: current.invoice_number || null,
+      };
     });
     setConfirmSubmitOrderId(null);
     await runCrnAction({
@@ -394,6 +407,10 @@ export default function CrnIndex({
                                         <th className="px-4 py-3 text-[10px] font-bold text-emerald-500 uppercase tracking-wider text-center">Received</th>
                                         <th className="px-4 py-3 text-[10px] font-bold text-red-400 uppercase tracking-wider text-center">Rejected</th>
                                         <th className="px-4 py-3 text-[10px] font-bold text-slate-400 uppercase tracking-wider">Reason</th>
+                                        <th className="px-4 py-3 text-[10px] font-bold text-emerald-600 uppercase tracking-wider">Unit Cost</th>
+                                        <th className="px-4 py-3 text-[10px] font-bold text-emerald-600 uppercase tracking-wider">Curr</th>
+                                        <th className="px-4 py-3 text-[10px] font-bold text-emerald-600 uppercase tracking-wider">Exch Rate</th>
+                                        <th className="px-4 py-3 text-[10px] font-bold text-emerald-600 uppercase tracking-wider">Invoice</th>
                                       </tr>
                                     </thead>
                                     <tbody className="divide-y divide-slate-50 bg-white">
@@ -419,6 +436,37 @@ export default function CrnIndex({
                                                 onChange={(e) => setLineValue(order.id, line.line_id, 'rejection_reason', e.target.value, line.remaining_qty)}
                                                 placeholder="If rejected"
                                                 className="w-full rounded-lg border border-slate-200 px-2 py-1.5 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-arabina-accent"
+                                              />
+                                            </td>
+                                            <td className="px-2 py-3">
+                                              <QtyInput value={current.unit_cost} onChange={(val) => setLineValue(order.id, line.line_id, 'unit_cost', val, line.remaining_qty)} min={0} step={0.01} />
+                                            </td>
+                                            <td className="px-2 py-3">
+                                              <select
+                                                value={current.currency}
+                                                onChange={(e) => setLineValue(order.id, line.line_id, 'currency', e.target.value, line.remaining_qty)}
+                                                className="w-16 rounded-lg border border-slate-200 px-1.5 py-1.5 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-arabina-accent"
+                                              >
+                                                <option value="MYR">MYR</option>
+                                                <option value="USD">USD</option>
+                                                <option value="CNY">CNY</option>
+                                                <option value="EUR">EUR</option>
+                                              </select>
+                                            </td>
+                                            <td className="px-2 py-3">
+                                              {current.currency !== 'MYR' ? (
+                                                <QtyInput value={current.exchange_rate} onChange={(val) => setLineValue(order.id, line.line_id, 'exchange_rate', val, line.remaining_qty)} min={0} step={0.01} />
+                                              ) : (
+                                                <span className="text-[10px] text-slate-400 italic">-</span>
+                                              )}
+                                            </td>
+                                            <td className="px-2 py-3">
+                                              <input
+                                                type="text"
+                                                value={current.invoice_number}
+                                                onChange={(e) => setLineValue(order.id, line.line_id, 'invoice_number', e.target.value, line.remaining_qty)}
+                                                placeholder="Invoice"
+                                                className="w-20 rounded-lg border border-slate-200 px-2 py-1.5 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-arabina-accent"
                                               />
                                             </td>
                                           </tr>

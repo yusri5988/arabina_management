@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Admin\UserManagementController;
 use App\Http\Controllers\AuthController;
+use App\Http\Controllers\FinanceController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\ItemController;
 use App\Http\Controllers\PackageController;
@@ -165,6 +166,12 @@ Route::middleware('auth')->group(function () use ($procurementScopes) {
         Route::post('/packages/bulk', [PackageController::class, 'bulkStore'])->name('packages.bulk.store');
         Route::put('/packages/{package}', [PackageController::class, 'update'])->name('packages.update');
         Route::delete('/packages/{package}', [PackageController::class, 'destroy'])->name('packages.destroy');
+    });
+
+    Route::middleware('module:finance_stock_value')->prefix('finance')->group(function () {
+        Route::get('/stock-value', [FinanceController::class, 'stockValue'])->name('finance.stock-value');
+        Route::get('/stock-value/export', [FinanceController::class, 'stockValueExport'])->name('finance.stock-value.export');
+        Route::get('/stock-value/pdf', [FinanceController::class, 'stockValuePdf'])->name('finance.stock-value.pdf');
     });
 
     Route::post('/logout', [AuthController::class, 'logout'])->name('logout');

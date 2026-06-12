@@ -250,6 +250,8 @@ export default function ProcurementIndex({
   const [newOrderSkuLines, setNewOrderSkuLines] = useState([]);
   const [newOrderPoNumber, setNewOrderPoNumber] = useState('');
   const [newOrderNotes, setNewOrderNotes] = useState('');
+  const [newOrderCurrency, setNewOrderCurrency] = useState('MYR');
+  const [newOrderExchangeRate, setNewOrderExchangeRate] = useState('');
   const [skuSuppliers, setSkuSuppliers] = useState({}); // { item_id: supplier_id }
   const [selectedSkuIds, setSelectedSkuIds] = useState([]);
   const [newOrderAddPackageForm, setNewOrderAddPackageForm] = useState({ package_id: null, quantity: '' });
@@ -546,6 +548,8 @@ export default function ProcurementIndex({
           sku_suppliers: skuSuppliers,
           po_number: newOrderPoNumber,
           notes: newOrderNotes,
+          currency: newOrderCurrency,
+          exchange_rate: newOrderCurrency !== 'MYR' ? (Number(newOrderExchangeRate) || null) : null,
         }),
       });
 
@@ -557,6 +561,8 @@ export default function ProcurementIndex({
         setSelectedSkuIds([]);
         setNewOrderPoNumber('');
         setNewOrderNotes('');
+        setNewOrderCurrency('MYR');
+        setNewOrderExchangeRate('');
         setSkuSuppliers({});
       } else {
         setNotification({ type: 'error', message: payload.message ?? 'Failed to create draft.' });
@@ -837,7 +843,7 @@ export default function ProcurementIndex({
                   </div>
                 </div>
 
-                <div className="pt-4 px-6 md:pt-5 md:px-8 pb-8 space-y-8">
+                  <div className="pt-4 px-6 md:pt-5 md:px-8 pb-8 space-y-8">
                   <div className="pb-8 border-b border-slate-100">
                     <label className="block text-[11px] font-black text-slate-500 uppercase tracking-widest mb-3 px-1">Step 1: PO Number</label>
                     <input
@@ -848,6 +854,35 @@ export default function ProcurementIndex({
                       placeholder="Enter PO number manually, e.g. PO-20260312-ABCD"
                       required
                     />
+                    <div className="mt-4 flex items-center gap-4 px-1">
+                      <div className="flex-1">
+                        <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2">Currency</label>
+                        <select
+                          value={newOrderCurrency}
+                          onChange={(e) => setNewOrderCurrency(e.target.value)}
+                          className="w-full rounded-2xl border-slate-200 text-sm font-medium focus:ring-slate-500/10 focus:border-slate-400 bg-slate-50/30 p-4"
+                        >
+                          <option value="MYR">MYR - Malaysian Ringgit</option>
+                          <option value="USD">USD - US Dollar</option>
+                          <option value="CNY">CNY - Chinese Yuan</option>
+                          <option value="EUR">EUR - Euro</option>
+                        </select>
+                      </div>
+                      {newOrderCurrency !== 'MYR' && (
+                        <div className="flex-1">
+                          <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2">Exchange Rate (1 FC = ? MYR)</label>
+                          <input
+                            type="number"
+                            step="0.01"
+                            min="0"
+                            value={newOrderExchangeRate}
+                            onChange={(e) => setNewOrderExchangeRate(e.target.value)}
+                            className="w-full rounded-2xl border-slate-200 text-sm font-medium focus:ring-slate-500/10 focus:border-slate-400 bg-slate-50/30 p-4"
+                            placeholder="e.g. 0.65"
+                          />
+                        </div>
+                      )}
+                    </div>
                   </div>
 
                   {/* Unified Selection Header */}

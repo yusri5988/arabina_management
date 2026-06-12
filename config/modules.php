@@ -15,5 +15,8 @@ return [
         'sales_orders' => 'Sales Orders',
         'admin_users' => 'User Management',
         'admin_logs' => 'System Logs',
+        'finance_cost_entry' => 'Finance: Cost Entry',
+        'finance_forex' => 'Finance: Foreign Exchange',
+        'finance_stock_value' => 'Finance: Stock Value',
     ],
 ];

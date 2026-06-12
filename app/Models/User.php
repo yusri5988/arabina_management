@@ -89,6 +89,14 @@ class User extends Authenticatable
             return true;
         }
 
+        if ($this->role === self::ROLE_FINANCE && in_array($module, [
+            'finance_cost_entry',
+            'finance_forex',
+            'finance_stock_value',
+        ], true)) {
+            return true;
+        }
+
         if (!Schema::hasColumn($this->getTable(), 'module_permissions')) {
             // Backward-compatible fallback before migration is applied.
             return true;

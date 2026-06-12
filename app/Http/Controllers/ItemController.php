@@ -9,6 +9,7 @@ use App\Models\TransactionLog;
 use App\Models\ItemVariant;
 use App\Models\Package;
 use App\Models\SalesOrder;
+use App\Services\FifoService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -37,8 +38,12 @@ class ItemController extends Controller
         $items = Item::with('variants')->latest()->get();
 
         $stockByItem = [];
+        $costByItem = [];
+        $valueByItem = [];
         foreach ($items as $item) {
             $stockByItem[$item->id] = (float) $item->variants->sum('stock_current');
+            $costByItem[$item->id] = (float) $item->variants->avg('average_cost');
+            $valueByItem[$item->id] = (float) $item->variants->sum('total_stock_value');
         }
 
         $packagesData = [];
@@ -69,6 +74,10 @@ class ItemController extends Controller
         return Inertia::render('Inventory/StockList', [
             'items' => $items,
             'packages' => $packagesData,
+            'stockCostData' => [
+                'costByItem' => $costByItem,
+                'valueByItem' => $valueByItem,
+            ],
         ]);
     }
 
@@ -689,17 +698,30 @@ class ItemController extends Controller
                 'notes' => $notes,
             ]);
 
+            $fifo = app(FifoService::class);
+
             foreach ($lineMap as $line) {
                 $variant = $this->findOrCreateDefaultVariant((int) $line['item_id'], true);
                 $qty = $this->normalizeQuantity($line['quantity']);
 
                 $variant->increment('stock_current', $qty);
 
-                $transaction->lines()->create([
+                $txLine = $transaction->lines()->create([
                     'item_id' => (int) $line['item_id'],
                     'item_variant_id' => $variant->id,
                     'quantity' => $qty,
                 ]);
+
+                if ($variant->average_cost > 0) {
+                    $fifo->createLayer(
+                        $variant,
+                        $txLine,
+                        $qty,
+                        $variant->average_cost,
+                        'MYR',
+                        null
+                    );
+                }
             }
 
             if ($salesOrder) {
@@ -799,11 +821,22 @@ class ItemController extends Controller
             $variant = $this->findOrCreateDefaultVariant($itemId, true);
             $variant->increment('stock_current', $requestedQty);
 
-            $transaction->lines()->create([
+            $txLine = $transaction->lines()->create([
                 'item_id' => $itemId,
                 'item_variant_id' => $variant->id,
                 'quantity' => $requestedQty,
             ]);
+
+            if ($variant->average_cost > 0) {
+                app(FifoService::class)->createLayer(
+                    $variant,
+                    $txLine,
+                    $requestedQty,
+                    $variant->average_cost,
+                    'MYR',
+                    null
+                );
+            }
 
             if ($salesOrder) {
                 $this->syncSalesOrderProgress($salesOrder);
@@ -1449,7 +1482,7 @@ class ItemController extends Controller
             }
         }
 
-        $transaction = DB::transaction(function () use ($request, $validated, $lines, $salesOrder, $completionAction) {
+            $transaction = DB::transaction(function () use ($request, $validated, $lines, $salesOrder, $completionAction) {
             $mergedNotes = 'Customer: ' . $salesOrder->customer_name;
             if ($salesOrder) {
                 $mergedNotes .= ' | SO: ' . $salesOrder->code;
@@ -1468,6 +1501,8 @@ class ItemController extends Controller
                 'created_by' => $request->user()->id,
                 'notes' => $mergedNotes,
             ]);
+
+            $fifo = app(FifoService::class);
 
             foreach ($lines as $line) {
                 $variant = ItemVariant::query()
@@ -1493,13 +1528,20 @@ class ItemController extends Controller
                     ]);
                 }
 
+                $fifoResult = $fifo->consume($variant, $line['quantity']);
+
                 $variant->decrement('stock_current', $line['quantity']);
 
-                $transaction->lines()->create([
+                $txLine = $transaction->lines()->create([
                     'item_id' => $line['item_id'],
                     'item_variant_id' => $variant->id,
                     'quantity' => $line['quantity'],
                 ]);
+
+                if ($fifoResult['total_cost'] > 0) {
+                    $fifoService = app(FifoService::class);
+                    $fifoService->recalculateAverageCost($variant);
+                }
             }
 
             if ($salesOrder) {

@@ -16,6 +16,8 @@ class ProcurementOrder extends Model
         'supplier_name',
         'supplier_id',
         'procurement_scope',
+        'currency',
+        'exchange_rate',
         'created_by',
         'notes',
     ];
@@ -53,6 +55,11 @@ class ProcurementOrder extends Model
     public function srns(): HasMany
     {
         return $this->hasMany(SiteReceivingNote::class);
+    }
+
+    public function paymentTransactions(): HasMany
+    {
+        return $this->hasMany(PaymentTransaction::class);
     }
 
     public function bomScopes(): Collection

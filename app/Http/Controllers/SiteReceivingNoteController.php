@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Bom;
 use App\Models\InventoryTransaction;
+use App\Models\InventoryTransactionLine;
 use App\Models\ItemVariant;
 use App\Models\ProcurementOrder;
 use App\Models\ProcurementOrderLine;
@@ -11,6 +12,7 @@ use App\Models\RejectedItem;
 use App\Models\SiteReceivingNote;
 use App\Models\SiteReceivingNoteItem;
 use App\Models\TransactionLog;
+use App\Services\FifoService;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -142,6 +144,10 @@ class SiteReceivingNoteController extends Controller
             'lines.*.received_qty' => $this->decimalQuantityRules(true),
             'lines.*.rejected_qty' => $this->decimalQuantityRules(true),
             'lines.*.rejection_reason' => 'nullable|string|max:255',
+            'lines.*.unit_cost' => 'nullable|numeric|min:0|max:999999.99',
+            'lines.*.currency' => 'nullable|string|in:MYR,USD,CNY,EUR',
+            'lines.*.exchange_rate' => 'nullable|numeric|min:0|max:999.999999',
+            'lines.*.invoice_number' => 'nullable|string|max:255',
         ]);
 
         $order->load('lines.item');
@@ -168,6 +174,8 @@ class SiteReceivingNoteController extends Controller
                 'status' => 'transferred',
             ]);
 
+            $fifo = app(FifoService::class);
+
             foreach ($processableLines as $entry) {
                 $line = $entry['line'];
                 $receivedQty = $entry['received_qty'];
@@ -180,6 +188,10 @@ class SiteReceivingNoteController extends Controller
                     'received_qty' => $receivedQty,
                     'rejected_qty' => $rejectedQty,
                     'rejection_reason' => $entry['rejection_reason'],
+                    'unit_cost' => $entry['unit_cost'] ?? null,
+                    'currency' => $entry['currency'] ?? 'MYR',
+                    'exchange_rate' => $entry['exchange_rate'] ?? null,
+                    'invoice_number' => $entry['invoice_number'] ?? null,
                 ]);
 
                 $this->recordRejectionFromNoteItem(
@@ -189,7 +201,18 @@ class SiteReceivingNoteController extends Controller
                     $request->user()->id
                 );
 
-                $this->applyReceivedStock($transaction, $variant, (int) $line->item_id, $receivedQty);
+                $txLine = $this->applyReceivedStock($transaction, $variant, (int) $line->item_id, $receivedQty);
+
+                if ($receivedQty > 0 && !empty($entry['unit_cost'])) {
+                    $fifo->createLayer(
+                        $variant,
+                        $txLine,
+                        $receivedQty,
+                        (float) $entry['unit_cost'],
+                        $entry['currency'] ?? 'MYR',
+                        $entry['exchange_rate'] ?? null
+                    );
+                }
 
                 $line->increment('received_quantity', $receivedQty);
                 $line->increment('rejected_quantity', $rejectedQty);
@@ -376,12 +399,12 @@ class SiteReceivingNoteController extends Controller
         ItemVariant $variant,
         int $itemId,
         float $receivedQty
-    ): void {
+    ): ?InventoryTransactionLine {
         if ($receivedQty <= 0) {
-            return;
+            return null;
         }
 
-        $transaction->lines()->create([
+        $txLine = $transaction->lines()->create([
             'item_id' => $itemId,
             'item_variant_id' => $variant->id,
             'quantity' => $receivedQty,
@@ -389,6 +412,8 @@ class SiteReceivingNoteController extends Controller
 
         $variant->increment('stock_initial', $receivedQty);
         $variant->increment('stock_current', $receivedQty);
+
+        return $txLine;
     }
 
     private function remainingQuantity(ProcurementOrderLine $line): float

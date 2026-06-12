@@ -233,6 +233,8 @@ class ProcurementController extends Controller
             'sku_suppliers' => 'nullable|array', // { item_id => supplier_id }
             'po_number' => 'required|string|max:255',
             'notes' => 'nullable|string|max:500',
+            'currency' => 'nullable|string|in:MYR,USD,CNY,EUR',
+            'exchange_rate' => 'nullable|numeric|min:0|max:999.999999',
         ]);
 
         if (empty($validated['package_lines']) && empty($validated['sku_lines'])) {
@@ -323,6 +325,8 @@ class ProcurementController extends Controller
                     'supplier_id' => $supplierId > 0 ? $supplierId : null,
                     'supplier_name' => $supplierName,
                     'procurement_scope' => $scope,
+                    'currency' => $validated['currency'] ?? 'MYR',
+                    'exchange_rate' => $validated['exchange_rate'] ?? null,
                     'created_by' => $request->user()->id,
                     'notes' => $validated['notes'] ?? null,
                 ]);

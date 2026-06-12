@@ -12,6 +12,7 @@ use App\Models\ProcurementOrder;
 use App\Models\ProcurementOrderLine;
 use App\Models\TransactionLog;
 use App\Models\RejectedItem;
+use App\Services\FifoService;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -131,6 +132,10 @@ class CrnController extends Controller
             'lines.*.received_qty' => $this->decimalQuantityRules(true),
             'lines.*.rejected_qty' => $this->decimalQuantityRules(true),
             'lines.*.rejection_reason' => 'nullable|string|max:255',
+            'lines.*.unit_cost' => 'nullable|numeric|min:0|max:999999.99',
+            'lines.*.currency' => 'nullable|string|in:MYR,USD,CNY,EUR',
+            'lines.*.exchange_rate' => 'nullable|numeric|min:0|max:999.999999',
+            'lines.*.invoice_number' => 'nullable|string|max:255',
         ]);
 
         $order->load('lines.item');
@@ -157,6 +162,8 @@ class CrnController extends Controller
                 'status' => 'transferred',
             ]);
 
+            $fifo = app(FifoService::class);
+
             foreach ($processableLines as $entry) {
                 $line = $entry['line'];
                 $receivedQty = $entry['received_qty'];
@@ -169,6 +176,10 @@ class CrnController extends Controller
                     'received_qty' => $receivedQty,
                     'rejected_qty' => $rejectedQty,
                     'rejection_reason' => $entry['rejection_reason'],
+                    'unit_cost' => $entry['unit_cost'] ?? null,
+                    'currency' => $entry['currency'] ?? 'MYR',
+                    'exchange_rate' => $entry['exchange_rate'] ?? null,
+                    'invoice_number' => $entry['invoice_number'] ?? null,
                 ]);
 
                 $this->recordRejectionFromCrnItem(
@@ -178,7 +189,18 @@ class CrnController extends Controller
                     $request->user()->id
                 );
 
-                $this->applyReceivedStock($transaction, $variant, (int) $line->item_id, $receivedQty);
+                $txLine = $this->applyReceivedStock($transaction, $variant, (int) $line->item_id, $receivedQty);
+
+                if ($receivedQty > 0 && !empty($entry['unit_cost'])) {
+                    $fifo->createLayer(
+                        $variant,
+                        $txLine,
+                        $receivedQty,
+                        (float) $entry['unit_cost'],
+                        $entry['currency'] ?? 'MYR',
+                        $entry['exchange_rate'] ?? null
+                    );
+                }
 
                 $line->increment('received_quantity', $receivedQty);
                 $line->increment('rejected_quantity', $rejectedQty);
@@ -375,18 +397,32 @@ class CrnController extends Controller
             );
 
             $crn->load('items.itemVariant');
+            $fifo = app(FifoService::class);
 
             foreach ($crn->items as $item) {
                 if (!$item->itemVariant) {
                     continue;
                 }
 
-                $this->applyReceivedStock(
+                $receivedQty = $this->normalizeQuantity($item->received_qty);
+
+                $txLine = $this->applyReceivedStock(
                     $transaction,
                     $item->itemVariant,
                     (int) $item->itemVariant->item_id,
-                    $this->normalizeQuantity($item->received_qty)
+                    $receivedQty
                 );
+
+                if ($receivedQty > 0 && $txLine && !empty($item->unit_cost)) {
+                    $fifo->createLayer(
+                        $item->itemVariant,
+                        $txLine,
+                        $receivedQty,
+                        (float) $item->unit_cost,
+                        $item->currency ?? 'MYR',
+                        $item->exchange_rate ?? null
+                    );
+                }
 
                 $this->recordRejectionFromCrnItem(
                     $item,
@@ -402,7 +438,7 @@ class CrnController extends Controller
                         ->first();
 
                 if ($poLine) {
-                        $poLine->increment('received_quantity', $this->normalizeQuantity($item->received_qty));
+                        $poLine->increment('received_quantity', $receivedQty);
                         $poLine->increment('rejected_quantity', $this->normalizeQuantity($item->rejected_qty));
                     }
                 }
@@ -601,12 +637,12 @@ class CrnController extends Controller
         ItemVariant $variant,
         int $itemId,
         float $receivedQty
-    ): void {
+    ): ?InventoryTransactionLine {
         if ($receivedQty <= 0) {
-            return;
+            return null;
         }
 
-        $transaction->lines()->create([
+        $txLine = $transaction->lines()->create([
             'item_id' => $itemId,
             'item_variant_id' => $variant->id,
             'quantity' => $receivedQty,
@@ -614,6 +650,8 @@ class CrnController extends Controller
 
         $variant->increment('stock_initial', $receivedQty);
         $variant->increment('stock_current', $receivedQty);
+
+        return $txLine;
     }
 
     private function remainingQuantity(ProcurementOrderLine $line): float
