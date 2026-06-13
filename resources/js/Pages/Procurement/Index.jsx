@@ -238,6 +238,14 @@ export default function ProcurementIndex({
   const [editingOrderId, setEditingOrderId] = useState(null);
   const [list, setList] = useState(orders);
   const [expandedReceiveForms, setExpandedReceiveForms] = useState({});
+  const [expandedOrders, setExpandedOrders] = useState({});
+
+  const toggleOrderExpanded = (orderId) => {
+    setExpandedOrders((prev) => ({
+      ...prev,
+      [orderId]: !prev[orderId],
+    }));
+  };
 
   const [editOrderPackageLines, setEditOrderPackageLines] = useState([]);
   const [editOrderSkuLines, setEditOrderSkuLines] = useState([]);
@@ -1112,99 +1120,117 @@ export default function ProcurementIndex({
                       const orderLines = getOrderLines(order);
                       const lockReason = getOrderLockReason(order);
                       const isModifiable = canModifyOrder(order);
+                      const isExpanded = !!expandedOrders[order.id];
                       return (
                         <div key={order.id} className="group rounded-[2rem] border border-slate-100 bg-white hover:border-slate-300 hover:shadow-md transition-all overflow-hidden">
-                          <div className="p-5 flex flex-wrap items-center justify-between gap-4 bg-slate-50/30 border-b border-slate-100/50">
+                          <div 
+                            onClick={() => toggleOrderExpanded(order.id)}
+                            className="p-5 flex flex-wrap items-center justify-between gap-4 bg-slate-50/30 border-b border-slate-100/50 cursor-pointer select-none"
+                          >
                             <div className="flex items-center gap-4">
                               <div className="w-10 h-10 rounded-xl bg-white border border-slate-200 flex items-center justify-center text-slate-400 shadow-sm text-lg">📄</div>
                               <div>
-                                <p className="text-xs font-black text-slate-800 tracking-tight">{order.code}</p>
-                                <p className="text-[10px] text-slate-400 font-bold uppercase tracking-tighter">
+                                <p className="text-sm font-black text-slate-800 tracking-tight">{order.code}</p>
+                                <p className="text-xs text-slate-500 font-bold uppercase tracking-tight mt-0.5">
                                   {new Date(order.created_at).toLocaleDateString()} • {order.supplier?.name || order.supplier_name || 'General'}
                                 </p>
                               </div>
                             </div>
-                            <span className={`text-[9px] font-black uppercase tracking-widest px-3 py-1.5 rounded-full border shadow-sm bg-white ${order.status === 'received' ? 'text-emerald-700 border-emerald-100' : 'text-blue-700 border-blue-100'}`}>{order.status}</span>
+                            <div className="flex items-center gap-3">
+                              <span className={`text-[9px] font-black uppercase tracking-widest px-3 py-1.5 rounded-full border shadow-sm bg-white ${order.status === 'received' ? 'text-emerald-700 border-emerald-100' : 'text-blue-700 border-blue-100'}`}>{order.status}</span>
+                              <svg 
+                                xmlns="http://www.w3.org/2000/svg" 
+                                viewBox="0 0 20 20" 
+                                fill="currentColor" 
+                                className={`w-5 h-5 text-slate-400 transition-transform duration-300 ${isExpanded ? 'rotate-180' : ''}`}
+                              >
+                                <path fillRule="evenodd" d="M5.22 8.22a.75.75 0 0 1 1.06 0L10 11.94l3.72-3.72a.75.75 0 1 1 1.06 1.06l-4.25 4.25a.75.75 0 0 1-1.06 0L5.22 9.28a.75.75 0 0 1 0-1.06Z" clipRule="evenodd" />
+                              </svg>
+                            </div>
                           </div>
-                          <div className="p-5 grid grid-cols-1 lg:grid-cols-2 gap-8 items-start">
-                            <div className="space-y-3">
-                              <h4 className="text-[9px] font-black uppercase tracking-[0.2em] text-slate-400 mb-2">Items Ordered</h4>
-                              <div className="grid grid-cols-1 gap-2">
-                                {orderPackageLines.map((line, index) => (
-                                  <div key={`package-${line.id ?? index}`} className="p-3 rounded-xl bg-emerald-50/30 border border-emerald-100 group-hover:bg-white transition-colors flex justify-between items-center">
-                                    <div className="flex items-center gap-3">
-                                      <span className="text-lg">🧩</span>
-                                      <div>
-                                        <p className="text-[11px] font-black text-emerald-900 leading-tight">{line.package?.code}</p>
-                                        <p className="text-[9px] text-emerald-500 font-bold uppercase">{line.package?.name || 'Package'}</p>
+                          {isExpanded && (
+                            <div className="animate-in fade-in slide-in-from-top-1 duration-200">
+                              <div className="p-5 grid grid-cols-1 lg:grid-cols-2 gap-8 items-start">
+                                <div className="space-y-3">
+                                  <h4 className="text-[9px] font-black uppercase tracking-[0.2em] text-slate-400 mb-2">Items Ordered</h4>
+                                  <div className="grid grid-cols-1 gap-2">
+                                    {orderPackageLines.map((line, index) => (
+                                      <div key={`package-${line.id ?? index}`} className="p-3 rounded-xl bg-emerald-50/30 border border-emerald-100 group-hover:bg-white transition-colors flex justify-between items-center">
+                                        <div className="flex items-center gap-3">
+                                          <span className="text-lg">🧩</span>
+                                          <div>
+                                            <p className="text-[11px] font-black text-emerald-900 leading-tight">{line.package?.code}</p>
+                                            <p className="text-[9px] text-emerald-500 font-bold uppercase">{line.package?.name || 'Package'}</p>
+                                          </div>
+                                        </div>
+                                        <span className="text-[11px] font-black text-emerald-800 bg-white px-2 py-0.5 rounded border border-emerald-200 shadow-sm">x{line.quantity}</span>
                                       </div>
+                                    ))}
+                                    {orderPackageLines.length === 0 && (
+                                      <div className="p-3 rounded-xl bg-slate-50 border border-slate-100 text-[11px] font-bold text-slate-400">
+                                        No package summary recorded for this order.
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                                <div className="space-y-3">
+                                  <button onClick={() => toggleReceiveForm(order.id)} className="w-full flex items-center justify-between rounded-xl px-4 py-3 border border-slate-200 text-slate-600 bg-white hover:border-slate-400 transition-all group/btn shadow-sm">
+                                    <span className="text-[10px] font-black uppercase tracking-widest">View Detailed List ({orderLines.length})</span>
+                                    <span className={`text-xs transition-transform duration-300 ${expandedReceiveForms?.[order.id] ? 'rotate-180' : ''}`}>▼</span>
+                                  </button>
+                                  {expandedReceiveForms?.[order.id] && (
+                                    <div className="space-y-2 max-h-60 overflow-y-auto pr-2 custom-scrollbar animate-in slide-in-from-top-2 duration-300">
+                                      {orderLines.map((line) => (
+                                        <div key={line.id} className="flex items-center justify-between rounded-xl bg-slate-50/50 border border-slate-100 px-4 py-3">
+                                          <div><p className="text-xs font-black text-slate-800 tracking-tight">{line.item?.sku}</p></div>
+                                          <span className="text-[11px] font-black text-slate-700 bg-white px-2 py-1 rounded border border-slate-200">{line.ordered_quantity} {line.item?.unit}</span>
+                                        </div>
+                                      ))}
                                     </div>
-                                    <span className="text-[11px] font-black text-emerald-800 bg-white px-2 py-0.5 rounded border border-emerald-200 shadow-sm">x{line.quantity}</span>
-                                  </div>
-                                ))}
-                                {orderPackageLines.length === 0 && (
-                                  <div className="p-3 rounded-xl bg-slate-50 border border-slate-100 text-[11px] font-bold text-slate-400">
-                                    No package summary recorded for this order.
-                                  </div>
+                                  )}
+                                </div>
+                              </div>
+                              <div className="px-5 py-4 border-t border-slate-100 bg-slate-50/20">
+                                <div className="flex flex-col gap-2 md:flex-row">
+                                  <a href={`${orderApiBase}/${order.id}/pdf`} target="_blank" rel="noreferrer" className="flex-1 bg-white border border-slate-200 text-slate-700 py-3 rounded-xl text-[10px] font-black text-center uppercase tracking-widest hover:border-slate-400 active:scale-[0.98] transition-all flex items-center justify-center gap-2">
+                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4 text-red-500"><path d="M4.5 2A1.5 1.5 0 0 0 3 3.5v13A1.5 1.5 0 0 0 4.5 18h11a1.5 1.5 0 0 0 1.5-1.5V7.621a1.5 1.5 0 0 0-.44-1.06l-4.12-4.122A1.5 1.5 0 0 0 11.378 2H4.5Zm2.25 8.5a.75.75 0 0 0 0 1.5h6.5a.75.75 0 0 0 0-1.5h-6.5Zm0 3a.75.75 0 0 0 0 1.5h6.5a.75.75 0 0 0 0-1.5h-6.5Z" /></svg>
+                                    Export PDF
+                                  </a>
+                                  {editingOrderId !== order.id && (
+                                    <>
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          if (!isModifiable) return;
+                                          enterEditMode(order);
+                                        }}
+                                        disabled={!isModifiable}
+                                        className={`flex-1 py-3 rounded-xl text-[10px] font-black text-center uppercase tracking-widest active:scale-[0.98] transition-all flex items-center justify-center gap-2 border ${isModifiable ? 'bg-emerald-50 border-emerald-200 text-emerald-700 hover:bg-emerald-100' : 'bg-slate-50 border-slate-200 text-slate-400 cursor-not-allowed'}`}
+                                      >
+                                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4"><path d="m5.433 13.917 1.262-3.155A4 4 0 0 1 7.58 9.42l6.92-6.918a2.121 2.121 0 0 1 3 3l-6.92 6.918c-.383.383-.84.685-1.343.886l-3.155 1.262a.5.5 0 0 1-.65-.65Z" /><path d="M3.5 5.75c0-.69.56-1.25 1.25-1.25H10A.75.75 0 0 0 10 3H4.75A2.75 2.75 0 0 0 2 5.75v9.5A2.75 2.75 0 0 0 4.75 18h9.5A2.75 2.75 0 0 0 17 15.25V10a.75.75 0 0 0-1.5 0v5.25c0 .69-.56 1.25-1.25 1.25h-9.5c-.69 0-1.25-.56-1.25-1.25v-9.5Z" /></svg>
+                                        Edit
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          if (!isModifiable) return;
+                                          deleteDraft(order);
+                                        }}
+                                        disabled={!isModifiable || processingDeleteId === order.id}
+                                        className={`flex-1 py-3 rounded-xl text-[10px] font-black text-center uppercase tracking-widest active:scale-[0.98] transition-all flex items-center justify-center gap-2 border ${isModifiable ? 'bg-red-50 border-red-200 text-red-700 hover:bg-red-100' : 'bg-slate-50 border-slate-200 text-slate-400 cursor-not-allowed'} disabled:opacity-50`}
+                                      >
+                                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4"><path d="M6.28 5.22a.75.75 0 0 0-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 1 0 1.06 1.06L10 11.06l3.72 3.72a.75.75 0 1 0 1.06-1.06L11.06 10l3.72-3.72a.75.75 0 0 0-1.06-1.06L10 8.94 6.28 5.22Z" /></svg>
+                                        {processingDeleteId === order.id ? 'Deleting...' : 'Delete'}
+                                      </button>
+                                    </>
+                                  )}
+                                </div>
+                                {editingOrderId !== order.id && lockReason && (
+                                  <p className="mt-2 text-[9px] font-black text-slate-400 uppercase tracking-widest text-right">{lockReason}</p>
                                 )}
                               </div>
                             </div>
-                            <div className="space-y-3">
-                              <button onClick={() => toggleReceiveForm(order.id)} className="w-full flex items-center justify-between rounded-xl px-4 py-3 border border-slate-200 text-slate-600 bg-white hover:border-slate-400 transition-all group/btn shadow-sm">
-                                <span className="text-[10px] font-black uppercase tracking-widest">View Detailed List ({orderLines.length})</span>
-                                <span className={`text-xs transition-transform duration-300 ${expandedReceiveForms?.[order.id] ? 'rotate-180' : ''}`}>▼</span>
-                              </button>
-                              {expandedReceiveForms?.[order.id] && (
-                                <div className="space-y-2 max-h-60 overflow-y-auto pr-2 custom-scrollbar animate-in slide-in-from-top-2 duration-300">
-                                  {orderLines.map((line) => (
-                                    <div key={line.id} className="flex items-center justify-between rounded-xl bg-slate-50/50 border border-slate-100 px-4 py-3">
-                                      <div><p className="text-xs font-black text-slate-800 tracking-tight">{line.item?.sku}</p></div>
-                                      <span className="text-[11px] font-black text-slate-700 bg-white px-2 py-1 rounded border border-slate-200">{line.ordered_quantity} {line.item?.unit}</span>
-                                    </div>
-                                  ))}
-                                </div>
-                              )}
-                            </div>
-                          </div>
-                          <div className="px-5 py-4 border-t border-slate-100 bg-slate-50/20">
-                            <div className="flex flex-col gap-2 md:flex-row">
-                              <a href={`${orderApiBase}/${order.id}/pdf`} target="_blank" rel="noreferrer" className="flex-1 bg-white border border-slate-200 text-slate-700 py-3 rounded-xl text-[10px] font-black text-center uppercase tracking-widest hover:border-slate-400 active:scale-[0.98] transition-all flex items-center justify-center gap-2">
-                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4 text-red-500"><path d="M4.5 2A1.5 1.5 0 0 0 3 3.5v13A1.5 1.5 0 0 0 4.5 18h11a1.5 1.5 0 0 0 1.5-1.5V7.621a1.5 1.5 0 0 0-.44-1.06l-4.12-4.122A1.5 1.5 0 0 0 11.378 2H4.5Zm2.25 8.5a.75.75 0 0 0 0 1.5h6.5a.75.75 0 0 0 0-1.5h-6.5Zm0 3a.75.75 0 0 0 0 1.5h6.5a.75.75 0 0 0 0-1.5h-6.5Z" /></svg>
-                                Export PDF
-                              </a>
-                              {editingOrderId !== order.id && (
-                                <>
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      if (!isModifiable) return;
-                                      enterEditMode(order);
-                                    }}
-                                    disabled={!isModifiable}
-                                    className={`flex-1 py-3 rounded-xl text-[10px] font-black text-center uppercase tracking-widest active:scale-[0.98] transition-all flex items-center justify-center gap-2 border ${isModifiable ? 'bg-emerald-50 border-emerald-200 text-emerald-700 hover:bg-emerald-100' : 'bg-slate-50 border-slate-200 text-slate-400 cursor-not-allowed'}`}
-                                  >
-                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4"><path d="m5.433 13.917 1.262-3.155A4 4 0 0 1 7.58 9.42l6.92-6.918a2.121 2.121 0 0 1 3 3l-6.92 6.918c-.383.383-.84.685-1.343.886l-3.155 1.262a.5.5 0 0 1-.65-.65Z" /><path d="M3.5 5.75c0-.69.56-1.25 1.25-1.25H10A.75.75 0 0 0 10 3H4.75A2.75 2.75 0 0 0 2 5.75v9.5A2.75 2.75 0 0 0 4.75 18h9.5A2.75 2.75 0 0 0 17 15.25V10a.75.75 0 0 0-1.5 0v5.25c0 .69-.56 1.25-1.25 1.25h-9.5c-.69 0-1.25-.56-1.25-1.25v-9.5Z" /></svg>
-                                    Edit
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      if (!isModifiable) return;
-                                      deleteDraft(order);
-                                    }}
-                                    disabled={!isModifiable || processingDeleteId === order.id}
-                                    className={`flex-1 py-3 rounded-xl text-[10px] font-black text-center uppercase tracking-widest active:scale-[0.98] transition-all flex items-center justify-center gap-2 border ${isModifiable ? 'bg-red-50 border-red-200 text-red-700 hover:bg-red-100' : 'bg-slate-50 border-slate-200 text-slate-400 cursor-not-allowed'} disabled:opacity-50`}
-                                  >
-                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4"><path d="M6.28 5.22a.75.75 0 0 0-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 1 0 1.06 1.06L10 11.06l3.72 3.72a.75.75 0 1 0 1.06-1.06L11.06 10l3.72-3.72a.75.75 0 0 0-1.06-1.06L10 8.94 6.28 5.22Z" /></svg>
-                                    {processingDeleteId === order.id ? 'Deleting...' : 'Delete'}
-                                  </button>
-                                </>
-                              )}
-                            </div>
-                            {editingOrderId !== order.id && lockReason && (
-                              <p className="mt-2 text-[9px] font-black text-slate-400 uppercase tracking-widest text-right">{lockReason}</p>
-                            )}
-                          </div>
+                          )}
                         </div>
                       );
                     })}

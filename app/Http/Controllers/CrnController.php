@@ -6,6 +6,7 @@ use App\Models\Bom;
 use App\Models\ContainerReceivingNote;
 use App\Models\CrnItem;
 use App\Models\InventoryTransaction;
+use App\Models\InventoryTransactionLine;
 use App\Models\Item;
 use App\Models\ItemVariant;
 use App\Models\ProcurementOrder;

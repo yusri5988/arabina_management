@@ -93,7 +93,6 @@ class ProcurementController extends Controller
 
             $orders = ProcurementOrder::query()
                 ->with(self::ORDER_RELATIONS)
-                ->where('status', '!=', 'received')
                 ->where('procurement_scope', $scope)
                 ->latest()
                 ->get(['id', 'code', 'status', 'supplier_id', 'supplier_name', 'notes', 'created_at']);

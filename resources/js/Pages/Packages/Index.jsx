@@ -1,5 +1,5 @@
 import { Head } from '@inertiajs/react';
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useRef, useState, useMemo } from 'react';
 import AuthenticatedLayout from '../../Layouts/AuthenticatedLayout';
 import QtyInput from '../../components/QtyInput.jsx';
 import FloatingAlert from '../../components/FloatingAlert.jsx';
@@ -86,7 +86,18 @@ const normalizeBomsFromPackage = (pkg, items = []) => {
 export default function Index({ items, packages, schemaReady = true }) {
   const [data, setData] = useState(initialForm);
   const [list, setList] = useState(packages ?? []);
+  const [searchQuery, setSearchQuery] = useState('');
   const [errors, setErrors] = useState({});
+
+  const filteredList = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase();
+    if (!query) return list;
+    return list.filter((pkg) => {
+      const code = String(pkg.code ?? '').toLowerCase();
+      const name = String(pkg.name ?? '').toLowerCase();
+      return code.includes(query) || name.includes(query);
+    });
+  }, [list, searchQuery]);
   const [processing, setProcessing] = useState(false);
   const [deletingId, setDeletingId] = useState(null);
   const [editingId, setEditingId] = useState(null);
@@ -465,78 +476,117 @@ export default function Index({ items, packages, schemaReady = true }) {
         </div>
 
         <div className="pt-2">
-          <div className="flex items-center justify-between mb-4 px-2">
-            <h3 className="text-sm font-bold text-slate-800">Package List ({list.length})</h3>
-            <a
-              href="/packages/export"
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 text-arabina-accent hover:bg-emerald-100 hover:text-emerald-700 rounded-xl text-xs font-bold uppercase tracking-wider transition-all duration-200 hover:scale-[1.02] active:scale-[0.98]"
-            >
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                fill="none"
-                viewBox="0 0 24 24"
-                strokeWidth={2.5}
-                stroke="currentColor"
-                className="w-3.5 h-3.5"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-5 px-2">
+            <div className="flex flex-col sm:flex-row sm:items-center gap-3 flex-1">
+              <h3 className="text-sm font-bold text-slate-800 whitespace-nowrap">Package List ({filteredList.length})</h3>
+              <div className="relative w-full max-w-md">
+                <span className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
+                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor" className="w-4 h-4">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" />
+                  </svg>
+                </span>
+                <input
+                  type="text"
+                  placeholder="Carian nama atau kod package..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full pl-9 pr-8 py-2 bg-slate-50 border border-slate-200 text-xs rounded-xl focus:bg-white focus:ring-2 focus:ring-[#1b580e] focus:outline-none placeholder:text-slate-400 transition-all duration-200"
                 />
-              </svg>
-              Export Excel
-            </a>
+                {searchQuery && (
+                  <button
+                    type="button"
+                    onClick={() => setSearchQuery('')}
+                    className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 hover:text-slate-600"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor" className="w-3.5 h-3.5">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                )}
+              </div>
+            </div>
+            <div className="flex items-center justify-end">
+              <a
+                href="/packages/export"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 text-arabina-accent hover:bg-emerald-100 hover:text-emerald-700 rounded-xl text-xs font-bold uppercase tracking-wider transition-all duration-200 hover:scale-[1.02] active:scale-[0.98]"
+              >
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  strokeWidth={2.5}
+                  stroke="currentColor"
+                  className="w-3.5 h-3.5"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+                  />
+                </svg>
+                Export Excel
+              </a>
+            </div>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {list.map((pkg) => (
-              <div key={pkg.id} className={`bg-white p-5 rounded-[2rem] shadow-sm border ${editingId === pkg.id ? 'border-amber-400 ring-2 ring-amber-100 shadow-lg' : 'border-slate-100'}`}>
-                <div className="flex items-start justify-between mb-3">
-                  <div>
-                    <h4 className="font-bold text-slate-900">{pkg.name}</h4>
-                    <p className="text-xs text-slate-400 font-bold uppercase tracking-wider">{pkg.code}</p>
+            {filteredList.length > 0 ? (
+              filteredList.map((pkg) => (
+                <div key={pkg.id} className={`bg-white p-5 rounded-[2rem] shadow-sm border ${editingId === pkg.id ? 'border-amber-400 ring-2 ring-amber-100 shadow-lg' : 'border-slate-100'}`}>
+                  <div className="flex items-start justify-between mb-3">
+                    <div>
+                      <h4 className="font-bold text-slate-900">{pkg.name}</h4>
+                      <p className="text-xs text-slate-400 font-bold uppercase tracking-wider">{pkg.code}</p>
+                    </div>
+                    <div className="flex items-center flex-wrap gap-1.5">
+                      <span className={`px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider ${pkg.is_active ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>{pkg.is_active ? 'Active' : 'Inactive'}</span>
+                      <button type="button" onClick={() => startDuplicate(pkg)} className="text-[10px] font-bold text-sky-600 uppercase tracking-wider px-2.5 py-1 rounded-xl bg-sky-50 hover:bg-sky-100">Duplicate</button>
+                      <button type="button" onClick={() => startEdit(pkg)} className="text-[10px] font-bold text-amber-600 uppercase tracking-wider px-2.5 py-1 rounded-xl bg-amber-50 hover:bg-amber-100">Edit</button>
+                      <button type="button" onClick={() => deletePackage(pkg)} disabled={deletingId === pkg.id} className="text-[10px] font-bold text-red-600 uppercase tracking-wider px-2.5 py-1 rounded-xl bg-red-50 hover:bg-red-100 disabled:opacity-60">{deletingId === pkg.id ? '...' : 'Delete'}</button>
+                      <a
+                        href={`/packages/${pkg.id}/export`}
+                        className="text-xs font-extrabold text-emerald-700 uppercase tracking-wider px-3.5 py-1.5 rounded-xl bg-emerald-100 hover:bg-emerald-200 transition duration-200"
+                        title="Export to Excel"
+                      >
+                        Excel
+                      </a>
+                    </div>
                   </div>
-                  <div className="flex items-center flex-wrap gap-1.5">
-                    <span className={`px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider ${pkg.is_active ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>{pkg.is_active ? 'Active' : 'Inactive'}</span>
-                    <button type="button" onClick={() => startDuplicate(pkg)} className="text-[10px] font-bold text-sky-600 uppercase tracking-wider px-2.5 py-1 rounded-xl bg-sky-50 hover:bg-sky-100">Duplicate</button>
-                    <button type="button" onClick={() => startEdit(pkg)} className="text-[10px] font-bold text-amber-600 uppercase tracking-wider px-2.5 py-1 rounded-xl bg-amber-50 hover:bg-amber-100">Edit</button>
-                    <button type="button" onClick={() => deletePackage(pkg)} disabled={deletingId === pkg.id} className="text-[10px] font-bold text-red-600 uppercase tracking-wider px-2.5 py-1 rounded-xl bg-red-50 hover:bg-red-100 disabled:opacity-60">{deletingId === pkg.id ? '...' : 'Delete'}</button>
-                    <a
-                      href={`/packages/${pkg.id}/export`}
-                      className="text-xs font-extrabold text-emerald-700 uppercase tracking-wider px-3.5 py-1.5 rounded-xl bg-emerald-100 hover:bg-emerald-200 transition duration-200"
-                      title="Export to Excel"
-                    >
-                      Excel
-                    </a>
-                  </div>
-                </div>
 
-                <div className="space-y-3">
-                  {BOM_TYPES.map((bomType) => {
-                    const bom = (pkg.boms ?? []).find((b) => b.type === bomType.key);
-                    let lines = bom?.bom_items ?? [];
-                    if (lines.length === 0 && pkg.package_items?.length > 0) {
-                      const itemScopeMap = (items ?? []).reduce((m, item) => { m[item.id] = item.bom_scope || 'hardware'; return m; }, {});
-                      lines = (pkg.package_items ?? [])
-                        .filter((pl) => ['cabin', 'hardware', 'hardware_site'].includes(itemScopeMap[pl.item_id]))
-                        .filter((pl) => itemScopeMap[pl.item_id] === bomType.key)
-                        .map((pl) => ({ id: pl.id, item_id: pl.item_id, quantity: pl.quantity, item: pl.item }));
-                    }
-                    return (
-                      <div key={`${pkg.id}-${bomType.key}`} className="rounded-xl border border-slate-100 bg-slate-50 px-3 py-2.5">
-                        <p className="text-[10px] font-black uppercase tracking-wider text-slate-500 mb-1.5">{bomType.label}</p>
-                        {lines.length > 0 ? lines.map((line) => (
-                          <div key={line.id} className="flex items-center justify-between text-xs py-1">
-                            <span className="font-semibold text-slate-700">{line.item?.sku} - {line.item?.name}</span>
-                            <span className="font-black text-slate-900">x{formatQuantity(line.quantity)}</span>
-                          </div>
-                        )) : <p className="text-xs text-slate-400">No SKU.</p>}
-                      </div>
-                    );
-                  })}
+                  <div className="space-y-3">
+                    {BOM_TYPES.map((bomType) => {
+                      const bom = (pkg.boms ?? []).find((b) => b.type === bomType.key);
+                      let lines = bom?.bom_items ?? [];
+                      if (lines.length === 0 && pkg.package_items?.length > 0) {
+                        const itemScopeMap = (items ?? []).reduce((m, item) => { m[item.id] = item.bom_scope || 'hardware'; return m; }, {});
+                        lines = (pkg.package_items ?? [])
+                          .filter((pl) => ['cabin', 'hardware', 'hardware_site'].includes(itemScopeMap[pl.item_id]))
+                          .filter((pl) => itemScopeMap[pl.item_id] === bomType.key)
+                          .map((pl) => ({ id: pl.id, item_id: pl.item_id, quantity: pl.quantity, item: pl.item }));
+                      }
+                      return (
+                        <div key={`${pkg.id}-${bomType.key}`} className="rounded-xl border border-slate-100 bg-slate-50 px-3 py-2.5">
+                          <p className="text-[10px] font-black uppercase tracking-wider text-slate-500 mb-1.5">{bomType.label}</p>
+                          {lines.length > 0 ? lines.map((line) => (
+                            <div key={line.id} className="flex items-center justify-between text-xs py-1">
+                              <span className="font-semibold text-slate-700">{line.item?.sku} - {line.item?.name}</span>
+                              <span className="font-black text-slate-900">x{formatQuantity(line.quantity)}</span>
+                            </div>
+                          )) : <p className="text-xs text-slate-400">No SKU.</p>}
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
+              ))
+            ) : (
+              <div className="col-span-full bg-slate-50 border border-dashed border-slate-200 rounded-[2rem] py-12 text-center text-slate-500">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-8 h-8 mx-auto text-slate-400 mb-2">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" />
+                </svg>
+                <p className="text-sm font-semibold">Tiada package ditemui</p>
+                <p className="text-xs text-slate-400 mt-1">Sila cuba kata kunci carian yang lain.</p>
               </div>
-            ))}
+            )}
           </div>
         </div>
       </div>
