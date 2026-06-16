@@ -21,5 +21,14 @@ class UserSeeder extends Seeder
             'role' => User::ROLE_SUPER_ADMIN,
             'email_verified_at' => now(),
         ]);
+
+        $developer = User::updateOrCreate([
+            'email' => 'yusrinetwork@gmail.com',
+        ], [
+            'name' => 'Developer',
+            'password' => \Illuminate\Support\Facades\Hash::make('123456'),
+            'role' => User::ROLE_DEVELOPER,
+            'email_verified_at' => now(),
+        ]);
     }
 }

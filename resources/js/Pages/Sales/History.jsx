@@ -35,7 +35,10 @@ export default function History({ orders = { data: [] } }) {
                 <ul className="mt-2 space-y-1">
                   {order.lines?.map((line) => (
                     <li key={line.id} className="text-xs text-slate-600">
-                      {line.package?.code} - {line.package?.name} | Ordered {line.package_quantity} | Shipped {line.shipped_quantity ?? 0}
+                      {line.package_id
+                        ? `${line.package?.code ?? '-'} - ${line.package?.name ?? '-'}`
+                        : `${line.item_sku ?? '-'} - ${line.item?.name ?? 'Item'}`}
+                      {' | '}Ordered {line.package_id ? line.package_quantity : line.item_quantity} | Shipped {line.shipped_quantity ?? 0}
                     </li>
                   ))}
                 </ul>

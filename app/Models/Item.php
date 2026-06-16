@@ -12,7 +12,7 @@ class Item extends Model
 {
     use SoftDeletes;
 
-    protected $fillable = ['sku', 'name', 'length_m', 'unit', 'bom_scope', 'supplier', 'supplier_id', 'created_by'];
+    protected $fillable = ['sku', 'name', 'length_m', 'unit', 'bom_scope', 'supplier', 'supplier_id', 'cost_cny', 'created_by'];
 
     public function supplier(): BelongsTo
     {

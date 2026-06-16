@@ -3,6 +3,7 @@
 use App\Http\Controllers\Admin\UserManagementController;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\FinanceController;
+use App\Http\Controllers\FinanceCostController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\ItemController;
 use App\Http\Controllers\PackageController;
@@ -173,6 +174,13 @@ Route::middleware('auth')->group(function () use ($procurementScopes) {
         Route::get('/stock-value', [FinanceController::class, 'stockValue'])->name('finance.stock-value');
         Route::get('/stock-value/export', [FinanceController::class, 'stockValueExport'])->name('finance.stock-value.export');
         Route::get('/stock-value/pdf', [FinanceController::class, 'stockValuePdf'])->name('finance.stock-value.pdf');
+        Route::get('/cabin-bom-cost', [FinanceController::class, 'cabinBomCost'])->name('finance.cabin-bom-cost');
+        Route::post('/cabin-bom-cost', [FinanceController::class, 'updateCabinBomCost'])->name('finance.cabin-bom-cost.update');
+    });
+
+    Route::middleware('module:finance_cost_entry')->prefix('finance')->group(function () {
+        Route::get('/costs', [FinanceCostController::class, 'index'])->name('finance.costs.index');
+        Route::post('/costs/{layer}', [FinanceCostController::class, 'updateCost'])->name('finance.costs.update');
     });
 
     Route::post('/logout', [AuthController::class, 'logout'])->name('logout');
@@ -188,6 +196,7 @@ Route::middleware(['auth'])->prefix('admin')->group(function () {
 
     Route::middleware('module:admin_logs')->group(function () {
         Route::get('/logs', [LogsController::class, 'index'])->name('admin.logs.index');
+        Route::get('/process-logs', [LogsController::class, 'processLogs'])->name('admin.logs.process');
         Route::get('/logs/{log}/pdf', [LogsController::class, 'pdf'])->name('admin.logs.pdf');
     });
 });

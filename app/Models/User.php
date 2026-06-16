@@ -32,6 +32,7 @@ class User extends Authenticatable
     public const ROLE_PROCUREMENT = 'procurement';
     public const ROLE_FINANCE = 'finance';
     public const ROLE_SALES = 'sales';
+    public const ROLE_DEVELOPER = 'developer';
 
     public const MANAGED_ROLES = [
         self::ROLE_STORE_KEEPER,
@@ -74,6 +75,11 @@ class User extends Authenticatable
         return $this->role === self::ROLE_SUPER_ADMIN;
     }
 
+    public function isDeveloper(): bool
+    {
+        return $this->role === self::ROLE_DEVELOPER;
+    }
+
     public function hasRole(...$roles): bool
     {
         return in_array($this->role, $roles);
@@ -83,6 +89,10 @@ class User extends Authenticatable
     {
         if ($this->isSuperAdmin()) {
             return true;
+        }
+
+        if ($this->isDeveloper()) {
+            return in_array($module, ['admin_logs'], true);
         }
 
         if ($this->role === self::ROLE_SALES && $module === 'sales_orders') {

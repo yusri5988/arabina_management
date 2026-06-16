@@ -13,6 +13,8 @@ use Barryvdh\DomPDF\Facade\Pdf;
 use Symfony\Component\HttpFoundation\Response;
 use Inertia\Inertia;
 use Inertia\Response as InertiaResponse;
+use App\Models\ProcessLog;
+use Illuminate\Http\Request;
 
 class LogsController extends Controller
 {
@@ -24,6 +26,95 @@ class LogsController extends Controller
                 ->with('user:id,name')
                 ->latest()
                 ->paginate(50),
+        ]);
+    }
+
+    public function processLogs(Request $request)
+    {
+        $user = auth()->user();
+        $isDeveloper = $user && method_exists($user, 'isDeveloper') && $user->isDeveloper();
+
+        $query = ProcessLog::query()->with('actor:id,name');
+
+        if ($request->filled('request_id')) {
+            $query->where('request_id', $request->request_id);
+        }
+        if ($request->filled('trace_id')) {
+            $query->where('trace_id', $request->trace_id);
+        }
+        if ($request->filled('actor_id')) {
+            $query->where('actor_id', $request->actor_id);
+        }
+        if ($request->filled('module')) {
+            $query->where('module', $request->module);
+        }
+        if ($request->filled('process')) {
+            $query->where('process', $request->process);
+        }
+        if ($request->filled('status')) {
+            $query->where('status', $request->status);
+        }
+        if ($request->filled('level')) {
+            $query->where('level', $request->level);
+        }
+        if ($request->filled('date')) {
+            $request->validate(['date' => ['date_format:Y-m-d']]);
+            $date = \Carbon\Carbon::parse($request->date);
+            $query->where('created_at', '>=', $date->startOfDay())
+                  ->where('created_at', '<', $date->copy()->addDay()->startOfDay());
+        }
+
+        // Only select fields needed by the UI; exclude stack_trace entirely
+        // Error file/line are only included for developers
+        $selectFields = [
+            'id', 'request_id', 'trace_id', 'level', 'module', 'process', 'step',
+            'status', 'actor_id', 'related_type', 'related_id',
+            'endpoint', 'method', 'ip_address', 'user_agent',
+            'duration_ms', 'message', 'context',
+            'error_message', 'error_code', 'error_class',
+            'environment', 'created_at',
+        ];
+        if ($isDeveloper) {
+            $selectFields = array_merge($selectFields, ['error_file', 'error_line']);
+        }
+
+        $query->select($selectFields);
+
+        $logs = $query->latest()->paginate(50)->through(function ($log) use ($isDeveloper) {
+            // Re-sanitize context to protect against old unsanitized entries
+            if (isset($log->context) && is_array($log->context)) {
+                $log->context = \App\Services\ProcessLogger::sanitizeContextForDisplay($log->context);
+            }
+            // Non-developers never see internal paths, even in non-production
+            if (!$isDeveloper) {
+                $log->error_file = null;
+                $log->error_line = null;
+            }
+            return $log;
+        })->withQueryString();
+
+        // Build actor list for the dropdown filter
+        $actors = ProcessLog::query()
+            ->select('actor_id')
+            ->whereNotNull('actor_id')
+            ->distinct()
+            ->with('actor:id,name')
+            ->get()
+            ->pluck('actor')
+            ->filter()
+            ->values()
+            ->map(fn ($a) => ['id' => $a->id, 'name' => $a->name])
+            ->sortBy('name')
+            ->values();
+
+        if ($request->expectsJson() && !$request->header('X-Inertia')) {
+            return response()->json($logs);
+        }
+
+        return Inertia::render('Admin/ProcessLogs', [
+            'logs' => $logs,
+            'filters' => $request->only(['request_id', 'actor_id', 'module', 'process', 'status', 'level', 'date']),
+            'actors' => $actors,
         ]);
     }
 

@@ -46,7 +46,7 @@ export default function Login() {
                   </svg>
                 </div>
                 <p className="text-xs font-bold text-red-600 leading-relaxed">
-                  {errors.email || errors.password || "Invalid credentials. Please check your email and password."}
+                  {Object.values(errors).flat().join(', ') || "Invalid credentials. Please check your email and password."}
                 </p>
               </div>
             )}

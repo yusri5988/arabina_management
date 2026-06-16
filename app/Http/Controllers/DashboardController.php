@@ -10,8 +10,12 @@ use Inertia\Response;
 
 class DashboardController extends Controller
 {
-    public function index(ProcurementService $procurementService): Response
+    public function index(ProcurementService $procurementService)
     {
+        if (auth()->user() && auth()->user()->isDeveloper()) {
+            return redirect()->route('admin.logs.process');
+        }
+
         $openSalesOrders = SalesOrder::query()
             ->whereIn('status', ['open', 'partial'])
             ->count();

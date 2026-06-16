@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\FifoCostLayer;
 use App\Models\InventoryTransactionLine;
 use App\Models\ItemVariant;
+use Illuminate\Validation\ValidationException;
 
 class FifoService
 {
@@ -48,6 +49,13 @@ class FifoService
             ->orderBy('received_at')
             ->lockForUpdate()
             ->get();
+
+        $hasPendingCost = $layers->first(fn ($l) => $l->unit_cost <= 0);
+        if ($hasPendingCost) {
+            throw ValidationException::withMessages([
+                'unit_cost' => ['This item has pending finance cost entry. Please update cost before stock out.'],
+            ]);
+        }
 
         $remaining = $qty;
         $totalCost = 0;

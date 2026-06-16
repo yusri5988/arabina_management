@@ -133,10 +133,6 @@ class CrnController extends Controller
             'lines.*.received_qty' => $this->decimalQuantityRules(true),
             'lines.*.rejected_qty' => $this->decimalQuantityRules(true),
             'lines.*.rejection_reason' => 'nullable|string|max:255',
-            'lines.*.unit_cost' => 'nullable|numeric|min:0|max:999999.99',
-            'lines.*.currency' => 'nullable|string|in:MYR,USD,CNY,EUR',
-            'lines.*.exchange_rate' => 'nullable|numeric|min:0|max:999.999999',
-            'lines.*.invoice_number' => 'nullable|string|max:255',
         ]);
 
         $order->load('lines.item');
@@ -177,10 +173,10 @@ class CrnController extends Controller
                     'received_qty' => $receivedQty,
                     'rejected_qty' => $rejectedQty,
                     'rejection_reason' => $entry['rejection_reason'],
-                    'unit_cost' => $entry['unit_cost'] ?? null,
-                    'currency' => $entry['currency'] ?? 'MYR',
-                    'exchange_rate' => $entry['exchange_rate'] ?? null,
-                    'invoice_number' => $entry['invoice_number'] ?? null,
+                    'unit_cost' => null,
+                    'currency' => 'MYR',
+                    'exchange_rate' => null,
+                    'invoice_number' => null,
                 ]);
 
                 $this->recordRejectionFromCrnItem(
@@ -192,14 +188,14 @@ class CrnController extends Controller
 
                 $txLine = $this->applyReceivedStock($transaction, $variant, (int) $line->item_id, $receivedQty);
 
-                if ($receivedQty > 0 && !empty($entry['unit_cost'])) {
+                if ($receivedQty > 0) {
                     $fifo->createLayer(
                         $variant,
                         $txLine,
                         $receivedQty,
-                        (float) $entry['unit_cost'],
-                        $entry['currency'] ?? 'MYR',
-                        $entry['exchange_rate'] ?? null
+                        0,
+                        'MYR',
+                        null
                     );
                 }
 
@@ -414,14 +410,14 @@ class CrnController extends Controller
                     $receivedQty
                 );
 
-                if ($receivedQty > 0 && $txLine && !empty($item->unit_cost)) {
+                if ($receivedQty > 0 && $txLine) {
                     $fifo->createLayer(
                         $item->itemVariant,
                         $txLine,
                         $receivedQty,
-                        (float) $item->unit_cost,
-                        $item->currency ?? 'MYR',
-                        $item->exchange_rate ?? null
+                        0,
+                        'MYR',
+                        null
                     );
                 }
 

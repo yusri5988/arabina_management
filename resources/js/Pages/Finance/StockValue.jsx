@@ -1,33 +1,52 @@
-import { Head, Link, usePage } from '@inertiajs/react';
+import { Head } from '@inertiajs/react';
 import { useMemo, useState } from 'react';
 import AuthenticatedLayout from '../../Layouts/AuthenticatedLayout';
 
-const BOM_SCOPES = {
-  cabin: 'Cabin',
-  hardware: 'Hardware',
-  hardware_site: 'Hardware Site',
+const BOM_GROUPS = [
+  { key: 'cabin', label: 'BOM Cabin' },
+  { key: 'hardware', label: 'BOM Hardware' },
+  { key: 'hardware_site', label: 'BOM Hardware Site' },
+];
+
+const BOM_STYLES = {
+  cabin: {
+    header: 'bg-amber-50 border-amber-200 text-amber-800',
+    badge: 'bg-amber-200 text-amber-800',
+    subtotal: 'bg-amber-50 text-amber-900',
+  },
+  hardware: {
+    header: 'bg-emerald-50 border-emerald-200 text-emerald-800',
+    badge: 'bg-emerald-200 text-emerald-800',
+    subtotal: 'bg-emerald-50 text-emerald-900',
+  },
+  hardware_site: {
+    header: 'bg-sky-50 border-sky-200 text-sky-800',
+    badge: 'bg-sky-200 text-sky-800',
+    subtotal: 'bg-sky-50 text-sky-900',
+  },
 };
 
-export default function StockValue({ stockData = [], totalValueAll = 0, suppliers = [], bomScopes = {}, filters = {} }) {
+export default function StockValue({ stockData = [], totalValueAll = 0, suppliers = [], filters = {} }) {
   const [search, setSearch] = useState(filters.search || '');
-  const [bomScope, setBomScope] = useState(filters.bom_scope || '');
-  const [supplierId, setSupplierId] = useState(filters.supplier_id || '');
 
   const filteredData = useMemo(() => {
-    return stockData.filter((item) => {
-      if (bomScope && item.bom_scope !== bomScope) return false;
-      if (search && !item.sku.toLowerCase().includes(search.toLowerCase()) && !item.name.toLowerCase().includes(search.toLowerCase())) return false;
-      return true;
-    });
-  }, [stockData, bomScope, search]);
+    if (!search) return stockData;
+    const s = search.toLowerCase();
+    return stockData.filter(
+      (item) => item.sku.toLowerCase().includes(s) || item.name.toLowerCase().includes(s),
+    );
+  }, [stockData, search]);
 
-  const filteredTotal = useMemo(() => {
-    return filteredData.reduce((sum, item) => sum + item.total_value, 0);
+  const groupedData = useMemo(() => {
+    return BOM_GROUPS.map((group) => {
+      const items = filteredData.filter((item) => (item.bom_scope || 'hardware') === group.key);
+      const subtotal = items.reduce((sum, item) => sum + (Number(item.total_value) || 0), 0);
+      const totalStock = items.reduce((sum, item) => sum + (Number(item.current_stock) || 0), 0);
+      return { ...group, items, subtotal, totalStock };
+    });
   }, [filteredData]);
 
   const queryParams = new URLSearchParams();
-  if (bomScope) queryParams.set('bom_scope', bomScope);
-  if (supplierId) queryParams.set('supplier_id', supplierId);
   if (search) queryParams.set('search', search);
   const qs = queryParams.toString();
 
@@ -37,7 +56,10 @@ export default function StockValue({ stockData = [], totalValueAll = 0, supplier
 
       <div className="max-w-7xl mx-auto px-4 py-6">
         <div className="flex items-center justify-between mb-6">
-          <h1 className="text-2xl font-bold text-slate-800">Stock Value</h1>
+          <div>
+            <h1 className="text-2xl font-bold text-slate-800">Stock Value</h1>
+            <p className="text-xs text-slate-500 mt-1">Stock value breakdown by Bill of Materials (BOM) category</p>
+          </div>
           <div className="flex items-center gap-3">
             <a
               href={`/finance/stock-value/export?${qs}`}
@@ -69,64 +91,112 @@ export default function StockValue({ stockData = [], totalValueAll = 0, supplier
               onChange={(e) => setSearch(e.target.value)}
               className="px-4 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-200 focus:border-emerald-300"
             />
-            <select
-              value={bomScope}
-              onChange={(e) => setBomScope(e.target.value)}
-              className="px-4 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-200"
-            >
-              <option value="">All Categories</option>
-              {Object.entries(bomScopes).map(([key, label]) => (
-                <option key={key} value={key}>{label}</option>
-              ))}
-            </select>
+            <div className="ml-auto text-right">
+              <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Grand Total</div>
+              <div className="text-xl font-bold text-arabina-accent">
+                MYR {Number(totalValueAll).toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </div>
+            </div>
           </div>
         </div>
 
-        <div className="bg-white rounded-[2rem] shadow-sm border border-slate-100 overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="bg-slate-50 text-slate-600 uppercase text-xs font-bold tracking-wider">
-                  <th className="px-4 py-3 text-left">SKU</th>
-                  <th className="px-4 py-3 text-left">Item Name</th>
-                  <th className="px-4 py-3 text-left">Category</th>
-                  <th className="px-4 py-3 text-right">Unit</th>
-                  <th className="px-4 py-3 text-right">Current Stock</th>
-                  <th className="px-4 py-3 text-right">Avg Cost (MYR)</th>
-                  <th className="px-4 py-3 text-right">Total Value (MYR)</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {filteredData.length === 0 ? (
-                  <tr>
-                    <td colSpan="7" className="px-4 py-12 text-center text-slate-400 text-sm">No items with stock value found.</td>
-                  </tr>
-                ) : (
-                  filteredData.map((item) => (
-                    <tr key={item.id} className="hover:bg-slate-50 transition-colors">
-                      <td className="px-4 py-3 font-bold text-slate-800">{item.sku}</td>
-                      <td className="px-4 py-3 text-slate-600">{item.name}</td>
-                      <td className="px-4 py-3">
-                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase bg-slate-100 text-slate-600">
-                          {BOM_SCOPES[item.bom_scope] || item.bom_scope}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3 text-right text-slate-600">{item.unit}</td>
-                      <td className="px-4 py-3 text-right font-semibold text-slate-800">{item.current_stock}</td>
-                      <td className="px-4 py-3 text-right text-slate-600">{item.average_cost > 0 ? item.average_cost.toFixed(2) : '-'}</td>
-                      <td className="px-4 py-3 text-right font-semibold text-slate-800">{item.total_value > 0 ? item.total_value.toFixed(2) : '-'}</td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-              <tfoot>
-                <tr className="bg-emerald-50 font-bold text-slate-800">
-                  <td colSpan="6" className="px-4 py-4 text-right">TOTAL</td>
-                  <td className="px-4 py-4 text-right">{filteredTotal.toFixed(2)}</td>
-                </tr>
-              </tfoot>
-            </table>
-          </div>
+        <div className="space-y-6">
+          {groupedData.map((group) => {
+            const style = BOM_STYLES[group.key] || BOM_STYLES.hardware;
+            return (
+              <div key={group.key} className="bg-white rounded-[2rem] shadow-sm border border-slate-100 overflow-hidden">
+                <div className={`px-6 py-4 border-b ${style.header} flex items-center justify-between`}>
+                  <div className="flex items-center gap-3">
+                    <h2 className="text-lg font-bold uppercase tracking-wider">{group.label}</h2>
+                    <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase ${style.badge}`}>
+                      {group.items.length} item{group.items.length !== 1 ? 's' : ''}
+                    </span>
+                  </div>
+                  <div className="text-right">
+                    <div className="text-[10px] font-bold uppercase tracking-wider opacity-70">Subtotal</div>
+                    <div className="text-base font-bold">
+                      MYR {group.subtotal.toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="bg-slate-50 text-slate-600 uppercase text-xs font-bold tracking-wider">
+                        <th className="px-4 py-3 text-left">SKU</th>
+                        <th className="px-4 py-3 text-left">Item Name</th>
+                        <th className="px-4 py-3 text-right">Unit</th>
+                        <th className="px-4 py-3 text-right">Current Stock</th>
+                        <th className="px-4 py-3 text-right">Avg Cost (MYR)</th>
+                        <th className="px-4 py-3 text-right">Total Value (MYR)</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {group.items.length === 0 ? (
+                        <tr>
+                          <td colSpan="6" className="px-4 py-8 text-center text-slate-400 text-sm italic">
+                            No items in this BOM category.
+                          </td>
+                        </tr>
+                      ) : (
+                        group.items.map((item) => (
+                          <tr key={item.id} className="hover:bg-slate-50 transition-colors">
+                            <td className="px-4 py-3 font-bold text-slate-800">{item.sku}</td>
+                            <td className="px-4 py-3 text-slate-600">{item.name}</td>
+                            <td className="px-4 py-3 text-right text-slate-600">{item.unit}</td>
+                            <td className="px-4 py-3 text-right font-semibold text-slate-800">
+                              {Number(item.current_stock).toLocaleString('en-MY', { maximumFractionDigits: 1 })}
+                            </td>
+                            <td className="px-4 py-3 text-right text-slate-600">
+                              {item.average_cost > 0
+                                ? Number(item.average_cost).toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+                                : '-'}
+                            </td>
+                            <td className="px-4 py-3 text-right font-semibold text-slate-800">
+                              {item.total_value > 0
+                                ? Number(item.total_value).toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+                                : '-'}
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                    {group.items.length > 0 && (
+                      <tfoot>
+                        <tr className={`${style.subtotal} font-bold`}>
+                          <td colSpan="5" className="px-4 py-3 text-right uppercase text-xs tracking-wider">
+                            {group.label} Subtotal
+                          </td>
+                          <td className="px-4 py-3 text-right">
+                            {group.subtotal.toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </td>
+                        </tr>
+                      </tfoot>
+                    )}
+                  </table>
+                </div>
+              </div>
+            );
+          })}
+
+          {filteredData.length === 0 && (
+            <div className="bg-white rounded-[2rem] shadow-sm border border-slate-100 p-12 text-center text-slate-400 text-sm">
+              No items with stock value found.
+            </div>
+          )}
+
+          {filteredData.length > 0 && (
+            <div className="bg-arabina-accent rounded-[2rem] shadow-sm px-6 py-5 flex items-center justify-between text-white">
+              <div className="text-sm font-bold uppercase tracking-wider">Grand Total (All BOM)</div>
+              <div className="text-2xl font-bold">
+                MYR{' '}
+                {groupedData
+                  .reduce((sum, g) => sum + g.subtotal, 0)
+                  .toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </AuthenticatedLayout>

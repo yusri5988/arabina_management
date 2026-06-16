@@ -15,6 +15,7 @@ class FifoCostLayer extends Model
         'unit_cost',
         'currency',
         'exchange_rate',
+        'invoice_number',
         'received_at',
     ];
 

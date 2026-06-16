@@ -7,6 +7,7 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
 use App\Models\User;
 use Inertia\Inertia;
+use App\Services\ProcessLogger;
 
 class AuthController extends Controller
 {
@@ -16,9 +17,10 @@ class AuthController extends Controller
         return Inertia::render('Auth/Login');
     }
 
-    // Handle login
     public function login(Request $request)
     {
+        ProcessLogger::start('Auth', 'Login', 'validate_input', ['email' => $request->input('email')]);
+
         $credentials = $request->validate([
             'email' => 'required|email',
             'password' => 'required',
@@ -28,11 +30,13 @@ class AuthController extends Controller
 
         if (Auth::attempt($credentials)) {
             \Illuminate\Support\Facades\Log::info('Login success', ['email' => $credentials['email']]);
+            ProcessLogger::success('Auth', 'Login', 'success', ['email' => $credentials['email']], User::class, Auth::id());
             $request->session()->regenerate();
             return redirect()->intended('/dashboard');
         }
 
         \Illuminate\Support\Facades\Log::warning('Login failed', ['email' => $credentials['email']]);
+        ProcessLogger::warning('Auth', 'Login', 'fail', 'Invalid credentials', ['email' => $credentials['email']]);
         return back()->withErrors([
             'email' => 'The provided credentials do not match our records.',
         ]);
@@ -61,15 +65,20 @@ class AuthController extends Controller
 
         Auth::login($user);
 
+        ProcessLogger::success('Auth', 'Register', 'success', ['email' => $user->email], User::class, $user->id);
+
         return redirect('/dashboard');
     }
 
-    // Handle logout
     public function logout(Request $request)
     {
+        $userId = Auth::id();
         Auth::logout();
         $request->session()->invalidate();
         $request->session()->regenerateToken();
+
+        ProcessLogger::success('Auth', 'Logout', 'success', [], User::class, $userId);
+
         return redirect('/');
     }
 }

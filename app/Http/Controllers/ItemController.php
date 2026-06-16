@@ -1668,13 +1668,17 @@ class ItemController extends Controller
             ->map(fn($quantity) => $this->normalizeQuantity($quantity))
             ->all();
 
-        $remainingBySku = [];
+        $netBySku = [];
         foreach ($shippedBySku as $sku => $qty) {
-            $remainingBySku[$sku] = max($this->normalizeQuantity($qty - ($returnedBySku[$sku] ?? 0)), 0);
+            $netBySku[$sku] = max($this->normalizeQuantity($qty - ($returnedBySku[$sku] ?? 0)), 0);
         }
+
+        $remainingBySku = $netBySku;
+        $existingSkus = [];
 
         foreach ($order->lines as $line) {
             if ($line->item_sku) {
+                $existingSkus[] = $line->item_sku;
                 $availableQuantity = $this->normalizeQuantity($remainingBySku[$line->item_sku] ?? 0);
                 $shippedQuantity = min($this->normalizeQuantity($line->item_quantity), max($availableQuantity, 0));
                 $remainingBySku[$line->item_sku] = max(0, $this->normalizeQuantity($availableQuantity - $shippedQuantity));
@@ -1682,6 +1686,21 @@ class ItemController extends Controller
                 $line->update([
                     'shipped_quantity' => $shippedQuantity,
                 ]);
+            }
+        }
+
+        $shippedSkus = array_keys($shippedBySku);
+        $unmatchedSkus = array_diff($shippedSkus, $existingSkus);
+        foreach ($unmatchedSkus as $sku) {
+            $shippedQty = $netBySku[$sku] ?? 0;
+            if ($shippedQty > 0) {
+                $order->lines()->updateOrCreate(
+                    ['item_sku' => $sku, 'package_id' => null],
+                    [
+                        'item_quantity' => 0,
+                        'shipped_quantity' => $shippedQty,
+                    ]
+                );
             }
         }
 
@@ -1694,6 +1713,9 @@ class ItemController extends Controller
 
         $allFulfilled = $order->lines->every(function ($line) {
             $target = $line->package_id ? $line->package_quantity : $line->item_quantity;
+            if ($target == 0) {
+                return true;
+            }
             return $line->shipped_quantity >= $target;
         });
 

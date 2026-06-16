@@ -25,6 +25,7 @@ export default function AuthenticatedLayout({ children, title, showWelcome = fal
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [warehouseOpen, setWarehouseOpen] = useState(() => url?.startsWith('/warehouse') || url?.startsWith('/items/stocks') || url?.startsWith('/items/stock/out') || url?.startsWith('/packages'));
   const [procurementOpen, setProcurementOpen] = useState(() => url?.startsWith('/procurement'));
+  const [financeOpen, setFinanceOpen] = useState(() => url?.startsWith('/finance'));
   const userPermissions = auth?.user?.module_permissions ?? [];
 
   const hasModuleAccess = (moduleKey) => {
@@ -73,13 +74,22 @@ export default function AuthenticatedLayout({ children, title, showWelcome = fal
   ];
   const showProcurementMenu = hasModuleAccess('procurement');
 
+  const financeChildren = [
+    { name: 'Cost Management', path: '/finance/costs', icon: DocumentTextIcon, visible: hasModuleAccess('finance_cost_entry') },
+    { name: 'Stock Value', path: '/finance/stock-value', icon: TableCellsIcon, visible: hasModuleAccess('finance_stock_value') },
+    { name: 'Cabin BOM Cost (CNY)', path: '/finance/cabin-bom-cost', icon: DocumentTextIcon, visible: hasModuleAccess('finance_stock_value') },
+  ].filter(child => child.visible);
+  const showFinanceMenu = financeChildren.length > 0;
+
   const navLinks = [
     { name: 'Dashboard', path: '/dashboard', icon: HomeIcon, visible: true },
     { name: 'Order', path: '/orders', icon: ShoppingCartIcon, visible: hasModuleAccess('sales_orders') },
     { name: 'Procurement', path: '/procurement/cabin', icon: TruckIcon, visible: showProcurementMenu },
     { name: 'Warehouse', path: '/warehouse', icon: BuildingStorefrontIcon, visible: showWarehouseMenu },
+    { name: 'Finance', path: '/finance', icon: DocumentTextIcon, visible: showFinanceMenu },
     { name: 'Users', path: '/admin/users', icon: UsersIcon, visible: hasModuleAccess('admin_users') },
     { name: 'Activity Logs', path: '/admin/logs', icon: ClockIcon, visible: hasModuleAccess('admin_logs') },
+    { name: 'Process Logs', path: '/admin/process-logs', icon: ClockIcon, visible: hasModuleAccess('admin_logs') },
     { name: 'Profile', path: '/profile', icon: UserCircleIcon, visible: true },
   ].filter((link) => link.visible);
 
@@ -178,6 +188,49 @@ export default function AuthenticatedLayout({ children, title, showWelcome = fal
                   {warehouseOpen && (
                     <div className="ml-4 space-y-1 border-l border-emerald-800/60 pl-3">
                       {warehouseChildren.map((child) => (
+                        <Link
+                          key={child.name}
+                          href={child.path}
+                          className={`flex items-center space-x-3 px-3 py-2.5 rounded-xl text-sm transition-all ${
+                            isActive(child.path)
+                              ? 'bg-emerald-700/70 text-white font-semibold border border-emerald-600/60'
+                              : 'text-emerald-100/70 hover:bg-emerald-800/30 hover:text-white border border-transparent'
+                          }`}
+                        >
+                          <child.icon className={`w-4 h-4 ${isActive(child.path) ? 'text-emerald-200' : ''}`} strokeWidth={2} />
+                          <span>{child.name}</span>
+                        </Link>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            }
+
+            if (link.name === 'Finance' && showFinanceMenu) {
+              const financeActive = isActive('/finance');
+
+              return (
+                <div key={link.name} className="space-y-1.5">
+                  <button
+                    type="button"
+                    onClick={() => setFinanceOpen((prev) => !prev)}
+                    className={`flex w-full items-center justify-between px-4 py-3.5 rounded-2xl transition-all ${
+                      financeActive
+                        ? 'bg-emerald-800/80 text-white font-bold shadow-inner border border-emerald-700/50'
+                        : 'text-emerald-100/70 hover:bg-emerald-800/40 hover:text-white border border-transparent'
+                    }`}
+                  >
+                    <span className="flex items-center space-x-3">
+                      <link.icon className={`w-5 h-5 ${financeActive ? 'text-emerald-300' : ''}`} strokeWidth={financeActive ? 2.5 : 2} />
+                      <span>{link.name}</span>
+                    </span>
+                    <ChevronDownIcon className={`w-4 h-4 transition-transform ${financeOpen ? 'rotate-180' : ''}`} strokeWidth={2.5} />
+                  </button>
+
+                  {financeOpen && (
+                    <div className="ml-4 space-y-1 border-l border-emerald-800/60 pl-3">
+                      {financeChildren.map((child) => (
                         <Link
                           key={child.name}
                           href={child.path}

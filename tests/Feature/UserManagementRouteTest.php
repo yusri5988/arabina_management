@@ -62,4 +62,18 @@ class UserManagementRouteTest extends TestCase
         $response->assertOk();
         $response->assertSee('Admin\\/UserManagement', false);
     }
+
+    public function test_admin_users_route_forbids_developer_without_admin_users_permission(): void
+    {
+        $this->withMiddleware();
+
+        $developer = User::factory()->create([
+            'role' => User::ROLE_DEVELOPER,
+            'module_permissions' => [],
+        ]);
+
+        $response = $this->actingAs($developer)->get('/admin/users');
+
+        $response->assertForbidden();
+    }
 }
