@@ -2,7 +2,7 @@ import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
 import { Head, useForm, router, usePage } from '@inertiajs/react';
 import { useState, useEffect } from 'react';
 import { CurrencyYenIcon, DocumentCheckIcon, MagnifyingGlassIcon } from '@heroicons/react/24/outline';
-import FloatingAlert from '@/Components/FloatingAlert';
+import FloatingAlert from '../../components/FloatingAlert';
 
 export default function CabinBomCost({ auth, items, filters }) {
     const [search, setSearch] = useState(filters.search || '');
