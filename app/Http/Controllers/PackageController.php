@@ -182,7 +182,8 @@ class PackageController extends Controller
             ->with([
                 'packageItems.item:id,sku,name,unit,bom_scope',
             ])
-            ->latest('id')
+            ->orderBy('name')
+            ->orderBy('code')
             ->get();
 
         $spreadsheet = new \PhpOffice\PhpSpreadsheet\Spreadsheet();
@@ -234,7 +235,7 @@ class PackageController extends Controller
                 $sheet->setCellValue('H' . $row, '');
                 $row++;
             } else {
-                foreach ($package->packageItems as $itemLine) {
+                foreach ($this->sortPackageItemsByItemName($package->packageItems) as $itemLine) {
                     $item = $itemLine->item;
                     $sheet->setCellValue('A' . $row, $package->code);
                     $sheet->setCellValue('B' . $row, $package->name);
@@ -337,7 +338,7 @@ class PackageController extends Controller
         $sheet->getStyle('A7:E7')->applyFromArray($headerStyle);
 
         $row = 8;
-        foreach ($packageModel->packageItems as $itemLine) {
+        foreach ($this->sortPackageItemsByItemName($packageModel->packageItems) as $itemLine) {
             $item = $itemLine->item;
             $sheet->setCellValue('A' . $row, $item ? $item->sku : '');
             $sheet->setCellValue('B' . $row, $item ? $item->name : '');
@@ -476,6 +477,13 @@ class PackageController extends Controller
         }
 
         return $request->validate($rules);
+    }
+
+    private function sortPackageItemsByItemName($packageItems)
+    {
+        return $packageItems
+            ->sortBy(fn ($itemLine) => strtolower((string) ($itemLine->item?->name ?? '')), SORT_NATURAL)
+            ->values();
     }
 
     private function normalizePackageBomInput(Request $request): void
