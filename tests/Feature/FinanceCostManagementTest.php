@@ -140,6 +140,94 @@ class FinanceCostManagementTest extends TestCase
         $this->assertSame(150.0, (float) $variant->fresh()->total_stock_value);
     }
 
+    public function test_bulk_cost_entry_converts_item_cny_costs_to_myr(): void
+    {
+        [$user, $layerOne, $variantOne] = $this->createPendingCostLayer([
+            'quantity' => 5,
+        ]);
+        [, $layerTwo, $variantTwo] = $this->createPendingCostLayer([
+            'quantity' => 3,
+        ]);
+
+        $variantOne->item()->update(['cost_cny' => 10]);
+        $variantTwo->item()->update(['cost_cny' => 100]);
+
+        $response = $this->actingAs($user)->postJson('/finance/costs/bulk', [
+            'exchange_rate' => 0.65,
+            'layer_ids' => [$layerOne->id, $layerTwo->id],
+        ]);
+
+        $response->assertOk();
+        $response->assertJsonPath('updated_count', 2);
+
+        $this->assertDatabaseHas('fifo_cost_layers', [
+            'id' => $layerOne->id,
+            'unit_cost' => 6.50,
+            'currency' => 'CNY',
+            'exchange_rate' => 0.65,
+            'invoice_number' => null,
+        ]);
+
+        $this->assertDatabaseHas('fifo_cost_layers', [
+            'id' => $layerTwo->id,
+            'unit_cost' => 65.00,
+            'currency' => 'CNY',
+            'exchange_rate' => 0.65,
+            'invoice_number' => null,
+        ]);
+
+        $this->assertSame(6.5, (float) $variantOne->fresh()->average_cost);
+        $this->assertSame(65.0, (float) $variantTwo->fresh()->average_cost);
+    }
+
+    public function test_bulk_cost_entry_blocks_when_any_selected_sku_has_no_cny_cost(): void
+    {
+        [$user, $layerOne, $variantOne] = $this->createPendingCostLayer();
+        [, $layerTwo, $variantTwo] = $this->createPendingCostLayer();
+
+        $variantOne->item()->update(['cost_cny' => 10]);
+        $variantTwo->item()->update(['cost_cny' => 0]);
+
+        $response = $this->actingAs($user)->postJson('/finance/costs/bulk', [
+            'exchange_rate' => 0.65,
+            'layer_ids' => [$layerOne->id, $layerTwo->id],
+        ]);
+
+        $response->assertUnprocessable();
+        $response->assertJsonValidationErrors(['cost_cny']);
+
+        $this->assertDatabaseHas('fifo_cost_layers', [
+            'id' => $layerOne->id,
+            'unit_cost' => 0,
+        ]);
+        $this->assertDatabaseHas('fifo_cost_layers', [
+            'id' => $layerTwo->id,
+            'unit_cost' => 0,
+        ]);
+    }
+
+    public function test_bulk_cost_entry_blocks_already_costed_layers(): void
+    {
+        [$user, $layer, $variant] = $this->createPendingCostLayer([
+            'unit_cost' => 8.75,
+        ]);
+
+        $variant->item()->update(['cost_cny' => 10]);
+
+        $response = $this->actingAs($user)->postJson('/finance/costs/bulk', [
+            'exchange_rate' => 0.65,
+            'layer_ids' => [$layer->id],
+        ]);
+
+        $response->assertUnprocessable();
+        $response->assertJsonValidationErrors(['layer_ids']);
+
+        $this->assertDatabaseHas('fifo_cost_layers', [
+            'id' => $layer->id,
+            'unit_cost' => 8.75,
+        ]);
+    }
+
     private function createPendingCostLayer(array $layerOverrides = []): array
     {
         $user = User::factory()->create([

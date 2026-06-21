@@ -180,6 +180,7 @@ Route::middleware('auth')->group(function () use ($procurementScopes) {
 
     Route::middleware('module:finance_cost_entry')->prefix('finance')->group(function () {
         Route::get('/costs', [FinanceCostController::class, 'index'])->name('finance.costs.index');
+        Route::post('/costs/bulk', [FinanceCostController::class, 'bulkUpdateCosts'])->name('finance.costs.bulk-update');
         Route::post('/costs/{layer}', [FinanceCostController::class, 'updateCost'])->name('finance.costs.update');
     });
 

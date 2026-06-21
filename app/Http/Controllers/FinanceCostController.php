@@ -17,7 +17,7 @@ class FinanceCostController extends Controller
     {
         $pendingCosts = FifoCostLayer::query()
             ->with([
-                'itemVariant.item:id,sku,name,unit',
+                'itemVariant.item:id,sku,name,unit,cost_cny',
                 'inventoryTransactionLine.transaction:id,notes,created_at',
             ])
             ->where('unit_cost', 0)
@@ -28,6 +28,7 @@ class FinanceCostController extends Controller
                     'id' => $layer->id,
                     'sku' => $layer->itemVariant?->item?->sku,
                     'name' => $layer->itemVariant?->item?->name,
+                    'cost_cny' => (float) ($layer->itemVariant?->item?->cost_cny ?? 0),
                     'quantity' => (float) $layer->quantity,
                     'received_at' => optional($layer->received_at)->format('Y-m-d H:i:s'),
                     'transaction_notes' => $layer->inventoryTransactionLine?->transaction?->notes ?? 'Direct Receive',
@@ -39,6 +40,79 @@ class FinanceCostController extends Controller
 
         return Inertia::render('Finance/CostManagement', [
             'pendingCosts' => $pendingCosts,
+        ]);
+    }
+
+    public function bulkUpdateCosts(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'exchange_rate' => 'required|numeric|min:0.000001|max:999.999999',
+            'layer_ids' => 'required|array|min:1',
+            'layer_ids.*' => 'required|integer|distinct',
+        ]);
+
+        $updatedCount = DB::transaction(function () use ($validated) {
+            $layerIds = collect($validated['layer_ids'])->map(fn ($id) => (int) $id)->values();
+
+            $layers = FifoCostLayer::query()
+                ->with(['itemVariant.item', 'inventoryTransactionLine.transaction'])
+                ->whereKey($layerIds)
+                ->lockForUpdate()
+                ->get();
+
+            if ($layers->count() !== $layerIds->count()) {
+                throw ValidationException::withMessages([
+                    'layer_ids' => ['One or more selected cost layers could not be found.'],
+                ]);
+            }
+
+            $alreadyCosted = $layers->first(fn ($layer) => (float) $layer->unit_cost > 0);
+            if ($alreadyCosted) {
+                throw ValidationException::withMessages([
+                    'layer_ids' => ['One or more selected cost layers has already been costed.'],
+                ]);
+            }
+
+            $missingCnyCost = $layers->first(fn ($layer) => (float) ($layer->itemVariant?->item?->cost_cny ?? 0) <= 0);
+            if ($missingCnyCost) {
+                $sku = $missingCnyCost->itemVariant?->item?->sku ?? 'selected SKU';
+
+                throw ValidationException::withMessages([
+                    'cost_cny' => ["{$sku} has no CNY cost. Please update Cabin BOM Cost before submitting."],
+                ]);
+            }
+
+            $exchangeRate = (float) $validated['exchange_rate'];
+            $variantIds = [];
+
+            foreach ($layers as $layer) {
+                $costCny = (float) $layer->itemVariant->item->cost_cny;
+
+                $layer->update([
+                    'unit_cost' => round($costCny * $exchangeRate, 2),
+                    'currency' => 'CNY',
+                    'exchange_rate' => $exchangeRate,
+                    'invoice_number' => null,
+                ]);
+
+                if ($layer->item_variant_id) {
+                    $variantIds[$layer->item_variant_id] = true;
+                }
+            }
+
+            foreach (array_keys($variantIds) as $variantId) {
+                $variant = $layers->firstWhere('item_variant_id', $variantId)?->itemVariant;
+                if ($variant) {
+                    app(FifoService::class)->recalculateAverageCost($variant);
+                }
+            }
+
+            return $layers->count();
+        });
+
+        return response()->json([
+            'message' => "{$updatedCount} cost entries updated successfully.",
+            'updated_count' => $updatedCount,
         ]);
     }
 
